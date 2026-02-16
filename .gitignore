@@ -6,3 +6,5 @@ __pycache__/
 dist/
 build/
 uploads/
+.DS_Store
+backend/app/media/

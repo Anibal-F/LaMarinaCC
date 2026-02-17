@@ -10,7 +10,7 @@ services:
       APP_NAME: LaMarinaCC
       ENV: local
       DATABASE_URL: postgresql+psycopg://LaMarinaCC:A355Fu584$@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres
-      CORS_ORIGINS: http://localhost:3010
+      CORS_ORIGINS: http://44.204.161.253,http://44.204.161.253:3010,http://localhost:3010
 
     ports:
       - "8010:8010"
@@ -24,7 +24,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      VITE_API_URL: http://localhost:8010
+      VITE_API_URL: http://44.204.161.253:8010
     ports:
       - "3010:3010"
     depends_on:

@@ -9,7 +9,7 @@ services:
     environment:
       APP_NAME: LaMarinaCC
       ENV: local
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/lamarinacc
+      DATABASE_URL: postgresql+psycopg://LaMarinaCC:A355Fu584$@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres
       CORS_ORIGINS: http://localhost:3010
 
     ports:

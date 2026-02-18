@@ -92,6 +92,7 @@ export default function RecepcionForm() {
   const [recordingTarget, setRecordingTarget] = useState("");
   const [transcribingTarget, setTranscribingTarget] = useState("");
   const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
+  const [damageEraseEnabled, setDamageEraseEnabled] = useState(false);
   const [isDamageDrawing, setIsDamageDrawing] = useState(false);
   const [damageDrawings, setDamageDrawings] = useState({ siniestro: "", preexistente: "" });
   const [damageDrawingDirty, setDamageDrawingDirty] = useState({ siniestro: false, preexistente: false });
@@ -1135,10 +1136,11 @@ export default function RecepcionForm() {
     if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = damageEraseEnabled ? 14 : 2.5;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = damageMode === "siniestro" ? "#e04b4b" : "#f2a300";
+    ctx.globalCompositeOperation = "source-over";
     drawDamageSnapshot(damageMode);
   };
 
@@ -1153,20 +1155,28 @@ export default function RecepcionForm() {
   };
 
   const startDamageDraw = (event) => {
-    if (!damageDrawEnabled) return;
+    if (!damageDrawEnabled && !damageEraseEnabled) return;
     event.preventDefault();
     const canvas = damageDrawCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const point = getDamageDrawPoint(event);
     if (!ctx || !point) return;
+    if (damageEraseEnabled) {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.lineWidth = 14;
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = damageMode === "siniestro" ? "#e04b4b" : "#f2a300";
+    }
     ctx.beginPath();
     ctx.moveTo(point.x, point.y);
     setIsDamageDrawing(true);
   };
 
   const drawDamage = (event) => {
-    if (!damageDrawEnabled || !isDamageDrawing) return;
+    if ((!damageDrawEnabled && !damageEraseEnabled) || !isDamageDrawing) return;
     event.preventDefault();
     const canvas = damageDrawCanvasRef.current;
     if (!canvas) return;
@@ -1181,6 +1191,10 @@ export default function RecepcionForm() {
     if (!isDamageDrawing) return;
     const canvas = damageDrawCanvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.globalCompositeOperation = "source-over";
+    }
     setIsDamageDrawing(false);
     setDamageDrawings((prev) => ({
       ...prev,
@@ -1208,7 +1222,7 @@ export default function RecepcionForm() {
     const onResize = () => resizeDamageDrawCanvas();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [damageModalOpen, damageMode]);
+  }, [damageModalOpen, damageMode, damageEraseEnabled]);
 
   useEffect(() => {
     if (!damageModalOpen) return;
@@ -1218,6 +1232,7 @@ export default function RecepcionForm() {
   useEffect(() => {
     if (damageModalOpen) return;
     setDamageDrawEnabled(false);
+    setDamageEraseEnabled(false);
     setIsDamageDrawing(false);
   }, [damageModalOpen]);
 
@@ -2164,7 +2179,7 @@ export default function RecepcionForm() {
                   ref={modalSvgRef}
                   className="w-full rounded-xl border border-border-dark bg-white p-4"
                   onClick={(event) => {
-                    if (damageDrawEnabled) return;
+                    if (damageDrawEnabled || damageEraseEnabled) return;
                     const target = event.target;
                     const element = target?.closest?.("#ZONAS [id]");
                     const id = element?.getAttribute?.("id");
@@ -2176,7 +2191,11 @@ export default function RecepcionForm() {
                 />
                 <canvas
                   ref={damageDrawCanvasRef}
-                  className={`absolute inset-0 rounded-xl ${damageDrawEnabled ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"}`}
+                  className={`absolute inset-0 rounded-xl ${
+                    damageDrawEnabled || damageEraseEnabled
+                      ? "pointer-events-auto cursor-crosshair"
+                      : "pointer-events-none"
+                  }`}
                   onPointerDown={startDamageDraw}
                   onPointerMove={drawDamage}
                   onPointerUp={endDamageDraw}
@@ -2190,18 +2209,42 @@ export default function RecepcionForm() {
                         ? "border-primary/60 bg-primary/20 text-primary"
                         : "border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
                     }`}
-                    onClick={() => setDamageDrawEnabled((prev) => !prev)}
+                    onClick={() => {
+                      setDamageDrawEnabled((prev) => {
+                        const next = !prev;
+                        if (next) setDamageEraseEnabled(false);
+                        return next;
+                      });
+                    }}
                     title={damageDrawEnabled ? "Desactivar lápiz" : "Dibujar a mano alzada"}
                   >
                     <span className="material-symbols-outlined text-[18px]">edit</span>
                   </button>
                   <button
                     type="button"
-                    className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
-                    onClick={clearDamageDrawing}
-                    title="Limpiar dibujo"
+                    className={`inline-flex size-8 items-center justify-center rounded-md border transition-colors ${
+                      damageEraseEnabled
+                        ? "border-primary/60 bg-primary/20 text-primary"
+                        : "border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                    }`}
+                    onClick={() => {
+                      setDamageEraseEnabled((prev) => {
+                        const next = !prev;
+                        if (next) setDamageDrawEnabled(false);
+                        return next;
+                      });
+                    }}
+                    title={damageEraseEnabled ? "Desactivar borrador" : "Borrador por pincel"}
                   >
                     <span className="material-symbols-outlined text-[18px]">ink_eraser</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                    onClick={clearDamageDrawing}
+                    title="Limpiar todo"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
                   </button>
                 </div>
               </div>

@@ -93,10 +93,12 @@ export default function RecepcionForm() {
   const [transcribingTarget, setTranscribingTarget] = useState("");
   const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
   const [damageEraseEnabled, setDamageEraseEnabled] = useState(false);
+  const [damageToolSizes, setDamageToolSizes] = useState({ draw: 3, erase: 14 });
   const [isDamageDrawing, setIsDamageDrawing] = useState(false);
   const [damageDrawings, setDamageDrawings] = useState({ siniestro: "", preexistente: "" });
   const [damageDrawingDirty, setDamageDrawingDirty] = useState({ siniestro: false, preexistente: false });
   const [savingDamageDrawing, setSavingDamageDrawing] = useState(false);
+  const activeDamageTool = damageEraseEnabled ? "erase" : damageDrawEnabled ? "draw" : "";
 
   const damageParts = [
     "FACIA DELANTERA",
@@ -1134,9 +1136,10 @@ export default function RecepcionForm() {
     canvas.style.height = `${height}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    const activeStrokeSize = damageEraseEnabled ? damageToolSizes.erase : damageToolSizes.draw;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(ratio, ratio);
-    ctx.lineWidth = damageEraseEnabled ? 14 : 2.5;
+    ctx.lineWidth = activeStrokeSize;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = damageMode === "siniestro" ? "#e04b4b" : "#f2a300";
@@ -1164,10 +1167,10 @@ export default function RecepcionForm() {
     if (!ctx || !point) return;
     if (damageEraseEnabled) {
       ctx.globalCompositeOperation = "destination-out";
-      ctx.lineWidth = 14;
+      ctx.lineWidth = damageToolSizes.erase;
     } else {
       ctx.globalCompositeOperation = "source-over";
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = damageToolSizes.draw;
       ctx.strokeStyle = damageMode === "siniestro" ? "#e04b4b" : "#f2a300";
     }
     ctx.beginPath();
@@ -1222,7 +1225,7 @@ export default function RecepcionForm() {
     const onResize = () => resizeDamageDrawCanvas();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [damageModalOpen, damageMode, damageEraseEnabled]);
+  }, [damageModalOpen, damageMode, damageEraseEnabled, damageToolSizes]);
 
   useEffect(() => {
     if (!damageModalOpen) return;
@@ -2246,6 +2249,38 @@ export default function RecepcionForm() {
                   >
                     <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
                   </button>
+                  <div
+                    className={`overflow-hidden transition-all duration-200 ease-out ${
+                      activeDamageTool ? "max-w-xs opacity-100 translate-y-0" : "max-w-0 opacity-0 -translate-y-1"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 rounded-md border border-border-dark bg-surface-dark/90 px-2 py-1">
+                      <span className="text-[10px] font-bold uppercase text-slate-300">
+                        {activeDamageTool === "erase" ? "Borrador" : "Lápiz"}
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={28}
+                        step={1}
+                        value={activeDamageTool === "erase" ? damageToolSizes.erase : damageToolSizes.draw}
+                        onChange={(event) => {
+                          const size = Number(event.target.value);
+                          if (activeDamageTool === "erase") {
+                            setDamageToolSizes((prev) => ({ ...prev, erase: size }));
+                          } else if (activeDamageTool === "draw") {
+                            setDamageToolSizes((prev) => ({ ...prev, draw: size }));
+                          }
+                        }}
+                        className="w-20 accent-primary"
+                        title={`Grosor ${activeDamageTool === "erase" ? "borrador" : "lápiz"}`}
+                        disabled={!activeDamageTool}
+                      />
+                      <span className="w-6 text-right text-[10px] font-bold text-slate-300">
+                        {activeDamageTool === "erase" ? damageToolSizes.erase : damageToolSizes.draw}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="space-y-4">

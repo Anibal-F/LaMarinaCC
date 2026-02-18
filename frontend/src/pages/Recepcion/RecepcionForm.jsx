@@ -83,6 +83,11 @@ export default function RecepcionForm() {
   const siniestroSvgRef = useRef(null);
   const preexistSvgRef = useRef(null);
   const modalSvgRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const audioStreamRef = useRef(null);
+  const [recordingTarget, setRecordingTarget] = useState("");
+  const [transcribingTarget, setTranscribingTarget] = useState("");
 
   const damageParts = [
     "FACIA DELANTERA",
@@ -138,6 +143,111 @@ export default function RecepcionForm() {
   const removeCurrentFile = (setter, indexSetter, currentIndex) => {
     setter((prev) => prev.filter((_, idx) => idx !== currentIndex));
     indexSetter((prev) => (prev > 0 ? prev - 1 : 0));
+  };
+
+  const appendObservationText = (current, transcript) => {
+    const existing = (current || "").trim();
+    const incoming = (transcript || "").trim();
+    if (!incoming) return current || "";
+    return existing ? `${existing}\n${incoming}` : incoming;
+  };
+
+  const stopAudioStream = () => {
+    if (!audioStreamRef.current) return;
+    audioStreamRef.current.getTracks().forEach((track) => track.stop());
+    audioStreamRef.current = null;
+  };
+
+  const transcribeObservationAudio = async (target, audioBlob) => {
+    const mimeType = audioBlob.type || "audio/webm";
+    const extension = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "webm";
+    setTranscribingTarget(target);
+    try {
+      const formData = new FormData();
+      formData.append("file", new File([audioBlob], `observaciones-${Date.now()}.${extension}`, { type: mimeType }));
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/transcripciones`, {
+        method: "POST",
+        body: formData
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.detail || "No se pudo transcribir el audio.");
+      }
+      const data = await response.json().catch(() => null);
+      const transcript = (data?.text || "").trim();
+      if (!transcript) {
+        throw new Error("La transcripción llegó vacía.");
+      }
+
+      if (target === "observaciones_generales") {
+        setForm((prev) => ({ ...prev, observaciones: appendObservationText(prev.observaciones, transcript) }));
+      } else if (target === "observaciones_siniestro") {
+        setDamageObsSiniestro((prev) => appendObservationText(prev, transcript));
+      } else if (target === "observaciones_preexistentes") {
+        setDamageObsPreexist((prev) => appendObservationText(prev, transcript));
+      }
+    } catch (err) {
+      setError(err.message || "No se pudo transcribir el audio.");
+    } finally {
+      setTranscribingTarget("");
+    }
+  };
+
+  const stopObservationRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    recorder.stop();
+  };
+
+  const startObservationRecording = async (target) => {
+    if (transcribingTarget) {
+      setError("Espera a que termine la transcripción actual.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Tu navegador no soporta grabación de audio.");
+      return;
+    }
+    if (recordingTarget && recordingTarget !== target) {
+      setError("Ya hay otra grabación en curso.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+
+      const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+      const selectedMimeType = mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+      const recorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        setRecordingTarget("");
+        stopAudioStream();
+        if (!chunks.length) return;
+        const blob = new Blob(chunks, { type: recorder.mimeType || selectedMimeType || "audio/webm" });
+        await transcribeObservationAudio(target, blob);
+      };
+
+      recorder.start();
+      setRecordingTarget(target);
+      setError("");
+    } catch (err) {
+      stopAudioStream();
+      setRecordingTarget("");
+      setError(err.message || "No se pudo iniciar la grabación.");
+    }
   };
 
   const payload = useMemo(
@@ -399,6 +509,14 @@ export default function RecepcionForm() {
     const timer = setTimeout(() => setError(""), 4000);
     return () => clearTimeout(timer);
   }, [error]);
+
+  useEffect(
+    () => () => {
+      stopObservationRecording();
+      stopAudioStream();
+    },
+    []
+  );
 
   useEffect(() => {
     if (!damageSvgMarkup) return;
@@ -1662,7 +1780,42 @@ export default function RecepcionForm() {
                       ></textarea>
                     </div>
                     <div className="space-y-3">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Observaciones Adicionales</label>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">
+                          Observaciones Adicionales
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {recordingTarget === "observaciones_generales" ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md border border-alert-red/50 bg-alert-red/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-alert-red"
+                              onClick={stopObservationRecording}
+                              disabled={saving}
+                            >
+                              <span className="material-symbols-outlined text-sm">stop_circle</span>
+                              Detener grabación
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md border border-border-dark bg-background-dark/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300 hover:text-white disabled:opacity-50"
+                              onClick={() => startObservationRecording("observaciones_generales")}
+                              disabled={saving || Boolean(transcribingTarget)}
+                            >
+                              <span className="material-symbols-outlined text-sm">mic</span>
+                              Grabar audio
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {recordingTarget === "observaciones_generales" ? (
+                        <p className="text-[10px] text-alert-red font-bold uppercase">
+                          Grabando... vuelve a presionar para detener.
+                        </p>
+                      ) : null}
+                      {transcribingTarget === "observaciones_generales" ? (
+                        <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
+                      ) : null}
                       <textarea
                         className="w-full bg-background-dark border-border-dark rounded-lg px-4 py-2 text-sm text-white h-20"
                         placeholder="Ej. El vehículo ingresa con objetos de valor en guantera..."
@@ -1822,11 +1975,58 @@ export default function RecepcionForm() {
                   addLabel="Agregar parte"
                 />
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">
-                    {damageMode === "siniestro"
-                      ? "Observaciones de Daños del Siniestro"
-                      : "Observaciones de Daños Preexistentes"}
-                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">
+                      {damageMode === "siniestro"
+                        ? "Observaciones de Daños del Siniestro"
+                        : "Observaciones de Daños Preexistentes"}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {recordingTarget ===
+                      (damageMode === "siniestro"
+                        ? "observaciones_siniestro"
+                        : "observaciones_preexistentes") ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border border-alert-red/50 bg-alert-red/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-alert-red"
+                          onClick={stopObservationRecording}
+                        >
+                          <span className="material-symbols-outlined text-sm">stop_circle</span>
+                          Detener grabación
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border border-border-dark bg-background-dark/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300 hover:text-white disabled:opacity-50"
+                          onClick={() =>
+                            startObservationRecording(
+                              damageMode === "siniestro"
+                                ? "observaciones_siniestro"
+                                : "observaciones_preexistentes"
+                            )
+                          }
+                          disabled={Boolean(transcribingTarget)}
+                        >
+                          <span className="material-symbols-outlined text-sm">mic</span>
+                          Grabar audio
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {recordingTarget ===
+                  (damageMode === "siniestro"
+                    ? "observaciones_siniestro"
+                    : "observaciones_preexistentes") ? (
+                    <p className="text-[10px] text-alert-red font-bold uppercase">
+                      Grabando... vuelve a presionar para detener.
+                    </p>
+                  ) : null}
+                  {transcribingTarget ===
+                  (damageMode === "siniestro"
+                    ? "observaciones_siniestro"
+                    : "observaciones_preexistentes") ? (
+                    <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
+                  ) : null}
                   <textarea
                     className="w-full rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
                     rows={3}

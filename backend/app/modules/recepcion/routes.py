@@ -1,10 +1,14 @@
 from datetime import datetime
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 import re
+import time
 from typing import Any, Optional
 import unicodedata
+from urllib.error import URLError
+from urllib.request import urlopen
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.etree import ElementTree as ET
@@ -25,6 +29,7 @@ from reportlab.pdfgen import canvas
 from svglib.svglib import svg2rlg
 
 from app.core.db import get_connection
+from app.core.config import settings
 
 router = APIRouter(prefix="/recepcion", tags=["recepcion"])
 
@@ -42,7 +47,6 @@ try:
     import pypdfium2 as pdfium
 except Exception:  # pragma: no cover - optional dependency
     pdfium = None
-
 
 _EXTRACTION_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -1044,6 +1048,145 @@ def _prepare_signature_black(signature_path: Path) -> ImageReader | str:
 @router.get("/health")
 def health_check():
     return {"module": "recepcion", "status": "ok"}
+
+
+@router.post("/transcripciones")
+async def transcribe_audio(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archivo de audio requerido")
+    if not boto3:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Falta dependencia boto3 en el backend.",
+        )
+    if not settings.aws_transcribe_bucket:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS_TRANSCRIBE_BUCKET no configurado en el backend.",
+        )
+
+    extension = Path(file.filename).suffix.lower()
+    extension_map = {
+        ".wav": "wav",
+        ".mp3": "mp3",
+        ".mp4": "mp4",
+        ".m4a": "mp4",
+        ".flac": "flac",
+        ".ogg": "ogg",
+        ".webm": "webm",
+        ".amr": "amr",
+    }
+    media_format = extension_map.get(extension)
+    content_type = (file.content_type or "").lower()
+    valid_audio = bool(media_format) or content_type.startswith("audio/")
+    if not media_format and content_type.startswith("audio/"):
+        guessed_ext = content_type.replace("audio/", "").split(";")[0].strip()
+        media_format = {
+            "x-wav": "wav",
+            "wav": "wav",
+            "mpeg": "mp3",
+            "mp3": "mp3",
+            "mp4": "mp4",
+            "x-m4a": "mp4",
+            "flac": "flac",
+            "ogg": "ogg",
+            "webm": "webm",
+            "amr": "amr",
+        }.get(guessed_ext)
+
+    if not valid_audio or not media_format:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato de audio no soportado. Usa wav, mp3, mp4/m4a, flac, ogg o webm.",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío.")
+
+    region = settings.aws_region or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
+    bucket = settings.aws_transcribe_bucket
+    object_key = f"transcribe/recepcion/{uuid4().hex}{extension or '.webm'}"
+    job_name = f"recepcion-transcribe-{uuid4().hex}"
+
+    s3_client = boto3.client("s3", region_name=region)
+    transcribe_client = boto3.client("transcribe", region_name=region)
+
+    try:
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=object_key,
+            Body=file_bytes,
+            ContentType=file.content_type or "application/octet-stream",
+        )
+
+        media_uri = f"s3://{bucket}/{object_key}"
+        transcribe_client.start_transcription_job(
+            TranscriptionJobName=job_name,
+            LanguageCode=settings.aws_transcribe_language_code,
+            Media={"MediaFileUri": media_uri},
+            MediaFormat=media_format,
+        )
+
+        deadline = time.time() + max(10, settings.aws_transcribe_timeout_seconds)
+        transcript_file_uri = ""
+        while time.time() < deadline:
+            job = transcribe_client.get_transcription_job(TranscriptionJobName=job_name).get(
+                "TranscriptionJob", {}
+            )
+            status_name = job.get("TranscriptionJobStatus")
+            if status_name == "COMPLETED":
+                transcript_file_uri = (
+                    job.get("Transcript", {}).get("TranscriptFileUri", "") if job else ""
+                )
+                break
+            if status_name == "FAILED":
+                reason = job.get("FailureReason") or "Error desconocido en AWS Transcribe."
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Transcribe falló: {reason}",
+                )
+            time.sleep(max(1, settings.aws_transcribe_poll_seconds))
+
+        if not transcript_file_uri:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Transcripción excedió el tiempo de espera.",
+            )
+
+        try:
+            with urlopen(transcript_file_uri) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (URLError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"No se pudo leer resultado de Transcribe: {exc}",
+            ) from exc
+
+        transcripts = payload.get("results", {}).get("transcripts", [])
+        cleaned_text = (transcripts[0].get("transcript", "") if transcripts else "").strip()
+        if not cleaned_text:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="No se obtuvo texto del audio enviado.",
+            )
+        return {"text": cleaned_text}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"No se pudo transcribir el audio con AWS Transcribe: {exc}",
+        ) from exc
+    finally:
+        try:
+            transcribe_client.delete_transcription_job(TranscriptionJobName=job_name)
+        except Exception:
+            pass
+        try:
+            s3_client.delete_object(Bucket=bucket, Key=object_key)
+        except Exception:
+            pass
 
 
 @router.get("/registros")

@@ -1106,14 +1106,16 @@ export default function RecepcionForm() {
     if (!canvas || !layer) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const width = canvas.clientWidth || layer.clientWidth || 0;
+    const height = canvas.clientHeight || layer.clientHeight || 0;
+    ctx.clearRect(0, 0, width, height);
     const dataUrl = damageDrawings[mode];
     if (!dataUrl) return;
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.onload = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
     };
     image.src = dataUrl;
   };
@@ -1131,7 +1133,8 @@ export default function RecepcionForm() {
     canvas.style.height = `${height}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(ratio, ratio);
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -1188,10 +1191,13 @@ export default function RecepcionForm() {
 
   const clearDamageDrawing = () => {
     const canvas = damageDrawCanvasRef.current;
+    const layer = damageDrawLayerRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const width = canvas.clientWidth || layer?.clientWidth || 0;
+    const height = canvas.clientHeight || layer?.clientHeight || 0;
+    ctx.clearRect(0, 0, width, height);
     setDamageDrawings((prev) => ({ ...prev, [damageMode]: "" }));
     setDamageDrawingDirty((prev) => ({ ...prev, [damageMode]: true }));
   };
@@ -1202,7 +1208,7 @@ export default function RecepcionForm() {
     const onResize = () => resizeDamageDrawCanvas();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [damageModalOpen, damageMode, damageDrawings]);
+  }, [damageModalOpen, damageMode]);
 
   useEffect(() => {
     if (!damageModalOpen) return;

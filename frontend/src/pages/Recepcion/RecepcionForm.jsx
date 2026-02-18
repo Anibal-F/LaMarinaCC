@@ -1648,6 +1648,13 @@ export default function RecepcionForm() {
                                 className="w-full"
                                 dangerouslySetInnerHTML={{ __html: damageSvgMarkup }}
                               />
+                              {damageDrawings.siniestro ? (
+                                <img
+                                  src={damageDrawings.siniestro}
+                                  alt="Trazos siniestro"
+                                  className="pointer-events-none absolute inset-0 h-full w-full object-fill"
+                                />
+                              ) : null}
                               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                               <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-alert-red/80 px-3 py-1 text-[10px] font-bold uppercase text-white shadow">
                                 Seleccionar daños
@@ -1842,6 +1849,13 @@ export default function RecepcionForm() {
                                 className="w-full"
                                 dangerouslySetInnerHTML={{ __html: damageSvgMarkup }}
                               />
+                              {damageDrawings.preexistente ? (
+                                <img
+                                  src={damageDrawings.preexistente}
+                                  alt="Trazos preexistentes"
+                                  className="pointer-events-none absolute inset-0 h-full w-full object-fill"
+                                />
+                              ) : null}
                               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                               <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-alert-amber/80 px-3 py-1 text-[10px] font-bold uppercase text-white shadow">
                                 Seleccionar daños

@@ -2406,6 +2406,8 @@ def upload_media(recepcion_id: int, media_type: str, file: UploadFile = File(...
         "photo_damage_left",
         "photo_preexist_right",
         "photo_preexist_left",
+        "drawing_damage_siniestro",
+        "drawing_damage_preexistente",
     }:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="media_type inválido")
 
@@ -2423,6 +2425,37 @@ def upload_media(recepcion_id: int, media_type: str, file: UploadFile = File(...
 
     with get_connection() as conn:
         ensure_recepcion_media_table(conn)
+        single_asset_types = {
+            "video",
+            "signature",
+            "drawing_damage_siniestro",
+            "drawing_damage_preexistente",
+        }
+        if media_type in single_asset_types:
+            conn.row_factory = dict_row
+            old_rows = conn.execute(
+                """
+                SELECT file_path
+                FROM recepcion_media
+                WHERE recepcion_id = %s AND media_type = %s
+                """,
+                (recepcion_id, media_type),
+            ).fetchall()
+            conn.execute(
+                """
+                DELETE FROM recepcion_media
+                WHERE recepcion_id = %s AND media_type = %s
+                """,
+                (recepcion_id, media_type),
+            )
+            app_root = Path(__file__).resolve().parent.parent.parent
+            for row in old_rows:
+                old_file = app_root / str(row.get("file_path") or "").lstrip("/")
+                if old_file.exists() and old_file.is_file():
+                    try:
+                        old_file.unlink()
+                    except Exception:
+                        pass
         conn.execute(
             """
             INSERT INTO recepcion_media (recepcion_id, media_type, file_path, original_name)

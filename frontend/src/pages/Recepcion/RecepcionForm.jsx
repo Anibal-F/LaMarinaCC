@@ -20,6 +20,7 @@ export default function RecepcionForm() {
   })();
   const displayUserName = storedUser?.name || storedUser?.user_name || "Usuario";
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
   const [gruposAutos, setGruposAutos] = useState([]);
   const [marcasAutos, setMarcasAutos] = useState([]);
@@ -83,11 +84,18 @@ export default function RecepcionForm() {
   const siniestroSvgRef = useRef(null);
   const preexistSvgRef = useRef(null);
   const modalSvgRef = useRef(null);
+  const damageDrawCanvasRef = useRef(null);
+  const damageDrawLayerRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const audioStreamRef = useRef(null);
   const [recordingTarget, setRecordingTarget] = useState("");
   const [transcribingTarget, setTranscribingTarget] = useState("");
+  const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
+  const [isDamageDrawing, setIsDamageDrawing] = useState(false);
+  const [damageDrawings, setDamageDrawings] = useState({ siniestro: "", preexistente: "" });
+  const [damageDrawingDirty, setDamageDrawingDirty] = useState({ siniestro: false, preexistente: false });
+  const [savingDamageDrawing, setSavingDamageDrawing] = useState(false);
 
   const damageParts = [
     "FACIA DELANTERA",
@@ -182,6 +190,8 @@ export default function RecepcionForm() {
 
       if (target === "observaciones_generales") {
         setForm((prev) => ({ ...prev, observaciones: appendObservationText(prev.observaciones, transcript) }));
+      } else if (target === "estado_mecanico") {
+        setForm((prev) => ({ ...prev, estado_mecanico: appendObservationText(prev.estado_mecanico, transcript) }));
       } else if (target === "observaciones_siniestro") {
         setDamageObsSiniestro((prev) => appendObservationText(prev, transcript));
       } else if (target === "observaciones_preexistentes") {
@@ -395,11 +405,24 @@ export default function RecepcionForm() {
           const preLeft = media
             .filter((item) => item.media_type === "photo_preexist_left")
             .map(toPreview);
+          const drawingSiniestro = media
+            .filter((item) => item.media_type === "drawing_damage_siniestro")
+            .map((item) => asUrl(item.file_path))
+            .at(-1) || "";
+          const drawingPreexistente = media
+            .filter((item) => item.media_type === "drawing_damage_preexistente")
+            .map((item) => asUrl(item.file_path))
+            .at(-1) || "";
 
           setExistingDamageRightPreviews(right);
           setExistingDamageLeftPreviews(left);
           setExistingPreexistRightPreviews(preRight);
           setExistingPreexistLeftPreviews(preLeft);
+          setDamageDrawings({
+            siniestro: drawingSiniestro,
+            preexistente: drawingPreexistente,
+          });
+          setDamageDrawingDirty({ siniestro: false, preexistente: false });
         }
       } catch (err) {
         setError(err.message || "No se pudo cargar la recepción");
@@ -439,18 +462,7 @@ export default function RecepcionForm() {
       const recepcionId = isEditMode ? Number(editId) : created?.id;
       if (recepcionId) {
         const uploads = [];
-        const uploadMedia = async (file, mediaType) => {
-          const formData = new FormData();
-          formData.append("file", file);
-          const mediaResponse = await fetch(
-            `${import.meta.env.VITE_API_URL}/recepcion/registros/${recepcionId}/media?media_type=${mediaType}`,
-            { method: "POST", body: formData }
-          );
-          if (!mediaResponse.ok) {
-            const data = await mediaResponse.json().catch(() => null);
-            throw new Error(data?.detail || "No se pudo subir el archivo");
-          }
-        };
+        const uploadMedia = (file, mediaType) => uploadRecepcionMedia(recepcionId, file, mediaType);
 
         if (videoFile) uploads.push(uploadMedia(videoFile, "video"));
         damageRightFiles.forEach((file) => uploads.push(uploadMedia(file, "photo_damage_right")));
@@ -462,6 +474,24 @@ export default function RecepcionForm() {
           const file = new File([blob], "firma.png", { type: blob.type });
           uploads.push(uploadMedia(file, "signature"));
         }
+        const uploadDrawing = async (mode, mediaType) => {
+          const drawingValue = damageDrawings[mode];
+          const changed = damageDrawingDirty[mode];
+          if (!changed && !(drawingValue && !isEditMode)) return;
+
+          let blob;
+          if (drawingValue?.startsWith("data:")) {
+            blob = dataUrlToBlob(drawingValue);
+          } else if (!drawingValue) {
+            blob = await createTransparentPngBlob();
+          } else {
+            return;
+          }
+          const file = new File([blob], `dibujo-${mode}.png`, { type: "image/png" });
+          await uploadMedia(file, mediaType);
+        };
+        uploads.push(uploadDrawing("siniestro", "drawing_damage_siniestro"));
+        uploads.push(uploadDrawing("preexistente", "drawing_damage_preexistente"));
         if (uploads.length) {
           await Promise.all(uploads);
         }
@@ -509,6 +539,12 @@ export default function RecepcionForm() {
     const timer = setTimeout(() => setError(""), 4000);
     return () => clearTimeout(timer);
   }, [error]);
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(""), 2500);
+    return () => clearTimeout(timer);
+  }, [success]);
 
   useEffect(
     () => () => {
@@ -949,6 +985,72 @@ export default function RecepcionForm() {
     return new Blob([array], { type: mime });
   };
 
+  const createTransparentPngBlob = () =>
+    new Promise((resolve) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 2;
+      canvas.height = 2;
+      canvas.toBlob((blob) => resolve(blob || new Blob([], { type: "image/png" })), "image/png");
+    });
+
+  const uploadRecepcionMedia = async (recepcionId, file, mediaType) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const mediaResponse = await fetch(
+      `${import.meta.env.VITE_API_URL}/recepcion/registros/${recepcionId}/media?media_type=${mediaType}`,
+      { method: "POST", body: formData }
+    );
+    if (!mediaResponse.ok) {
+      const data = await mediaResponse.json().catch(() => null);
+      throw new Error(data?.detail || "No se pudo subir el archivo");
+    }
+  };
+
+  const persistDamageDrawingsIfNeeded = async (recepcionId) => {
+    if (!recepcionId) return;
+    const pendingModes = ["siniestro", "preexistente"].filter((mode) => damageDrawingDirty[mode]);
+    if (!pendingModes.length) return false;
+    setSavingDamageDrawing(true);
+    try {
+      await Promise.all(
+        pendingModes.map(async (mode) => {
+          const drawingValue = damageDrawings[mode];
+          let blob;
+          if (drawingValue?.startsWith("data:")) {
+            blob = dataUrlToBlob(drawingValue);
+          } else if (!drawingValue) {
+            blob = await createTransparentPngBlob();
+          } else {
+            return;
+          }
+          const file = new File([blob], `dibujo-${mode}.png`, { type: "image/png" });
+          const mediaType =
+            mode === "siniestro" ? "drawing_damage_siniestro" : "drawing_damage_preexistente";
+          await uploadRecepcionMedia(recepcionId, file, mediaType);
+        })
+      );
+      setDamageDrawingDirty((prev) => ({ ...prev, siniestro: false, preexistente: false }));
+      return true;
+    } finally {
+      setSavingDamageDrawing(false);
+    }
+  };
+
+  const closeDamageModal = async () => {
+    try {
+      let saved = false;
+      if (isEditMode && editId) {
+        saved = await persistDamageDrawingsIfNeeded(Number(editId));
+      }
+      if (saved) {
+        setSuccess("Dibujo guardado.");
+      }
+      setDamageModalOpen(false);
+    } catch (err) {
+      setError(err.message || "No se pudo guardar el dibujo de daños.");
+    }
+  };
+
   const activeDamageParts = damageMode === "siniestro" ? damagePartsSiniestro : damagePartsPreexist;
 
   const toggleDamagePart = (part) => {
@@ -997,6 +1099,122 @@ export default function RecepcionForm() {
       damageMode
     );
   }, [damageSvgMarkup, damageModalOpen, damageMode, damagePartsSiniestro, damagePartsPreexist]);
+
+  const drawDamageSnapshot = (mode) => {
+    const canvas = damageDrawCanvasRef.current;
+    const layer = damageDrawLayerRef.current;
+    if (!canvas || !layer) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const dataUrl = damageDrawings[mode];
+    if (!dataUrl) return;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+    image.src = dataUrl;
+  };
+
+  const resizeDamageDrawCanvas = () => {
+    const canvas = damageDrawCanvasRef.current;
+    const layer = damageDrawLayerRef.current;
+    if (!canvas || !layer) return;
+    const width = Math.max(1, Math.floor(layer.clientWidth));
+    const height = Math.max(1, Math.floor(layer.clientHeight));
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * ratio);
+    canvas.height = Math.floor(height * ratio);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = damageMode === "siniestro" ? "#e04b4b" : "#f2a300";
+    drawDamageSnapshot(damageMode);
+  };
+
+  const getDamageDrawPoint = (event) => {
+    const canvas = damageDrawCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = event.clientX ?? event.touches?.[0]?.clientX;
+    const clientY = event.clientY ?? event.touches?.[0]?.clientY;
+    if (clientX == null || clientY == null) return null;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
+  const startDamageDraw = (event) => {
+    if (!damageDrawEnabled) return;
+    event.preventDefault();
+    const canvas = damageDrawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const point = getDamageDrawPoint(event);
+    if (!ctx || !point) return;
+    ctx.beginPath();
+    ctx.moveTo(point.x, point.y);
+    setIsDamageDrawing(true);
+  };
+
+  const drawDamage = (event) => {
+    if (!damageDrawEnabled || !isDamageDrawing) return;
+    event.preventDefault();
+    const canvas = damageDrawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const point = getDamageDrawPoint(event);
+    if (!ctx || !point) return;
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  };
+
+  const endDamageDraw = () => {
+    if (!isDamageDrawing) return;
+    const canvas = damageDrawCanvasRef.current;
+    if (!canvas) return;
+    setIsDamageDrawing(false);
+    setDamageDrawings((prev) => ({
+      ...prev,
+      [damageMode]: canvas.toDataURL("image/png"),
+    }));
+    setDamageDrawingDirty((prev) => ({ ...prev, [damageMode]: true }));
+  };
+
+  const clearDamageDrawing = () => {
+    const canvas = damageDrawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setDamageDrawings((prev) => ({ ...prev, [damageMode]: "" }));
+    setDamageDrawingDirty((prev) => ({ ...prev, [damageMode]: true }));
+  };
+
+  useEffect(() => {
+    if (!damageModalOpen) return;
+    resizeDamageDrawCanvas();
+    const onResize = () => resizeDamageDrawCanvas();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [damageModalOpen, damageMode, damageDrawings]);
+
+  useEffect(() => {
+    if (!damageModalOpen) return;
+    drawDamageSnapshot(damageMode);
+  }, [damageDrawings, damageMode, damageModalOpen]);
+
+  useEffect(() => {
+    if (damageModalOpen) return;
+    setDamageDrawEnabled(false);
+    setIsDamageDrawing(false);
+  }, [damageModalOpen]);
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
@@ -1033,6 +1251,11 @@ export default function RecepcionForm() {
             {error ? (
               <div className="fixed right-6 top-20 z-50 rounded-lg border border-alert-red/40 bg-alert-red/10 px-4 py-3 text-sm text-alert-red shadow-lg">
                 {error}
+              </div>
+            ) : null}
+            {success ? (
+              <div className="fixed right-6 top-20 z-50 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 shadow-lg">
+                {success}
               </div>
             ) : null}
             <form className="max-w-7xl mx-auto grid grid-cols-12 gap-8 pb-12">
@@ -1772,42 +1995,47 @@ export default function RecepcionForm() {
                     </div>
                     <div className="space-y-3 pt-4 border-t border-border-dark/50">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Estado Mecánico e Interiores</label>
-                      <textarea
-                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-xs text-white h-16"
-                        placeholder="Daños mecánicos o tapicería..."
-                        value={form.estado_mecanico}
-                        onChange={(event) => setForm({ ...form, estado_mecanico: event.target.value })}
-                      ></textarea>
+                      <div className="relative">
+                        <textarea
+                          className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 pr-12 text-xs text-white h-16"
+                          placeholder="Daños mecánicos o tapicería..."
+                          value={form.estado_mecanico}
+                          onChange={(event) => setForm({ ...form, estado_mecanico: event.target.value })}
+                        ></textarea>
+                        {recordingTarget === "estado_mecanico" ? (
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-alert-red/50 bg-alert-red/15 text-alert-red"
+                            onClick={stopObservationRecording}
+                            title="Detener grabación"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">stop_circle</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-border-dark bg-background-dark/90 text-slate-300 hover:text-white disabled:opacity-50"
+                            onClick={() => startObservationRecording("estado_mecanico")}
+                            disabled={saving || Boolean(transcribingTarget)}
+                            title="Grabar audio"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">mic</span>
+                          </button>
+                        )}
+                      </div>
+                      {recordingTarget === "estado_mecanico" ? (
+                        <p className="text-[10px] text-alert-red font-bold uppercase">
+                          Grabando... vuelve a presionar para detener.
+                        </p>
+                      ) : null}
+                      {transcribingTarget === "estado_mecanico" ? (
+                        <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
+                      ) : null}
                     </div>
                     <div className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase">
-                          Observaciones Adicionales
-                        </label>
-                        <div className="flex items-center gap-2">
-                          {recordingTarget === "observaciones_generales" ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 rounded-md border border-alert-red/50 bg-alert-red/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-alert-red"
-                              onClick={stopObservationRecording}
-                              disabled={saving}
-                            >
-                              <span className="material-symbols-outlined text-sm">stop_circle</span>
-                              Detener grabación
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 rounded-md border border-border-dark bg-background-dark/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300 hover:text-white disabled:opacity-50"
-                              onClick={() => startObservationRecording("observaciones_generales")}
-                              disabled={saving || Boolean(transcribingTarget)}
-                            >
-                              <span className="material-symbols-outlined text-sm">mic</span>
-                              Grabar audio
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">
+                        Observaciones Adicionales
+                      </label>
                       {recordingTarget === "observaciones_generales" ? (
                         <p className="text-[10px] text-alert-red font-bold uppercase">
                           Grabando... vuelve a presionar para detener.
@@ -1816,12 +2044,35 @@ export default function RecepcionForm() {
                       {transcribingTarget === "observaciones_generales" ? (
                         <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
                       ) : null}
-                      <textarea
-                        className="w-full bg-background-dark border-border-dark rounded-lg px-4 py-2 text-sm text-white h-20"
-                        placeholder="Ej. El vehículo ingresa con objetos de valor en guantera..."
-                        value={form.observaciones}
-                        onChange={(event) => setForm({ ...form, observaciones: event.target.value })}
-                      ></textarea>
+                      <div className="relative">
+                        <textarea
+                          className="w-full bg-background-dark border-border-dark rounded-lg px-4 py-2 pr-12 text-sm text-white h-20"
+                          placeholder="Ej. El vehículo ingresa con objetos de valor en guantera..."
+                          value={form.observaciones}
+                          onChange={(event) => setForm({ ...form, observaciones: event.target.value })}
+                        ></textarea>
+                        {recordingTarget === "observaciones_generales" ? (
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-alert-red/50 bg-alert-red/15 text-alert-red"
+                            onClick={stopObservationRecording}
+                            disabled={saving}
+                            title="Detener grabación"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">stop_circle</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-border-dark bg-background-dark/90 text-slate-300 hover:text-white disabled:opacity-50"
+                            onClick={() => startObservationRecording("observaciones_generales")}
+                            disabled={saving || Boolean(transcribingTarget)}
+                            title="Grabar audio"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">mic</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -1895,25 +2146,59 @@ export default function RecepcionForm() {
               <button
                 type="button"
                 className="text-slate-400 hover:text-white transition-colors"
-                onClick={() => setDamageModalOpen(false)}
+                onClick={closeDamageModal}
+                disabled={savingDamageDrawing}
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
             <div className="flex-1 overflow-hidden p-6 space-y-6">
-              <div
-                ref={modalSvgRef}
-                className="w-full rounded-xl border border-border-dark bg-white p-4"
-                onClick={(event) => {
-                  const target = event.target;
-                  const element = target?.closest?.("#ZONAS [id]");
-                  const id = element?.getAttribute?.("id");
-                  if (id && (damageSvgIds.length === 0 || damageSvgIds.includes(id))) {
-                    toggleDamagePart(id);
-                  }
-                }}
-                dangerouslySetInnerHTML={{ __html: damageSvgMarkup }}
-              />
+              <div ref={damageDrawLayerRef} className="relative w-full">
+                <div
+                  ref={modalSvgRef}
+                  className="w-full rounded-xl border border-border-dark bg-white p-4"
+                  onClick={(event) => {
+                    if (damageDrawEnabled) return;
+                    const target = event.target;
+                    const element = target?.closest?.("#ZONAS [id]");
+                    const id = element?.getAttribute?.("id");
+                    if (id && (damageSvgIds.length === 0 || damageSvgIds.includes(id))) {
+                      toggleDamagePart(id);
+                    }
+                  }}
+                  dangerouslySetInnerHTML={{ __html: damageSvgMarkup }}
+                />
+                <canvas
+                  ref={damageDrawCanvasRef}
+                  className={`absolute inset-0 rounded-xl ${damageDrawEnabled ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"}`}
+                  onPointerDown={startDamageDraw}
+                  onPointerMove={drawDamage}
+                  onPointerUp={endDamageDraw}
+                  onPointerLeave={endDamageDraw}
+                />
+                <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={`inline-flex size-8 items-center justify-center rounded-md border transition-colors ${
+                      damageDrawEnabled
+                        ? "border-primary/60 bg-primary/20 text-primary"
+                        : "border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                    }`}
+                    onClick={() => setDamageDrawEnabled((prev) => !prev)}
+                    title={damageDrawEnabled ? "Desactivar lápiz" : "Dibujar a mano alzada"}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                    onClick={clearDamageDrawing}
+                    title="Limpiar dibujo"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">ink_eraser</span>
+                  </button>
+                </div>
+              </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-[11px] uppercase tracking-widest text-slate-500">
                   <span>Partes</span>
@@ -1975,44 +2260,11 @@ export default function RecepcionForm() {
                   addLabel="Agregar parte"
                 />
                 <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">
-                      {damageMode === "siniestro"
-                        ? "Observaciones de Daños del Siniestro"
-                        : "Observaciones de Daños Preexistentes"}
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {recordingTarget ===
-                      (damageMode === "siniestro"
-                        ? "observaciones_siniestro"
-                        : "observaciones_preexistentes") ? (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 rounded-md border border-alert-red/50 bg-alert-red/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-alert-red"
-                          onClick={stopObservationRecording}
-                        >
-                          <span className="material-symbols-outlined text-sm">stop_circle</span>
-                          Detener grabación
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 rounded-md border border-border-dark bg-background-dark/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300 hover:text-white disabled:opacity-50"
-                          onClick={() =>
-                            startObservationRecording(
-                              damageMode === "siniestro"
-                                ? "observaciones_siniestro"
-                                : "observaciones_preexistentes"
-                            )
-                          }
-                          disabled={Boolean(transcribingTarget)}
-                        >
-                          <span className="material-symbols-outlined text-sm">mic</span>
-                          Grabar audio
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">
+                    {damageMode === "siniestro"
+                      ? "Observaciones de Daños del Siniestro"
+                      : "Observaciones de Daños Preexistentes"}
+                  </label>
                   {recordingTarget ===
                   (damageMode === "siniestro"
                     ? "observaciones_siniestro"
@@ -2027,17 +2279,48 @@ export default function RecepcionForm() {
                     : "observaciones_preexistentes") ? (
                     <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
                   ) : null}
-                  <textarea
-                    className="w-full rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                    rows={3}
-                    placeholder="Escribe observaciones..."
-                    value={damageMode === "siniestro" ? damageObsSiniestro : damageObsPreexist}
-                    onChange={(event) =>
-                      damageMode === "siniestro"
-                        ? setDamageObsSiniestro(event.target.value)
-                        : setDamageObsPreexist(event.target.value)
-                    }
-                  />
+                  <div className="relative">
+                    <textarea
+                      className="w-full rounded-lg border border-border-dark bg-background-dark px-3 py-2 pr-12 text-sm text-white"
+                      rows={3}
+                      placeholder="Escribe observaciones..."
+                      value={damageMode === "siniestro" ? damageObsSiniestro : damageObsPreexist}
+                      onChange={(event) =>
+                        damageMode === "siniestro"
+                          ? setDamageObsSiniestro(event.target.value)
+                          : setDamageObsPreexist(event.target.value)
+                      }
+                    />
+                    {recordingTarget ===
+                    (damageMode === "siniestro"
+                      ? "observaciones_siniestro"
+                      : "observaciones_preexistentes") ? (
+                      <button
+                        type="button"
+                        className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-alert-red/50 bg-alert-red/15 text-alert-red"
+                        onClick={stopObservationRecording}
+                        title="Detener grabación"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">stop_circle</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-border-dark bg-background-dark/90 text-slate-300 hover:text-white disabled:opacity-50"
+                        onClick={() =>
+                          startObservationRecording(
+                            damageMode === "siniestro"
+                              ? "observaciones_siniestro"
+                              : "observaciones_preexistentes"
+                          )
+                        }
+                        disabled={Boolean(transcribingTarget)}
+                        title="Grabar audio"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">mic</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2045,16 +2328,18 @@ export default function RecepcionForm() {
               <button
                 type="button"
                 className="rounded-lg border border-border-dark px-4 py-2 text-sm text-slate-300"
-                onClick={() => setDamageModalOpen(false)}
+                onClick={closeDamageModal}
+                disabled={savingDamageDrawing}
               >
                 Cerrar
               </button>
               <button
                 type="button"
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white"
-                onClick={() => setDamageModalOpen(false)}
+                onClick={closeDamageModal}
+                disabled={savingDamageDrawing}
               >
-                Guardar selección
+                {savingDamageDrawing ? "Guardando..." : "Guardar selección"}
               </button>
             </div>
           </div>
@@ -2111,6 +2396,8 @@ export default function RecepcionForm() {
                   setDamageSelectValue("");
                   setDamageObsSiniestro("");
                   setDamageObsPreexist("");
+                  setDamageDrawings({ siniestro: "", preexistente: "" });
+                  setDamageDrawingDirty({ siniestro: false, preexistente: false });
                   setShowResetConfirm(false);
                 }}
               >

@@ -415,10 +415,14 @@ export default function ValuarVehiculo() {
     });
   };
 
-  const handleStageClick = (event) => {
+  const handleStagePointerDown = (event) => {
     if (!annotationMode || !selectedEvidenceKey || !stageRef.current) return;
+    if (typeof event.button === "number" && event.button !== 0) return;
     const target = event.target;
     if (target.closest("[data-annotation-item='true']")) return;
+    if (target.closest("[data-annotation-control='true']")) return;
+
+    event.preventDefault();
 
     const rect = stageRef.current.getBoundingClientRect();
     const clickX = ((event.clientX - rect.left) / rect.width) * 100;
@@ -444,6 +448,7 @@ export default function ValuarVehiculo() {
 
     updateCurrentAnnotations((existing) => [...existing, annotation]);
     setActiveAnnotationId(annotation.id);
+    setShapeMenuOpen(false);
   };
 
   const beginMoveAnnotation = (event, annotationId) => {
@@ -718,13 +723,14 @@ export default function ValuarVehiculo() {
 
                           <div
                             ref={stageRef}
-                            onClick={handleStageClick}
+                            onMouseDown={handleStagePointerDown}
                             className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
                           >
                             <img
                               src={filePreviewUrl(selectedEvidence)}
                               alt={selectedEvidence?.archivo_nombre || "Evidencia"}
                               className="w-full h-full object-cover"
+                              draggable={false}
                             />
 
                             <div className="absolute inset-0">
@@ -819,7 +825,10 @@ export default function ValuarVehiculo() {
                             </div>
 
                             {activeAnnotation ? (
-                              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-surface-dark/95 border border-border-dark rounded-lg px-3 py-2 flex items-center gap-2 shadow-lg max-w-[92%]">
+                              <div
+                                data-annotation-control="true"
+                                className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-surface-dark/95 border border-border-dark rounded-lg px-3 py-2 flex items-center gap-2 shadow-lg max-w-[92%]"
+                              >
                                 <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
                                   Nombre
                                 </span>
@@ -834,7 +843,10 @@ export default function ValuarVehiculo() {
                             ) : null}
 
                             {shapeMenuOpen ? (
-                              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 bg-surface-dark/95 border border-border-dark rounded-lg p-2 shadow-xl flex items-center gap-2">
+                              <div
+                                data-annotation-control="true"
+                                className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 bg-surface-dark/95 border border-border-dark rounded-lg p-2 shadow-xl flex items-center gap-2"
+                              >
                                 {annotationShapes.map((shape) => (
                                   <button
                                     key={shape.id}
@@ -853,7 +865,10 @@ export default function ValuarVehiculo() {
                               </div>
                             ) : null}
 
-                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-surface-dark/90 backdrop-blur-md px-4 py-2 rounded-full border border-border-dark flex items-center gap-5 shadow-xl z-30">
+                            <div
+                              data-annotation-control="true"
+                              className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-surface-dark/90 backdrop-blur-md px-4 py-2 rounded-full border border-border-dark flex items-center gap-5 shadow-xl z-30"
+                            >
                               <button type="button" className="text-white hover:text-amber-400 transition-colors">
                                 <span className="material-symbols-outlined text-xl">zoom_in</span>
                               </button>

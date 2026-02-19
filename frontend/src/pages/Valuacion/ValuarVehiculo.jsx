@@ -87,6 +87,8 @@ export default function ValuarVehiculo() {
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [evidenceActionError, setEvidenceActionError] = useState("");
+  const [deletingEvidenceId, setDeletingEvidenceId] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [expedienteFiles, setExpedienteFiles] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("frontal");
@@ -322,6 +324,7 @@ export default function ValuarVehiculo() {
     if (!files.length) return;
 
     setUploadError("");
+    setEvidenceActionError("");
     setUploading(true);
     try {
       for (const file of files) {
@@ -350,6 +353,44 @@ export default function ValuarVehiculo() {
       setUploadError(err.message || "No se pudo subir la evidencia.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDeleteEvidence = async (item, event) => {
+    event?.stopPropagation();
+    if (!item?.id) {
+      setEvidenceActionError("No se pudo identificar el archivo a eliminar.");
+      return;
+    }
+    const confirmed = window.confirm("¿Eliminar esta fotografia de la galeria?");
+    if (!confirmed) return;
+
+    setEvidenceActionError("");
+    setDeletingEvidenceId(item.id);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/expedientes/archivos/${item.id}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo eliminar la evidencia.");
+      }
+
+      const evidenceKey = item?.archivo_path || item?.path || item?.archivo_nombre || "";
+      if (evidenceKey) {
+        setAnnotationsByEvidence((prev) => {
+          if (!prev[evidenceKey]) return prev;
+          const next = { ...prev };
+          delete next[evidenceKey];
+          return next;
+        });
+      }
+      setExpedienteFiles((prev) => prev.filter((file) => String(file.id) !== String(item.id)));
+      setUploadedFiles((prev) => prev.filter((file) => String(file.id) !== String(item.id)));
+    } catch (err) {
+      setEvidenceActionError(err.message || "No se pudo eliminar la evidencia.");
+    } finally {
+      setDeletingEvidenceId(null);
     }
   };
 
@@ -609,6 +650,9 @@ export default function ValuarVehiculo() {
                           </button>
                           {uploadError ? (
                             <span className="text-[11px] text-alert-red mt-2 block">{uploadError}</span>
+                          ) : null}
+                          {evidenceActionError ? (
+                            <span className="text-[11px] text-alert-red mt-2 block">{evidenceActionError}</span>
                           ) : null}
                           {uploadedFiles.length ? (
                             <p className="mt-2 text-[10px] text-slate-400">
@@ -886,16 +930,23 @@ export default function ValuarVehiculo() {
                               const badge = evidenceTag(item);
                               const selected = index === selectedEvidenceIndex;
                               return (
-                                <button
+                                <div
                                   key={item.archivo_path || item.path || item.archivo_nombre || index}
-                                  type="button"
                                   className={`relative aspect-square rounded-lg border overflow-hidden text-left ${
                                     selected
                                       ? "border-primary ring-2 ring-primary/50"
                                       : "border-border-dark hover:border-primary/50"
                                   }`}
                                   onClick={() => setSelectedEvidenceIndex(index)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      setSelectedEvidenceIndex(index);
+                                    }
+                                  }}
                                   title={item.archivo_nombre || "Evidencia"}
+                                  role="button"
+                                  tabIndex={0}
                                 >
                                   <img
                                     alt={item.archivo_nombre || "Evidencia"}
@@ -907,7 +958,18 @@ export default function ValuarVehiculo() {
                                   >
                                     {badge.label}
                                   </span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleDeleteEvidence(item, event)}
+                                    disabled={deletingEvidenceId === item.id}
+                                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 border border-white/20 text-white hover:bg-red-600/90 transition-colors disabled:opacity-60 flex items-center justify-center"
+                                    title="Eliminar evidencia"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">
+                                      {deletingEvidenceId === item.id ? "hourglass_empty" : "delete"}
+                                    </span>
+                                  </button>
+                                </div>
                               );
                             })}
                           </div>

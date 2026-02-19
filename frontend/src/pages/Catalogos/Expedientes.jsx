@@ -21,8 +21,9 @@ function isImageFile(file) {
 function fileUrl(file) {
   const path = file?.archivo_path || "";
   if (!path) return "";
-  if (/^https?:\/\//.test(path)) return path;
-  return `${import.meta.env.VITE_API_URL}${path}`;
+  if (/^https?:\/\//.test(path)) return encodeURI(path);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${import.meta.env.VITE_API_URL}${encodeURI(normalizedPath)}`;
 }
 
 export default function CatalogoExpedientes() {

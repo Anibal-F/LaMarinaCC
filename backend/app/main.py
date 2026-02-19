@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.auth.routes import router as auth_router
@@ -48,9 +49,24 @@ app.include_router(expedientes_router)
 app.include_router(reportes_router)
 app.include_router(auth_router)
 
-media_dir = Path(__file__).resolve().parent / "media"
-media_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/media", StaticFiles(directory=media_dir), name="media")
+app_media_dir = Path(__file__).resolve().parent / "media"
+legacy_media_dir = Path(__file__).resolve().parent.parent / "media"
+app_media_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/media/{file_path:path}")
+def serve_media(file_path: str):
+    requested = Path(file_path)
+    if requested.is_absolute() or ".." in requested.parts:
+        raise HTTPException(status_code=400, detail="Ruta de archivo invalida")
+
+    for base_dir in (app_media_dir, legacy_media_dir):
+        base_resolved = base_dir.resolve()
+        candidate = (base_dir / requested).resolve()
+        if str(candidate).startswith(str(base_resolved)) and candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+
+    raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
 
 @app.get("/")

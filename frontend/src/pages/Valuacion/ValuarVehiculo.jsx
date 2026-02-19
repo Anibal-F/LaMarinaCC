@@ -38,6 +38,12 @@ function buildVehiculoTitle(record) {
 }
 
 function detectCategory(item) {
+  const explicit = String(item?.categoria || "")
+    .trim()
+    .toLowerCase();
+  if (explicit && evidenceCategories.some((category) => category.id === explicit)) {
+    return explicit;
+  }
   const raw = `${item?.archivo_nombre || ""} ${item?.archivo_path || item?.path || ""}`.toLowerCase();
   if (raw.includes("frontal")) return "frontal";
   if (raw.includes("trasera")) return "trasera";
@@ -321,6 +327,7 @@ export default function ValuarVehiculo() {
       for (const file of files) {
         const formData = new FormData();
         formData.append("tipo", "valuacion_foto");
+        formData.append("categoria", selectedCategory || "otros");
         formData.append("file", file);
         const response = await fetch(
           `${import.meta.env.VITE_API_URL}/expedientes/${encodeURIComponent(

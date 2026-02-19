@@ -23,6 +23,15 @@ ALLOWED_TYPES = {
 }
 
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"}
+ALLOWED_CATEGORIAS = {
+    "frontal",
+    "trasera",
+    "lateral_izquierdo",
+    "lateral_derecho",
+    "interior",
+    "motor",
+    "otros",
+}
 
 
 def _ensure_expediente(conn, reporte_siniestro: str) -> int:
@@ -52,6 +61,15 @@ def _safe_token(value: str, fallback: str = "archivo") -> str:
     token = re.sub(r"\s+", "_", raw)
     token = re.sub(r"[^A-Za-z0-9_.-]", "", token)
     return token or fallback
+
+
+def _ensure_categoria_column(conn):
+    conn.execute(
+        """
+        ALTER TABLE expediente_archivos
+        ADD COLUMN IF NOT EXISTS categoria VARCHAR(40)
+        """
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -100,6 +118,7 @@ def get_expediente(reporte_siniestro: str):
         raise HTTPException(status_code=400, detail="reporte_siniestro requerido")
 
     with get_connection() as conn:
+        _ensure_categoria_column(conn)
         conn.row_factory = dict_row
         expediente = conn.execute(
             "SELECT id, reporte_siniestro, created_at FROM expedientes WHERE reporte_siniestro = %s",
@@ -110,7 +129,7 @@ def get_expediente(reporte_siniestro: str):
 
         archivos = conn.execute(
             """
-            SELECT id, tipo, archivo_path, archivo_nombre, archivo_size, mime_type, created_at
+            SELECT id, tipo, categoria, archivo_path, archivo_nombre, archivo_size, mime_type, created_at
             FROM expediente_archivos
             WHERE expediente_id = %s
             ORDER BY created_at DESC
@@ -125,14 +144,18 @@ def get_expediente(reporte_siniestro: str):
 def upload_expediente_archivo(
     reporte_siniestro: str,
     tipo: str = Form(...),
+    categoria: str = Form(default="otros"),
     file: UploadFile = File(...),
 ):
     reporte_siniestro = (reporte_siniestro or "").strip()
     tipo = (tipo or "").strip()
+    categoria = (categoria or "otros").strip().lower()
     if not reporte_siniestro:
         raise HTTPException(status_code=400, detail="reporte_siniestro requerido")
     if tipo not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail="tipo de archivo inválido")
+    if categoria not in ALLOWED_CATEGORIAS:
+        categoria = "otros"
 
     extension = Path(file.filename or "").suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
@@ -150,22 +173,25 @@ def upload_expediente_archivo(
     relative_path = f"/media/expedientes/{reporte_siniestro}/{tipo}/{filename}"
 
     with get_connection() as conn:
+        _ensure_categoria_column(conn)
         expediente_id = _ensure_expediente(conn, reporte_siniestro)
         conn.execute(
             """
             INSERT INTO expediente_archivos (
                 expediente_id,
                 tipo,
+                categoria,
                 archivo_path,
                 archivo_nombre,
                 archivo_size,
                 mime_type
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 expediente_id,
                 tipo,
+                categoria,
                 relative_path,
                 file.filename,
                 file_size,
@@ -176,6 +202,7 @@ def upload_expediente_archivo(
     return {
         "reporte_siniestro": reporte_siniestro,
         "tipo": tipo,
+        "categoria": categoria,
         "path": relative_path,
         "name": file.filename,
         "size": file_size,

@@ -38,7 +38,7 @@ function buildVehiculoTitle(record) {
 }
 
 function detectCategory(item) {
-  const raw = `${item?.archivo_nombre || ""} ${item?.path || ""}`.toLowerCase();
+  const raw = `${item?.archivo_nombre || ""} ${item?.archivo_path || item?.path || ""}`.toLowerCase();
   if (raw.includes("frontal")) return "frontal";
   if (raw.includes("trasera")) return "trasera";
   if (raw.includes("izquierd")) return "lateral_izquierdo";
@@ -49,7 +49,7 @@ function detectCategory(item) {
 }
 
 function evidenceTag(item) {
-  const raw = `${item?.archivo_nombre || ""} ${item?.path || ""}`.toLowerCase();
+  const raw = `${item?.archivo_nombre || ""} ${item?.archivo_path || item?.path || ""}`.toLowerCase();
   if (raw.includes("preexist")) {
     return { label: "Preexistente", classes: "bg-blue-600/90 border-blue-500/60 text-white" };
   }
@@ -64,9 +64,10 @@ function formatCurrency(value) {
 }
 
 function filePreviewUrl(item) {
-  if (!item?.path) return "";
-  if (/^https?:\/\//.test(item.path)) return item.path;
-  return `${import.meta.env.VITE_API_URL}${item.path}`;
+  const relativePath = item?.archivo_path || item?.path || "";
+  if (!relativePath) return "";
+  if (/^https?:\/\//.test(relativePath)) return relativePath;
+  return `${import.meta.env.VITE_API_URL}${relativePath}`;
 }
 
 export default function ValuarVehiculo() {
@@ -240,7 +241,8 @@ export default function ValuarVehiculo() {
   }, [visibleEvidence, selectedEvidenceIndex]);
 
   const selectedEvidence = visibleEvidence[selectedEvidenceIndex] || null;
-  const selectedEvidenceKey = selectedEvidence?.path || selectedEvidence?.archivo_nombre || "";
+  const selectedEvidenceKey =
+    selectedEvidence?.archivo_path || selectedEvidence?.path || selectedEvidence?.archivo_nombre || "";
   const currentAnnotations = useMemo(
     () => annotationsByEvidence[selectedEvidenceKey] || [],
     [annotationsByEvidence, selectedEvidenceKey]
@@ -878,7 +880,7 @@ export default function ValuarVehiculo() {
                               const selected = index === selectedEvidenceIndex;
                               return (
                                 <button
-                                  key={item.path || item.archivo_nombre || index}
+                                  key={item.archivo_path || item.path || item.archivo_nombre || index}
                                   type="button"
                                   className={`relative aspect-square rounded-lg border overflow-hidden text-left ${
                                     selected

@@ -1,7 +1,11 @@
+import re
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from psycopg.rows import dict_row
 
 from app.core.db import get_connection
@@ -39,6 +43,15 @@ def _ensure_expediente(conn, reporte_siniestro: str) -> int:
         (reporte_siniestro,),
     ).fetchone()
     return row["id"]
+
+
+def _safe_token(value: str, fallback: str = "archivo") -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return fallback
+    token = re.sub(r"\s+", "_", raw)
+    token = re.sub(r"[^A-Za-z0-9_.-]", "", token)
+    return token or fallback
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -167,3 +180,92 @@ def upload_expediente_archivo(
         "name": file.filename,
         "size": file_size,
     }
+
+
+@router.delete("/archivos/{archivo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_expediente_archivo(archivo_id: int):
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        row = conn.execute(
+            """
+            SELECT id, archivo_path
+            FROM expediente_archivos
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (archivo_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+        conn.execute("DELETE FROM expediente_archivos WHERE id = %s", (archivo_id,))
+
+    relative_path = (row.get("archivo_path") or "").strip()
+    if relative_path:
+        app_root = Path(__file__).resolve().parent.parent.parent
+        disk_path = app_root / relative_path.lstrip("/")
+        if disk_path.exists() and disk_path.is_file():
+            disk_path.unlink()
+
+    return None
+
+
+@router.get("/{reporte_siniestro}/download")
+def download_expediente_zip(reporte_siniestro: str):
+    reporte_siniestro = (reporte_siniestro or "").strip()
+    if not reporte_siniestro:
+        raise HTTPException(status_code=400, detail="reporte_siniestro requerido")
+
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        expediente = conn.execute(
+            "SELECT id, reporte_siniestro FROM expedientes WHERE reporte_siniestro = %s",
+            (reporte_siniestro,),
+        ).fetchone()
+        if not expediente:
+            raise HTTPException(status_code=404, detail="Expediente no encontrado")
+
+        rows = conn.execute(
+            """
+            SELECT id, tipo, archivo_path, archivo_nombre
+            FROM expediente_archivos
+            WHERE expediente_id = %s
+            ORDER BY created_at ASC
+            """,
+            (expediente["id"],),
+        ).fetchall()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="No hay archivos para descargar")
+
+    app_root = Path(__file__).resolve().parent.parent.parent
+    buffer = BytesIO()
+    added = 0
+
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as zip_file:
+        for index, row in enumerate(rows, start=1):
+            relative_path = (row.get("archivo_path") or "").strip()
+            if not relative_path:
+                continue
+
+            disk_path = app_root / relative_path.lstrip("/")
+            if not disk_path.exists() or not disk_path.is_file():
+                continue
+
+            original_name = row.get("archivo_nombre") or disk_path.name
+            safe_original = _safe_token(original_name, fallback=f"archivo_{index}")
+            safe_tipo = _safe_token(row.get("tipo") or "archivo", fallback="archivo")
+            arcname = f"{index:03d}_{safe_tipo}_{safe_original}"
+            zip_file.write(disk_path, arcname=arcname)
+            added += 1
+
+    if added == 0:
+        raise HTTPException(status_code=404, detail="No se encontraron archivos físicos para comprimir")
+
+    buffer.seek(0)
+    zip_name = f"Expediente_{_safe_token(expediente['reporte_siniestro'], fallback='sin_folio')}.zip"
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )

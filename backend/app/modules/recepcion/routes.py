@@ -220,6 +220,38 @@ def _parse_orden_fields(
             field_debug[field_name] = "regex"
         return value
 
+    def detect_transmision() -> str:
+        # Try KV first for documents where checkbox state is included in form extraction.
+        for key, entry in kv.items():
+            if "TRANSMISION" not in key and "TRANSMISSION" not in key:
+                continue
+            combined = _normalize_key_label(f"{entry.get('key', '')} {entry.get('value', '')}")
+            if re.search(r"AUTOMAT(?:ICA|IC)\s*(X|XX|CHECK|SELECT|SI|YES|TRUE|1|■|█|☒|☑)", combined):
+                return "Automatica"
+            if re.search(r"MANUAL\s*(X|XX|CHECK|SELECT|SI|YES|TRUE|1|■|█|☒|☑)", combined):
+                return "Manual"
+            if re.search(r"(X|■|█|☒|☑)\s*AUTOMAT(?:ICA|IC)", combined):
+                return "Automatica"
+            if re.search(r"(X|■|█|☒|☑)\s*MANUAL", combined):
+                return "Manual"
+
+        # Fallback using OCR lines around "Transmision".
+        if normalized_lines:
+            for idx, line in enumerate(normalized_lines):
+                up = _normalize_key_label(line)
+                if "TRANSMISION" not in up and "TRANSMISSION" not in up:
+                    continue
+                window = " ".join(_normalize_key_label(item) for item in normalized_lines[idx : idx + 4])
+                if re.search(r"AUTOMAT(?:ICA|IC)\s*(X|■|█|☒|☑)", window) or re.search(
+                    r"(X|■|█|☒|☑)\s*AUTOMAT(?:ICA|IC)", window
+                ):
+                    return "Automatica"
+                if re.search(r"MANUAL\s*(X|■|█|☒|☑)", window) or re.search(
+                    r"(X|■|█|☒|☑)\s*MANUAL", window
+                ):
+                    return "Manual"
+        return ""
+
     def normalize_time(raw_value: str) -> str:
         if not raw_value:
             return ""
@@ -816,6 +848,7 @@ def _parse_orden_fields(
         "serie_auto": serie_auto,
         "placas": placas,
         "kilometraje": kilometraje,
+        "transmision": detect_transmision(),
         "descripcion_siniestro": descripcion_siniestro,
     }
 
@@ -846,6 +879,15 @@ def ensure_recepcion_media_table(conn):
         """
         CREATE INDEX IF NOT EXISTS idx_recepcion_media_recepcion_type
         ON recepcion_media(recepcion_id, media_type)
+        """
+    )
+
+
+def ensure_orden_admision_transmision_column(conn):
+    conn.execute(
+        """
+        ALTER TABLE orden_admision
+        ADD COLUMN IF NOT EXISTS transmision VARCHAR(20)
         """
     )
 
@@ -1258,6 +1300,7 @@ def lookup_por_placas(placas: str):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="placas requerido")
 
     with get_connection() as conn:
+        ensure_orden_admision_transmision_column(conn)
         conn.row_factory = dict_row
         orden = conn.execute(
             """
@@ -1273,6 +1316,7 @@ def lookup_por_placas(placas: str):
                 serie_auto,
                 placas,
                 kilometraje,
+                transmision,
                 seguro_comp
             FROM orden_admision
             WHERE UPPER(placas) = %s
@@ -1295,6 +1339,7 @@ def lookup_por_placas(placas: str):
                 "vehiculo_color": orden.get("color_vehiculo"),
                 "placas": orden.get("placas"),
                 "kilometraje": orden.get("kilometraje"),
+                "transmision": orden.get("transmision"),
                 "seguro": orden.get("seguro_comp"),
             }
 
@@ -1342,6 +1387,7 @@ def lookup_por_placas(placas: str):
 @router.get("/ordenes")
 def list_ordenes_admision():
     with get_connection() as conn:
+        ensure_orden_admision_transmision_column(conn)
         conn.row_factory = dict_row
         rows = conn.execute(
             """
@@ -1361,6 +1407,7 @@ def list_ordenes_admision():
                 serie_auto,
                 placas,
                 kilometraje,
+                transmision,
                 danos_siniestro,
                 danos_preexistentes,
                 descripcion_siniestro,
@@ -1392,6 +1439,7 @@ class OrdenAdmisionCreate(BaseModel):
     serie_auto: Optional[str] = None
     placas: Optional[str] = None
     kilometraje: Optional[int] = None
+    transmision: Optional[str] = None
     danos_siniestro: Optional[str] = None
     danos_preexistentes: Optional[str] = None
     descripcion_siniestro: Optional[str] = None
@@ -1413,6 +1461,7 @@ class OrdenAdmisionUpdate(BaseModel):
     serie_auto: Optional[str] = None
     placas: Optional[str] = None
     kilometraje: Optional[int] = None
+    transmision: Optional[str] = None
     danos_siniestro: Optional[str] = None
     danos_preexistentes: Optional[str] = None
     descripcion_siniestro: Optional[str] = None
@@ -1427,6 +1476,7 @@ def create_orden_admision(payload: OrdenAdmisionCreate):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="nb_cliente requerido")
 
     with get_connection() as conn:
+        ensure_orden_admision_transmision_column(conn)
         if payload.nb_cliente:
             cliente_exists = conn.execute(
                 """
@@ -1465,12 +1515,13 @@ def create_orden_admision(payload: OrdenAdmisionCreate):
                 serie_auto,
                 placas,
                 kilometraje,
+                transmision,
                 danos_siniestro,
                 danos_preexistentes,
             descripcion_siniestro,
             descripcion_danospreex
         )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, created_at
             """,
             (
@@ -1488,6 +1539,7 @@ def create_orden_admision(payload: OrdenAdmisionCreate):
                 payload.serie_auto,
                 payload.placas,
                 payload.kilometraje,
+                payload.transmision,
                 payload.danos_siniestro,
                 payload.danos_preexistentes,
                 payload.descripcion_siniestro,
@@ -1508,6 +1560,7 @@ def update_orden_admision(orden_id: int, payload: OrdenAdmisionUpdate):
     values = list(updates.values()) + [orden_id]
 
     with get_connection() as conn:
+        ensure_orden_admision_transmision_column(conn)
         row = conn.execute(
             f"""
             UPDATE orden_admision

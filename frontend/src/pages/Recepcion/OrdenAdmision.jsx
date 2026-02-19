@@ -48,6 +48,7 @@ export default function OrdenAdmision() {
     serie_auto: "",
     placas: "",
     kilometraje: "",
+    transmision: "",
     danos_siniestro: "",
     danos_preexistentes: "",
     descripcion_siniestro: "",
@@ -149,6 +150,7 @@ export default function OrdenAdmision() {
       serie_auto: "",
       placas: "",
       kilometraje: "",
+      transmision: "",
       danos_siniestro: "",
       danos_preexistentes: "",
       descripcion_siniestro: "",
@@ -190,6 +192,7 @@ export default function OrdenAdmision() {
       serie_auto: record.serie_auto || "",
       placas: record.placas || "",
       kilometraje: record.kilometraje ? String(record.kilometraje) : "",
+      transmision: record.transmision || "",
       danos_siniestro: record.danos_siniestro || "",
       danos_preexistentes: record.danos_preexistentes || "",
       descripcion_siniestro: record.descripcion_siniestro || "",
@@ -251,6 +254,7 @@ export default function OrdenAdmision() {
         serie_auto: "serie_auto",
         placas: "placas",
         kilometraje: "kilometraje",
+        transmision: "transmision",
         descripcion_siniestro: "descripcion_siniestro"
       };
       for (const [target, source] of Object.entries(map)) {
@@ -454,6 +458,7 @@ export default function OrdenAdmision() {
         serie_auto: form.serie_auto,
         placas: form.placas,
         kilometraje: form.kilometraje,
+        transmision: form.transmision,
         danos_siniestro: danosSiniestroParts.join(", "),
         danos_preexistentes: danosPreexistParts.join(", "),
         descripcion_siniestro: form.descripcion_siniestro,
@@ -592,6 +597,7 @@ export default function OrdenAdmision() {
         color_vehiculo: prev.color_vehiculo || data.vehiculo_color || "",
         serie_auto: prev.serie_auto || data.serie_auto || "",
         kilometraje: prev.kilometraje || (data.kilometraje ? String(data.kilometraje) : ""),
+        transmision: prev.transmision || data.transmision || "",
         seguro_comp: prev.seguro_comp || data.seguro || ""
       }));
       if (data.vehiculo_marca) {
@@ -687,6 +693,9 @@ export default function OrdenAdmision() {
                       Kilometraje
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                      Transmisión
+                    </th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
                       Danos siniestro
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
@@ -709,7 +718,7 @@ export default function OrdenAdmision() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-500" colSpan={16}>
+                      <td className="px-4 py-6 text-sm text-slate-500" colSpan={17}>
                         No hay ordenes de admision para mostrar.
                       </td>
                     </tr>
@@ -742,6 +751,7 @@ export default function OrdenAdmision() {
                           {record.placas}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-300">{record.kilometraje}</td>
+                        <td className="px-4 py-3 text-sm text-slate-300">{record.transmision || "-"}</td>
                         <td className="px-4 py-3 text-sm text-slate-300">
                           {record.danos_siniestro}
                         </td>
@@ -1029,6 +1039,18 @@ export default function OrdenAdmision() {
                         onChange={handleChange("kilometraje")}
                         placeholder="45000"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Transmisión</label>
+                      <select
+                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                        value={form.transmision}
+                        onChange={handleChange("transmision")}
+                      >
+                        <option value="">Seleccionar</option>
+                        <option value="Automatica">Automática</option>
+                        <option value="Manual">Manual</option>
+                      </select>
                     </div>
                   </div>
                 </div>

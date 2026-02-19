@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from psycopg.rows import dict_row
 
 from app.core.db import get_connection
@@ -51,6 +51,33 @@ def create_expediente(payload: dict):
         expediente_id = _ensure_expediente(conn, reporte_siniestro)
 
     return {"id": expediente_id, "reporte_siniestro": reporte_siniestro}
+
+
+@router.get("")
+def list_expedientes(query: str = Query(default="", max_length=120), limit: int = Query(default=100, ge=1, le=500)):
+    search = (query or "").strip()
+
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        rows = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.reporte_siniestro,
+                e.created_at,
+                COUNT(a.id)::int AS archivos_total,
+                MAX(a.created_at) AS ultima_actividad
+            FROM expedientes e
+            LEFT JOIN expediente_archivos a ON a.expediente_id = e.id
+            WHERE (%s = '' OR e.reporte_siniestro ILIKE %s)
+            GROUP BY e.id, e.reporte_siniestro, e.created_at
+            ORDER BY COALESCE(MAX(a.created_at), e.created_at) DESC
+            LIMIT %s
+            """,
+            (search, f"%{search}%", limit),
+        ).fetchall()
+
+    return rows
 
 
 @router.get("/{reporte_siniestro}")

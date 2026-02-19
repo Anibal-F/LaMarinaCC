@@ -1,0 +1,56 @@
+APP_NAME=LaMarinaCC
+ENV=local
+DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/lamarinacc
+CORS_ORIGINS=http://localhost:3010
+
+# ============================================
+# CREDENCIALES QUALITAS
+# ============================================
+QUALITAS_LOGIN_URL=https://proordersistem.com.mx/
+QUALITAS_USER=oflores@lamarinacc.com
+QUALITAS_PASSWORD=Detallado_12345
+QUALITAS_TALLER_ID=96627
+
+# ============================================
+# SELECTORES (defaults funcionan para el sitio actual)
+# ============================================
+QUALITAS_EMAIL_SELECTOR=input[placeholder="Email"]
+QUALITAS_PASSWORD_SELECTOR=input[placeholder="Password"]
+QUALITAS_TALLER_ID_SELECTOR=input[placeholder="ID-Taller"]
+QUALITAS_TERMS_SELECTOR=input[type="checkbox"][name="tyc"][value="1"]
+QUALITAS_RECAPTCHA_IFRAME_SELECTOR=iframe[title*="reCAPTCHA"]
+QUALITAS_RECAPTCHA_ANCHOR_SELECTOR=recaptcha-anchor
+QUALITAS_RECAPTCHA_CHALLENGE_SELECTOR=iframe[title*="challenge"]
+QUALITAS_RECAPTCHA_CHECKBOX_SELECTOR=.recaptcha-checkbox-border
+QUALITAS_LOGIN_BUTTON_SELECTOR=input[type="submit"][value="Log In"]
+QUALITAS_POST_LOGIN_SELECTOR=
+
+# ============================================
+# OPCIONES DE NAVEGADOR
+# ============================================
+QUALITAS_HEADLESS=false
+QUALITAS_SLOWMO_MS=60
+QUALITAS_RECAPTCHA_TIMEOUT_MS=180000
+QUALITAS_NAVIGATION_TIMEOUT_MS=30000
+QUALITAS_ELEMENT_TIMEOUT_MS=10000
+
+# ============================================
+# OPCIONES STEALTH
+# ============================================
+QUALITAS_USE_STEALTH=true
+QUALITAS_USE_CDP_EVASION=true
+QUALITAS_ROTATE_UA=true
+QUALITAS_RANDOM_VIEWPORT=true
+
+# ============================================
+# CONFIGURACIÓN PARA RESOLUCIÓN AUTOMÁTICA DE CAPTCHA
+# ============================================
+
+# Proveedor: 2captcha | anti-captcha
+CAPTCHA_PROVIDER=2captcha
+
+# API Key de 2captcha (obtenida del dashboard)
+CAPTCHA_API_KEY=9ce4a9f13a60327939914c5d6d0bac25
+
+# Site Key del reCAPTCHA de Qualitas
+QUALITAS_RECAPTCHA_SITE_KEY=6LcxkGwrAAAAALKnklg8TS4pO69-L-yeVRcuI061

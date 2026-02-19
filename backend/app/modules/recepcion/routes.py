@@ -1619,7 +1619,7 @@ def extract_orden_fields(file: UploadFile = File(...)):
 
 
 class RecepcionCreate(BaseModel):
-    folio_recep: str
+    folio_recep: Optional[str] = None
     fecha_recep: datetime
     nb_cliente: str
     tel_cliente: Optional[str] = None
@@ -1676,6 +1676,25 @@ class RecepcionUpdate(BaseModel):
     folio_seguro: Optional[str] = None
     folio_ot: Optional[str] = None
     fecha_entrega: Optional[datetime] = None
+
+
+def _next_recepcion_folio(conn) -> str:
+    row = conn.execute(
+        """
+        SELECT COALESCE(MAX(folio_recep::bigint), 4999) + 1 AS next_folio
+        FROM recepciones
+        WHERE folio_recep ~ '^[0-9]+$'
+        """
+    ).fetchone()
+    next_folio = row[0] if row else 5000
+    return str(next_folio)
+
+
+@router.get("/registros/next-folio")
+def get_next_folio():
+    with get_connection() as conn:
+        folio = _next_recepcion_folio(conn)
+    return {"folio_recep": folio}
 
 
 @router.get("/registros/{recepcion_id}")
@@ -2112,165 +2131,159 @@ def download_registro_pdf(recepcion_id: int):
 
 @router.post("/registros", status_code=status.HTTP_201_CREATED)
 def create_registro(payload: RecepcionCreate):
-    if not payload.folio_recep.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="folio_recep requerido")
     if not payload.nb_cliente.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="nb_cliente requerido")
 
     with get_connection() as conn:
-        if payload.nb_cliente:
-            cliente = conn.execute(
-                """
-                SELECT 1 FROM clientes
-                WHERE LOWER(nb_cliente) = LOWER(%s)
-                  AND tel_cliente IS NOT DISTINCT FROM %s
-                  AND email_cliente IS NOT DISTINCT FROM %s
-                LIMIT 1
-                """,
-                (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
-            ).fetchone()
-            if not cliente:
-                conn.execute(
+        with conn.transaction():
+            conn.execute("LOCK TABLE recepciones IN EXCLUSIVE MODE")
+            generated_folio = _next_recepcion_folio(conn)
+
+            if payload.nb_cliente:
+                cliente = conn.execute(
                     """
-                    INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
-                    VALUES (%s, %s, %s)
+                    SELECT 1 FROM clientes
+                    WHERE LOWER(nb_cliente) = LOWER(%s)
+                      AND tel_cliente IS NOT DISTINCT FROM %s
+                      AND email_cliente IS NOT DISTINCT FROM %s
+                    LIMIT 1
                     """,
                     (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
+                ).fetchone()
+                if not cliente:
+                    conn.execute(
+                        """
+                        INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
+                    )
+
+            duplicate = conn.execute(
+                """
+                SELECT 1
+                FROM historical_entries
+                WHERE DATE(fecha_recep) = DATE(%s) AND placas = %s
+                LIMIT 1
+                """,
+                (payload.fecha_recep, payload.placas),
+            ).fetchone()
+            if duplicate:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Recepción duplicada")
+
+            row = conn.execute(
+                """
+                INSERT INTO recepciones (
+                    folio_recep,
+                    fecha_recep,
+                    nb_cliente,
+                    tel_cliente,
+                    email_cliente,
+                    vehiculo,
+                    vehiculo_marca,
+                    vehiculo_modelo,
+                    vehiculo_anio,
+                    vehiculo_color,
+                    vehiculo_tipo,
+                    kilometraje,
+                    placas,
+                    seguro,
+                    fecha_entregaestim,
+                    estatus,
+                    nivel_gas,
+                    estado_mecanico,
+                    observaciones,
+                    partes_siniestro,
+                    partes_preexistentes,
+                    observaciones_siniestro,
+                    observaciones_preexistentes
                 )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    generated_folio,
+                    payload.fecha_recep,
+                    payload.nb_cliente,
+                    payload.tel_cliente,
+                    payload.email_cliente,
+                    payload.vehiculo,
+                    payload.vehiculo_marca,
+                    payload.vehiculo_modelo,
+                    payload.vehiculo_anio,
+                    payload.vehiculo_color,
+                    payload.vehiculo_tipo,
+                    payload.kilometraje,
+                    payload.placas,
+                    payload.seguro,
+                    payload.fecha_entregaestim,
+                    payload.estatus,
+                    payload.nivel_gas,
+                    payload.estado_mecanico,
+                    payload.observaciones,
+                    payload.partes_siniestro,
+                    payload.partes_preexistentes,
+                    payload.observaciones_siniestro,
+                    payload.observaciones_preexistentes,
+                ),
+            ).fetchone()
 
-        exists = conn.execute(
-            "SELECT 1 FROM recepciones WHERE folio_recep = %s LIMIT 1",
-            (payload.folio_recep,),
-        ).fetchone()
-        if exists:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Folio ya existe")
-
-        duplicate = conn.execute(
-            """
-            SELECT 1
-            FROM historical_entries
-            WHERE DATE(fecha_recep) = DATE(%s) AND placas = %s
-            LIMIT 1
-            """,
-            (payload.fecha_recep, payload.placas),
-        ).fetchone()
-        if duplicate:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Recepción duplicada")
-
-        row = conn.execute(
-            """
-            INSERT INTO recepciones (
-                folio_recep,
-                fecha_recep,
-                nb_cliente,
-                tel_cliente,
-                email_cliente,
-                vehiculo,
-                vehiculo_marca,
-                vehiculo_modelo,
-                vehiculo_anio,
-                vehiculo_color,
-                vehiculo_tipo,
-                kilometraje,
-                placas,
-                seguro,
-                fecha_entregaestim,
-                estatus,
-                nivel_gas,
-                estado_mecanico,
-                observaciones,
-                partes_siniestro,
-                partes_preexistentes,
-                observaciones_siniestro,
-                observaciones_preexistentes
+            conn.execute(
+                """
+                INSERT INTO historical_entries (
+                    fecha_seguro,
+                    fecha_recep,
+                    folio_seguro,
+                    folio_recep,
+                    folio_ot,
+                    nb_cliente,
+                    tel_cliente,
+                    seguro,
+                    marca_vehiculo,
+                    modelo_vehiculo,
+                    tipo_carroceria,
+                    color,
+                    placas,
+                    kilometraje,
+                    nivel_gas,
+                    estado_mecanico,
+                    observaciones,
+                    fecha_entregaestim,
+                    estatus,
+                    fecha_entrega
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    payload.fecha_seguro,
+                    payload.fecha_recep,
+                    payload.folio_seguro,
+                    generated_folio,
+                    payload.folio_ot,
+                    payload.nb_cliente,
+                    payload.tel_cliente,
+                    payload.seguro,
+                    payload.vehiculo_marca,
+                    payload.vehiculo_modelo,
+                    payload.vehiculo_tipo,
+                    payload.vehiculo_color,
+                    payload.placas,
+                    payload.kilometraje,
+                    payload.nivel_gas,
+                    payload.estado_mecanico,
+                    payload.observaciones,
+                    payload.fecha_entregaestim,
+                    payload.estatus,
+                    payload.fecha_entrega,
+                ),
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                payload.folio_recep,
-                payload.fecha_recep,
-                payload.nb_cliente,
-                payload.tel_cliente,
-                payload.email_cliente,
-                payload.vehiculo,
-                payload.vehiculo_marca,
-                payload.vehiculo_modelo,
-                payload.vehiculo_anio,
-                payload.vehiculo_color,
-                payload.vehiculo_tipo,
-                payload.kilometraje,
-                payload.placas,
-                payload.seguro,
-                payload.fecha_entregaestim,
-                payload.estatus,
-                payload.nivel_gas,
-                payload.estado_mecanico,
-                payload.observaciones,
-                payload.partes_siniestro,
-                payload.partes_preexistentes,
-                payload.observaciones_siniestro,
-                payload.observaciones_preexistentes,
-            ),
-        ).fetchone()
 
-        conn.execute(
-            """
-            INSERT INTO historical_entries (
-                fecha_seguro,
-                fecha_recep,
-                folio_seguro,
-                folio_recep,
-                folio_ot,
-                nb_cliente,
-                tel_cliente,
-                seguro,
-                marca_vehiculo,
-                modelo_vehiculo,
-                tipo_carroceria,
-                color,
-                placas,
-                kilometraje,
-                nivel_gas,
-                estado_mecanico,
-                observaciones,
-                fecha_entregaestim,
-                estatus,
-                fecha_entrega
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                payload.fecha_seguro,
-                payload.fecha_recep,
-                payload.folio_seguro,
-                payload.folio_recep,
-                payload.folio_ot,
-                payload.nb_cliente,
-                payload.tel_cliente,
-                payload.seguro,
-                payload.vehiculo_marca,
-                payload.vehiculo_modelo,
-                payload.vehiculo_tipo,
-                payload.vehiculo_color,
-                payload.placas,
-                payload.kilometraje,
-                payload.nivel_gas,
-                payload.estado_mecanico,
-                payload.observaciones,
-                payload.fecha_entregaestim,
-                payload.estatus,
-                payload.fecha_entrega,
-            ),
-        )
-
-    return {"id": row[0]}
+    return {"id": row[0], "folio_recep": generated_folio}
 
 
 @router.put("/registros/{recepcion_id}")
 def update_registro(recepcion_id: int, payload: RecepcionUpdate):
     allowed_fields = {
-        "folio_recep",
         "fecha_recep",
         "nb_cliente",
         "tel_cliente",

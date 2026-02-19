@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
@@ -6,19 +6,43 @@ import AppHeader from "../../components/AppHeader.jsx";
 export default function CatalogoExpedientes() {
   const [reporte, setReporte] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
   const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
   const [expediente, setExpediente] = useState(null);
+  const [expedientes, setExpedientes] = useState([]);
 
-  const handleSearch = async () => {
-    if (!reporte.trim()) {
-      setError("Escribe un reporte/siniestro.");
-      return;
+  const loadExpedientes = async (query = "") => {
+    setLoadingList(true);
+    setListError("");
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/expedientes?query=${encodeURIComponent(query)}&limit=150`
+      );
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los expedientes.");
+      }
+      const data = await response.json();
+      setExpedientes(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setListError(err.message || "No se pudieron cargar los expedientes.");
+      setExpedientes([]);
+    } finally {
+      setLoadingList(false);
     }
+  };
+
+  useEffect(() => {
+    loadExpedientes();
+  }, []);
+
+  const openExpediente = async (reporteSiniestro) => {
+    if (!reporteSiniestro?.trim()) return;
     setLoading(true);
     setError("");
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/expedientes/${encodeURIComponent(reporte.trim())}`
+        `${import.meta.env.VITE_API_URL}/expedientes/${encodeURIComponent(reporteSiniestro.trim())}`
       );
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -32,6 +56,16 @@ export default function CatalogoExpedientes() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = async () => {
+    if (!reporte.trim()) {
+      setError("");
+      setExpediente(null);
+      loadExpedientes("");
+      return;
+    }
+    await Promise.all([openExpediente(reporte.trim()), loadExpedientes(reporte.trim())]);
   };
 
   const archivos = expediente?.archivos || [];
@@ -52,6 +86,9 @@ export default function CatalogoExpedientes() {
                   placeholder="Reporte / Siniestro"
                   value={reporte}
                   onChange={(event) => setReporte(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") handleSearch();
+                  }}
                 />
                 <button
                   className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold"
@@ -64,6 +101,67 @@ export default function CatalogoExpedientes() {
             }
           />
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+            <div className="bg-surface-dark border border-border-dark rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-white">Expedientes registrados</h3>
+                <span className="text-xs text-slate-400">{expedientes.length} resultados</span>
+              </div>
+              {listError ? <p className="text-sm text-alert-red mb-3">{listError}</p> : null}
+              {loadingList ? <p className="text-sm text-slate-400">Cargando lista...</p> : null}
+              {!loadingList && expedientes.length === 0 ? (
+                <p className="text-sm text-slate-400">No hay expedientes para mostrar.</p>
+              ) : null}
+              {!loadingList && expedientes.length ? (
+                <div className="overflow-hidden border border-border-dark rounded-lg">
+                  <table className="w-full text-left">
+                    <thead className="bg-background-dark/60">
+                      <tr>
+                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          Reporte / Siniestro
+                        </th>
+                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          Archivos
+                        </th>
+                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          Última actividad
+                        </th>
+                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-right">
+                          Acción
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expedientes.map((item) => (
+                        <tr key={item.id} className="border-t border-border-dark/60">
+                          <td className="px-4 py-3 text-xs text-white font-semibold">
+                            {item.reporte_siniestro}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-300">
+                            {item.archivos_total || 0}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-400">
+                            {item.ultima_actividad || item.created_at || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              className="text-primary text-xs font-bold hover:underline"
+                              type="button"
+                              onClick={() => {
+                                setReporte(item.reporte_siniestro || "");
+                                openExpediente(item.reporte_siniestro);
+                              }}
+                            >
+                              Ver detalle
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+
             {error ? <p className="text-sm text-alert-red">{error}</p> : null}
             {loading ? <p className="text-sm text-slate-400">Cargando expediente...</p> : null}
             {!loading && expediente ? (

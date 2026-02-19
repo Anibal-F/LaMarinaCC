@@ -156,6 +156,19 @@ export default function RecepcionForm() {
     indexSetter((prev) => (prev > 0 ? prev - 1 : 0));
   };
 
+  const loadNextFolio = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/next-folio`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.folio_recep) {
+        setForm((prev) => ({ ...prev, folio_recep: String(data.folio_recep) }));
+      }
+    } catch {
+      // ignore folio fetch errors
+    }
+  };
+
   const appendObservationText = (current, transcript) => {
     const existing = (current || "").trim();
     const incoming = (transcript || "").trim();
@@ -434,16 +447,20 @@ export default function RecepcionForm() {
     loadRegistro();
   }, [editId, isEditMode]);
 
+  useEffect(() => {
+    if (isEditMode) return;
+    loadNextFolio();
+  }, [isEditMode]);
+
   const handleSubmit = async () => {
     setError("");
     setFieldErrors({});
     const errors = {};
-    if (!form.folio_recep.trim()) errors.folio_recep = "Folio requerido";
     if (!form.nb_cliente.trim()) errors.nb_cliente = "Nombre requerido";
     if (!form.vehiculo_marca) errors.marca = "Selecciona una marca";
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setError("Folio, nombre del cliente y vehículo son obligatorios.");
+      setError("Nombre del cliente y vehículo son obligatorios.");
       return;
     }
 
@@ -463,6 +480,7 @@ export default function RecepcionForm() {
       }
       const created = await response.json().catch(() => null);
       const recepcionId = isEditMode ? Number(editId) : created?.id;
+      const persistedFolio = isEditMode ? form.folio_recep : String(created?.folio_recep || form.folio_recep || "");
       if (recepcionId) {
         const uploads = [];
         const uploadMedia = (file, mediaType) => uploadRecepcionMedia(recepcionId, file, mediaType);
@@ -499,7 +517,7 @@ export default function RecepcionForm() {
           await Promise.all(uploads);
         }
       }
-      const expedienteId = reporteSiniestro || form.folio_recep?.trim();
+      const expedienteId = reporteSiniestro || persistedFolio.trim();
       if (expedienteId) {
         const expedienteUploads = [];
         const uploadExpediente = async (file, tipo) => {
@@ -1294,18 +1312,15 @@ export default function RecepcionForm() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold text-slate-400 uppercase">Folio</label>
-                      <input
-                          className={`w-full bg-background-dark rounded-lg px-4 py-2.5 text-sm text-white focus:ring-1 focus:ring-primary focus:border-primary ${
-                            fieldErrors.folio_recep ? "border border-alert-red" : "border border-border-dark"
-                          }`}
-                          placeholder="Ej. 4405"
+                        <input
+                          className="w-full bg-background-dark border border-border-dark rounded-lg px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed"
+                          placeholder="Consecutivo automático"
                           type="text"
                           value={form.folio_recep}
-                          onChange={(event) => setForm({ ...form, folio_recep: event.target.value })}
+                          readOnly
+                          disabled
                         />
-                        {fieldErrors.folio_recep ? (
-                          <p className="text-[10px] text-alert-red">{fieldErrors.folio_recep}</p>
-                        ) : null}
+                        <p className="text-[10px] text-slate-500">Generado automáticamente por el sistema.</p>
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold text-slate-400 uppercase">Fecha/Hora</label>
@@ -1677,7 +1692,7 @@ export default function RecepcionForm() {
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
+                          <div className="space-y-2 order-2">
                             <p className="text-[10px] font-bold text-slate-500 uppercase text-center">Lado Derecho</p>
                             <div className="relative">
                               <div className="relative h-40 overflow-hidden rounded-lg border border-border-dark bg-background-dark flex items-center justify-center">
@@ -1752,7 +1767,7 @@ export default function RecepcionForm() {
                               ) : null}
                             </div>
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-2 order-1">
                             <p className="text-[10px] font-bold text-slate-500 uppercase text-center">Lado Izquierdo</p>
                             <div className="relative">
                               <div className="relative h-40 overflow-hidden rounded-lg border border-border-dark bg-background-dark flex items-center justify-center">
@@ -1878,7 +1893,7 @@ export default function RecepcionForm() {
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
+                          <div className="space-y-2 order-2">
                             <p className="text-[10px] font-bold text-slate-500 uppercase text-center">Lado Derecho</p>
                             <div className="relative">
                               <div className="relative h-40 overflow-hidden rounded-lg border border-border-dark bg-background-dark flex items-center justify-center">
@@ -1953,7 +1968,7 @@ export default function RecepcionForm() {
                               ) : null}
                             </div>
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-2 order-1">
                             <p className="text-[10px] font-bold text-slate-500 uppercase text-center">Lado Izquierdo</p>
                             <div className="relative">
                               <div className="relative h-40 overflow-hidden rounded-lg border border-border-dark bg-background-dark flex items-center justify-center">
@@ -2497,6 +2512,9 @@ export default function RecepcionForm() {
                   setDamageDrawings({ siniestro: "", preexistente: "" });
                   setDamageDrawingDirty({ siniestro: false, preexistente: false });
                   setShowResetConfirm(false);
+                  if (!isEditMode) {
+                    loadNextFolio();
+                  }
                 }}
               >
                 Limpiar

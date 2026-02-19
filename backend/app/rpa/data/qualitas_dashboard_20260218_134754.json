@@ -1,0 +1,171 @@
+{
+  "fecha_extraccion": "2026-02-18T13:47:54.253585",
+  "taller_id": "",
+  "taller_nombre": "",
+  "usuario": "CARLOS OMAR FLORES LIZARRAGA",
+  "estatus": [
+    {
+      "nombre": "Asignados",
+      "cantidad": 117,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "No Acepta PDD",
+      "cantidad": 0,
+      "data_id": "-31-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Rechazados",
+      "cantidad": 0,
+      "data_id": "-17-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Revisar Valuación",
+      "cantidad": 79,
+      "data_id": "-5-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Complemento Solicitado",
+      "cantidad": 2,
+      "data_id": "-10-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Complemento Autorizado",
+      "cantidad": 26,
+      "data_id": "-11-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Complemento Rechazado",
+      "cantidad": 0,
+      "data_id": "-14-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Pago de Daños",
+      "cantidad": 10,
+      "data_id": "-7-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Pérdida Total",
+      "cantidad": 1,
+      "data_id": "-8-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Daño Menor a Deducible",
+      "cantidad": 7,
+      "data_id": "-9-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "No procede",
+      "cantidad": 0,
+      "data_id": "-16-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Pendiente de terminar",
+      "cantidad": 1,
+      "data_id": "-15-",
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Pendiente de envío",
+      "cantidad": 0,
+      "data_id": null,
+      "data_tipo": "1"
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 1,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 1,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 10,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 1,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "45",
+      "cantidad": 7,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 9,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 7,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 1,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 38,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 7,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 56,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 128,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 32,
+      "data_id": null,
+      "data_tipo": null
+    },
+    {
+      "nombre": "Desconocido",
+      "cantidad": 36,
+      "data_id": null,
+      "data_tipo": null
+    }
+  ],
+  "total_ordenes": 577
+}

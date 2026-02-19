@@ -100,6 +100,7 @@ export default function ValuarVehiculo() {
   const [activeAnnotationId, setActiveAnnotationId] = useState(null);
   const [dragState, setDragState] = useState(null);
   const stageRef = useRef(null);
+  const lastPlacementTsRef = useRef(0);
 
   const [aseguradoras, setAseguradoras] = useState([]);
   const [aseguradoraActiva, setAseguradoraActiva] = useState("");
@@ -415,12 +416,13 @@ export default function ValuarVehiculo() {
     });
   };
 
-  const handleStagePointerDown = (event) => {
+  const placeAnnotationAtEvent = (event) => {
     if (!annotationMode || !selectedEvidenceKey || !stageRef.current) return;
-    if (typeof event.button === "number" && event.button !== 0) return;
     const target = event.target;
-    if (target.closest("[data-annotation-item='true']")) return;
-    if (target.closest("[data-annotation-control='true']")) return;
+    if (typeof target?.closest === "function") {
+      if (target.closest("[data-annotation-item='true']")) return;
+      if (target.closest("[data-annotation-control='true']")) return;
+    }
 
     event.preventDefault();
 
@@ -449,6 +451,18 @@ export default function ValuarVehiculo() {
     updateCurrentAnnotations((existing) => [...existing, annotation]);
     setActiveAnnotationId(annotation.id);
     setShapeMenuOpen(false);
+    lastPlacementTsRef.current = Date.now();
+  };
+
+  const handleStagePointerDown = (event) => {
+    if (typeof event.button === "number" && event.button !== 0) return;
+    placeAnnotationAtEvent(event);
+  };
+
+  const handleStageClick = (event) => {
+    // Fallback for environments where pointer events don't dispatch as expected.
+    if (Date.now() - lastPlacementTsRef.current < 200) return;
+    placeAnnotationAtEvent(event);
   };
 
   const beginMoveAnnotation = (event, annotationId) => {
@@ -723,7 +737,8 @@ export default function ValuarVehiculo() {
 
                           <div
                             ref={stageRef}
-                            onMouseDown={handleStagePointerDown}
+                            onPointerDown={handleStagePointerDown}
+                            onClick={handleStageClick}
                             className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
                           >
                             <img

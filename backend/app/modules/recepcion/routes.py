@@ -139,6 +139,36 @@ def _extract_textract_data(file_bytes: bytes, extension: str) -> dict[str, Any]:
         if block.get("BlockType") == "LINE" and block.get("Text")
     ]
 
+    word_boxes: list[dict[str, Any]] = []
+    selected_boxes: list[dict[str, float]] = []
+    for block in blocks:
+        block_type = block.get("BlockType")
+        geometry = block.get("Geometry", {}).get("BoundingBox", {}) or {}
+        left = float(geometry.get("Left", 0.0) or 0.0)
+        top = float(geometry.get("Top", 0.0) or 0.0)
+        width = float(geometry.get("Width", 0.0) or 0.0)
+        height = float(geometry.get("Height", 0.0) or 0.0)
+        if block_type == "WORD":
+            text = _normalize_ocr_text(block.get("Text", ""))
+            if text:
+                word_boxes.append(
+                    {
+                        "text": text,
+                        "norm": _normalize_key_label(text),
+                        "left": left,
+                        "top": top,
+                        "width": width,
+                        "height": height,
+                    }
+                )
+        elif (
+            block_type == "SELECTION_ELEMENT"
+            and block.get("SelectionStatus") == "SELECTED"
+        ):
+            selected_boxes.append(
+                {"left": left, "top": top, "width": width, "height": height}
+            )
+
     kv_pairs: dict[str, dict[str, str]] = {}
     for block in blocks:
         if block.get("BlockType") != "KEY_VALUE_SET":
@@ -172,6 +202,8 @@ def _extract_textract_data(file_bytes: bytes, extension: str) -> dict[str, Any]:
         "text": "\n".join(lines),
         "lines": lines,
         "kv": kv_pairs,
+        "word_boxes": word_boxes,
+        "selected_boxes": selected_boxes,
     }
 
 
@@ -201,6 +233,7 @@ def _parse_orden_fields(
     ocr_text: str,
     kv_pairs: Optional[dict[str, dict[str, str]]] = None,
     ocr_lines: Optional[list[str]] = None,
+    textract_meta: Optional[dict[str, Any]] = None,
 ) -> tuple[dict, dict]:
     upper_text = (ocr_text or "").upper()
     aseguradora = _detect_aseguradora(upper_text)
@@ -249,6 +282,36 @@ def _parse_orden_fields(
                 if re.search(r"MANUAL\s*(X|■|█|☒|☑)", window) or re.search(
                     r"(X|■|█|☒|☑)\s*MANUAL", window
                 ):
+                    return "Manual"
+
+        # Geometry fallback: link selected checkbox to nearest transmission label.
+        meta = textract_meta or {}
+        labels = [
+            item
+            for item in (meta.get("word_boxes") or [])
+            if re.search(r"AUTOMAT|AUTOMATIC|MANUAL", str(item.get("norm") or ""))
+        ]
+        checks = meta.get("selected_boxes") or []
+        if labels and checks:
+            best_label = ""
+            best_score = None
+            for check in checks:
+                cx = check["left"] + (check["width"] / 2)
+                cy = check["top"] + (check["height"] / 2)
+                for label in labels:
+                    lx = float(label.get("left", 0.0)) + (float(label.get("width", 0.0)) / 2)
+                    ly = float(label.get("top", 0.0)) + (float(label.get("height", 0.0)) / 2)
+                    # Favor same-row matches and near-horizontal checkboxes.
+                    score = ((cx - lx) ** 2) + (((cy - ly) * 1.8) ** 2)
+                    if best_score is None or score < best_score:
+                        best_score = score
+                        best_label = str(label.get("norm") or "")
+            if best_label:
+                if "AUTOMAT" in best_label:
+                    field_debug["transmision"] = "geometry_checkbox"
+                    return "Automatica"
+                if "MANUAL" in best_label:
+                    field_debug["transmision"] = "geometry_checkbox"
                     return "Manual"
         return ""
 
@@ -1658,6 +1721,7 @@ def extract_orden_fields(file: UploadFile = File(...)):
         ocr_text,
         textract_data.get("kv", {}),
         textract_data.get("lines", []),
+        textract_data,
     )
     aseguradora = parsed.get("seguro_comp") or _detect_aseguradora(ocr_text)
     template = (aseguradora or "desconocido").lower()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
@@ -19,6 +19,15 @@ const evidenceCategories = [
   { id: "motor", label: "Motor", icon: "engineering" },
   { id: "otros", label: "Otros", icon: "more_horiz" }
 ];
+
+const annotationShapes = [
+  { id: "square", label: "Cuadrado", icon: "crop_square" },
+  { id: "circle", label: "Circulo", icon: "circle" },
+  { id: "arrow", label: "Flecha", icon: "trending_flat" },
+  { id: "line", label: "Linea", icon: "horizontal_rule" }
+];
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 function buildVehiculoTitle(record) {
   if (!record) return "Vehiculo";
@@ -75,6 +84,13 @@ export default function ValuarVehiculo() {
   const [expedienteFiles, setExpedienteFiles] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("frontal");
   const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
+  const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
+  const [annotationMode, setAnnotationMode] = useState(false);
+  const [selectedShape, setSelectedShape] = useState("square");
+  const [annotationsByEvidence, setAnnotationsByEvidence] = useState({});
+  const [activeAnnotationId, setActiveAnnotationId] = useState(null);
+  const [dragState, setDragState] = useState(null);
+  const stageRef = useRef(null);
 
   const [aseguradoras, setAseguradoras] = useState([]);
   const [aseguradoraActiva, setAseguradoraActiva] = useState("");
@@ -224,6 +240,18 @@ export default function ValuarVehiculo() {
   }, [visibleEvidence, selectedEvidenceIndex]);
 
   const selectedEvidence = visibleEvidence[selectedEvidenceIndex] || null;
+  const selectedEvidenceKey = selectedEvidence?.path || selectedEvidence?.archivo_nombre || "";
+  const currentAnnotations = useMemo(
+    () => annotationsByEvidence[selectedEvidenceKey] || [],
+    [annotationsByEvidence, selectedEvidenceKey]
+  );
+
+  useEffect(() => {
+    setActiveAnnotationId(null);
+    setDragState(null);
+    setShapeMenuOpen(false);
+    setAnnotationMode(false);
+  }, [selectedEvidenceKey]);
 
   const montoPorTipo = useMemo(() => {
     return operations.reduce(
@@ -326,6 +354,144 @@ export default function ValuarVehiculo() {
     setSelectedEvidenceIndex((prev) =>
       prev === 0 ? visibleEvidence.length - 1 : prev - 1
     );
+  };
+
+  const updateCurrentAnnotations = (updater) => {
+    if (!selectedEvidenceKey) return;
+    setAnnotationsByEvidence((prev) => {
+      const existing = prev[selectedEvidenceKey] || [];
+      const next = typeof updater === "function" ? updater(existing) : updater;
+      return { ...prev, [selectedEvidenceKey]: next };
+    });
+  };
+
+  const handleStageClick = (event) => {
+    if (!annotationMode || !selectedEvidenceKey || !stageRef.current) return;
+    const target = event.target;
+    if (target.closest("[data-annotation-item='true']")) return;
+
+    const rect = stageRef.current.getBoundingClientRect();
+    const clickX = ((event.clientX - rect.left) / rect.width) * 100;
+    const clickY = ((event.clientY - rect.top) / rect.height) * 100;
+    const defaults = {
+      square: { w: 14, h: 14, label: "Nuevo cuadrado" },
+      circle: { w: 14, h: 14, label: "Nuevo circulo" },
+      arrow: { w: 18, h: 8, label: "Nueva flecha" },
+      line: { w: 20, h: 4, label: "Nueva linea" }
+    };
+    const shapeDefaults = defaults[selectedShape] || defaults.square;
+    const maxX = 100 - shapeDefaults.w;
+    const maxY = 100 - shapeDefaults.h;
+    const annotation = {
+      id: crypto.randomUUID(),
+      type: selectedShape,
+      label: shapeDefaults.label,
+      x: clamp(clickX - shapeDefaults.w / 2, 0, maxX),
+      y: clamp(clickY - shapeDefaults.h / 2, 0, maxY),
+      w: shapeDefaults.w,
+      h: shapeDefaults.h
+    };
+
+    updateCurrentAnnotations((existing) => [...existing, annotation]);
+    setActiveAnnotationId(annotation.id);
+  };
+
+  const beginMoveAnnotation = (event, annotationId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const annotation = currentAnnotations.find((item) => item.id === annotationId);
+    if (!annotation || !stageRef.current) return;
+
+    setActiveAnnotationId(annotationId);
+    setDragState({
+      mode: "move",
+      annotationId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startAnnotation: { ...annotation }
+    });
+  };
+
+  const beginResizeAnnotation = (event, annotationId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const annotation = currentAnnotations.find((item) => item.id === annotationId);
+    if (!annotation || !stageRef.current) return;
+
+    setActiveAnnotationId(annotationId);
+    setDragState({
+      mode: "resize",
+      annotationId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startAnnotation: { ...annotation }
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const onMouseMove = (event) => {
+      if (!stageRef.current) return;
+      const rect = stageRef.current.getBoundingClientRect();
+      const dxPct = ((event.clientX - dragState.startClientX) / rect.width) * 100;
+      const dyPct = ((event.clientY - dragState.startClientY) / rect.height) * 100;
+
+      updateCurrentAnnotations((existing) =>
+        existing.map((item) => {
+          if (item.id !== dragState.annotationId) return item;
+
+          if (dragState.mode === "move") {
+            const nextX = clamp(dragState.startAnnotation.x + dxPct, 0, 100 - item.w);
+            const nextY = clamp(dragState.startAnnotation.y + dyPct, 0, 100 - item.h);
+            return { ...item, x: nextX, y: nextY };
+          }
+
+          const minSize = 3;
+          const rawW = clamp(dragState.startAnnotation.w + dxPct, minSize, 100 - item.x);
+          const rawH = clamp(dragState.startAnnotation.h + dyPct, minSize, 100 - item.y);
+
+          if (item.type === "square" || item.type === "circle") {
+            const edge = clamp(
+              Math.max(rawW, rawH),
+              minSize,
+              Math.min(100 - item.x, 100 - item.y)
+            );
+            return { ...item, w: edge, h: edge };
+          }
+
+          return { ...item, w: rawW, h: rawH };
+        })
+      );
+    };
+
+    const onMouseUp = () => setDragState(null);
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [dragState, selectedEvidenceKey]);
+
+  const activeAnnotation = currentAnnotations.find((item) => item.id === activeAnnotationId) || null;
+
+  const updateActiveAnnotationLabel = (value) => {
+    if (!activeAnnotationId) return;
+    updateCurrentAnnotations((existing) =>
+      existing.map((item) =>
+        item.id === activeAnnotationId ? { ...item, label: value } : item
+      )
+    );
+  };
+
+  const removeActiveAnnotation = () => {
+    if (!activeAnnotationId) return;
+    updateCurrentAnnotations((existing) =>
+      existing.filter((item) => item.id !== activeAnnotationId)
+    );
+    setActiveAnnotationId(null);
   };
 
   return (
@@ -497,23 +663,144 @@ export default function ValuarVehiculo() {
                             <span className="material-symbols-outlined">chevron_right</span>
                           </button>
 
-                          <div className="relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark">
+                          <div
+                            ref={stageRef}
+                            onClick={handleStageClick}
+                            className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
+                          >
                             <img
                               src={filePreviewUrl(selectedEvidence)}
                               alt={selectedEvidence?.archivo_nombre || "Evidencia"}
                               className="w-full h-full object-cover"
                             />
-                            <div className="absolute top-1/4 left-1/3 w-12 h-12 border-2 border-red-500 rounded-full animate-pulse flex items-center justify-center">
-                              <span className="bg-red-500 text-white text-[10px] font-black px-1 rounded absolute -top-4">
-                                DAN-01
-                              </span>
+
+                            <div className="absolute inset-0">
+                              {currentAnnotations.map((annotation) => {
+                                const isActive = annotation.id === activeAnnotationId;
+                                return (
+                                  <div
+                                    key={annotation.id}
+                                    data-annotation-item="true"
+                                    onMouseDown={(event) => beginMoveAnnotation(event, annotation.id)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setActiveAnnotationId(annotation.id);
+                                    }}
+                                    className={`absolute select-none ${isActive ? "z-20" : "z-10"}`}
+                                    style={{
+                                      left: `${annotation.x}%`,
+                                      top: `${annotation.y}%`,
+                                      width: `${annotation.w}%`,
+                                      height: `${annotation.h}%`
+                                    }}
+                                  >
+                                    {annotation.type === "square" ? (
+                                      <div
+                                        className={`w-full h-full border-2 ${isActive ? "border-amber-400" : "border-red-500/80"}`}
+                                      />
+                                    ) : null}
+                                    {annotation.type === "circle" ? (
+                                      <div
+                                        className={`w-full h-full rounded-full border-2 ${isActive ? "border-amber-400" : "border-red-500/80"}`}
+                                      />
+                                    ) : null}
+                                    {annotation.type === "line" ? (
+                                      <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                        <line
+                                          x1="2"
+                                          y1="50"
+                                          x2="98"
+                                          y2="50"
+                                          stroke={isActive ? "#f59e0b" : "#ef4444"}
+                                          strokeWidth="8"
+                                          strokeLinecap="round"
+                                        />
+                                      </svg>
+                                    ) : null}
+                                    {annotation.type === "arrow" ? (
+                                      <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                        <defs>
+                                          <marker
+                                            id={`arrow-head-${annotation.id}`}
+                                            markerWidth="10"
+                                            markerHeight="7"
+                                            refX="9"
+                                            refY="3.5"
+                                            orient="auto"
+                                          >
+                                            <polygon
+                                              points="0 0, 10 3.5, 0 7"
+                                              fill={isActive ? "#f59e0b" : "#ef4444"}
+                                            />
+                                          </marker>
+                                        </defs>
+                                        <line
+                                          x1="2"
+                                          y1="50"
+                                          x2="96"
+                                          y2="50"
+                                          stroke={isActive ? "#f59e0b" : "#ef4444"}
+                                          strokeWidth="8"
+                                          markerEnd={`url(#arrow-head-${annotation.id})`}
+                                          strokeLinecap="round"
+                                        />
+                                      </svg>
+                                    ) : null}
+
+                                    <span
+                                      className={`absolute -top-6 left-0 text-[10px] font-black px-1.5 py-0.5 rounded border uppercase whitespace-nowrap ${isActive ? "bg-amber-500 text-white border-amber-400" : "bg-red-500/90 text-white border-red-400/70"}`}
+                                    >
+                                      {annotation.label || "Sin nombre"}
+                                    </span>
+
+                                    <button
+                                      type="button"
+                                      onMouseDown={(event) => beginResizeAnnotation(event, annotation.id)}
+                                      onClick={(event) => event.stopPropagation()}
+                                      className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-sm border ${isActive ? "bg-amber-400 border-amber-300" : "bg-red-500 border-red-400"}`}
+                                      title="Redimensionar"
+                                    />
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <div className="absolute bottom-1/3 right-1/4 w-20 h-10 border-2 border-amber-500 rounded border-dashed">
-                              <span className="bg-amber-500 text-white text-[10px] font-black px-1 rounded absolute -top-4">
-                                RAYON
-                              </span>
-                            </div>
-                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-surface-dark/90 backdrop-blur-md px-4 py-2 rounded-full border border-border-dark flex items-center gap-5 shadow-xl">
+
+                            {activeAnnotation ? (
+                              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-surface-dark/95 border border-border-dark rounded-lg px-3 py-2 flex items-center gap-2 shadow-lg max-w-[92%]">
+                                <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                                  Nombre
+                                </span>
+                                <input
+                                  className="w-44 bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white"
+                                  value={activeAnnotation.label || ""}
+                                  onChange={(event) => updateActiveAnnotationLabel(event.target.value)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  placeholder="Ej: Dano defensa"
+                                />
+                              </div>
+                            ) : null}
+
+                            {shapeMenuOpen ? (
+                              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 bg-surface-dark/95 border border-border-dark rounded-lg p-2 shadow-xl flex items-center gap-2">
+                                {annotationShapes.map((shape) => (
+                                  <button
+                                    key={shape.id}
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setSelectedShape(shape.id);
+                                      setAnnotationMode(true);
+                                    }}
+                                    className={`px-3 py-2 rounded text-xs font-bold flex items-center gap-1 ${selectedShape === shape.id ? "bg-primary text-white" : "text-slate-300 hover:text-white hover:bg-background-dark"}`}
+                                  >
+                                    <span className="material-symbols-outlined text-sm">{shape.icon}</span>
+                                    {shape.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-surface-dark/90 backdrop-blur-md px-4 py-2 rounded-full border border-border-dark flex items-center gap-5 shadow-xl z-30">
                               <button type="button" className="text-white hover:text-amber-400 transition-colors">
                                 <span className="material-symbols-outlined text-xl">zoom_in</span>
                               </button>
@@ -521,10 +808,27 @@ export default function ValuarVehiculo() {
                                 <span className="material-symbols-outlined text-xl">zoom_out</span>
                               </button>
                               <div className="w-px h-6 bg-border-dark"></div>
-                              <button type="button" className="text-amber-400">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setShapeMenuOpen((prev) => !prev);
+                                  setAnnotationMode(true);
+                                }}
+                                className={`${shapeMenuOpen || annotationMode ? "text-amber-400" : "text-white hover:text-amber-400"} transition-colors`}
+                                title="Anotar"
+                              >
                                 <span className="material-symbols-outlined text-xl">edit</span>
                               </button>
-                              <button type="button" className="text-white hover:text-alert-red transition-colors">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removeActiveAnnotation();
+                                }}
+                                className="text-white hover:text-alert-red transition-colors"
+                                title="Eliminar anotacion"
+                              >
                                 <span className="material-symbols-outlined text-xl">delete</span>
                               </button>
                             </div>

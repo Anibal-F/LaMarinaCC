@@ -4,12 +4,60 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 
+const tabs = [
+  { id: "evidencia", label: "Evidencia", icon: "photo_library" },
+  { id: "presupuesto", label: "Presupuesto", icon: "request_quote" },
+  { id: "comparativa", label: "Comparativa", icon: "balance" }
+];
+
+const evidenceCategories = [
+  { id: "frontal", label: "Frontal", icon: "directions_car" },
+  { id: "trasera", label: "Trasera", icon: "settings_backup_restore" },
+  { id: "lateral_izquierdo", label: "Lateral Izquierdo", icon: "chevron_left" },
+  { id: "lateral_derecho", label: "Lateral Derecho", icon: "chevron_right" },
+  { id: "interior", label: "Interior", icon: "airline_seat_recline_extra" },
+  { id: "motor", label: "Motor", icon: "engineering" },
+  { id: "otros", label: "Otros", icon: "more_horiz" }
+];
+
 function buildVehiculoTitle(record) {
-  if (!record) return "Vehículo";
+  if (!record) return "Vehiculo";
   if (record.vehiculo) return record.vehiculo;
   return [record.marca_vehiculo, record.modelo_anio, record.tipo_vehiculo, record.color_vehiculo]
     .filter(Boolean)
     .join(" ");
+}
+
+function detectCategory(item) {
+  const raw = `${item?.archivo_nombre || ""} ${item?.path || ""}`.toLowerCase();
+  if (raw.includes("frontal")) return "frontal";
+  if (raw.includes("trasera")) return "trasera";
+  if (raw.includes("izquierd")) return "lateral_izquierdo";
+  if (raw.includes("derech")) return "lateral_derecho";
+  if (raw.includes("interior")) return "interior";
+  if (raw.includes("motor")) return "motor";
+  return "otros";
+}
+
+function evidenceTag(item) {
+  const raw = `${item?.archivo_nombre || ""} ${item?.path || ""}`.toLowerCase();
+  if (raw.includes("preexist")) {
+    return { label: "Preexistente", classes: "bg-blue-600/90 border-blue-500/60 text-white" };
+  }
+  return { label: "Siniestro", classes: "bg-red-600/90 border-red-500/60 text-white" };
+}
+
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN"
+  });
+}
+
+function filePreviewUrl(item) {
+  if (!item?.path) return "";
+  if (/^https?:\/\//.test(item.path)) return item.path;
+  return `${import.meta.env.VITE_API_URL}${item.path}`;
 }
 
 export default function ValuarVehiculo() {
@@ -19,10 +67,15 @@ export default function ValuarVehiculo() {
   const [record, setRecord] = useState(location.state?.record || null);
   const [loading, setLoading] = useState(!record);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("evidencia");
+
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [expedienteFiles, setExpedienteFiles] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("frontal");
+  const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
+
   const [aseguradoras, setAseguradoras] = useState([]);
   const [aseguradoraActiva, setAseguradoraActiva] = useState("");
   const [autorizadoAseguradora, setAutorizadoAseguradora] = useState(8700);
@@ -132,6 +185,46 @@ export default function ValuarVehiculo() {
     () => expedienteFiles.filter((item) => item.tipo === "valuacion_foto"),
     [expedienteFiles]
   );
+
+  const categoryCounts = useMemo(() => {
+    const counts = Object.fromEntries(evidenceCategories.map((item) => [item.id, 0]));
+    valuacionFotos.forEach((item) => {
+      const key = detectCategory(item);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+
+    // Si no hay coincidencias por nombre, concentramos en frontal para evitar vacios.
+    const total = Object.values(counts).reduce((acc, value) => acc + value, 0);
+    if (!total && valuacionFotos.length) {
+      counts.frontal = valuacionFotos.length;
+    }
+    return counts;
+  }, [valuacionFotos]);
+
+  const visibleEvidence = useMemo(() => {
+    if (!valuacionFotos.length) return [];
+    if (selectedCategory === "frontal" && !categoryCounts.frontal) {
+      return valuacionFotos;
+    }
+    return valuacionFotos.filter((item) => detectCategory(item) === selectedCategory);
+  }, [valuacionFotos, selectedCategory, categoryCounts.frontal]);
+
+  useEffect(() => {
+    setSelectedEvidenceIndex(0);
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    if (!visibleEvidence.length) {
+      setSelectedEvidenceIndex(0);
+      return;
+    }
+    if (selectedEvidenceIndex > visibleEvidence.length - 1) {
+      setSelectedEvidenceIndex(visibleEvidence.length - 1);
+    }
+  }, [visibleEvidence, selectedEvidenceIndex]);
+
+  const selectedEvidence = visibleEvidence[selectedEvidenceIndex] || null;
+
   const montoPorTipo = useMemo(() => {
     return operations.reduce(
       (acc, item) => {
@@ -144,6 +237,7 @@ export default function ValuarVehiculo() {
       { mo: 0, sust: 0, byd: 0 }
     );
   }, [operations]);
+
   const subtotal = montoPorTipo.mo + montoPorTipo.sust + montoPorTipo.byd;
   const iva = subtotal * 0.16;
   const total = subtotal + iva;
@@ -175,23 +269,15 @@ export default function ValuarVehiculo() {
       );
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.detail || "No se pudo guardar la valuación");
+        throw new Error(payload?.detail || "No se pudo guardar la valuacion");
       }
       setRecord((prev) => (prev ? { ...prev, estatus: "Borrador" } : prev));
-      setSaveSuccess("Valuación guardada en borrador.");
+      setSaveSuccess("Valuacion guardada en borrador.");
     } catch (err) {
-      setSaveError(err.message || "No se pudo guardar la valuación");
+      setSaveError(err.message || "No se pudo guardar la valuacion");
     } finally {
       setSavingValuacion(false);
     }
-  };
-
-  const aseguradoraLogo = (aseguradora) => {
-    if (!aseguradora) return null;
-    const normalized = aseguradora.toLowerCase();
-    if (normalized.includes("qualitas")) return "/assets/Qualitas_profile.jpg";
-    if (normalized.includes("chubb")) return "/assets/CHUBB_profile.jpg";
-    return null;
   };
 
   const handleUploadEvidencia = async (event) => {
@@ -230,454 +316,576 @@ export default function ValuarVehiculo() {
     }
   };
 
+  const nextEvidence = () => {
+    if (!visibleEvidence.length) return;
+    setSelectedEvidenceIndex((prev) => (prev + 1) % visibleEvidence.length);
+  };
+
+  const prevEvidence = () => {
+    if (!visibleEvidence.length) return;
+    setSelectedEvidenceIndex((prev) =>
+      prev === 0 ? visibleEvidence.length - 1 : prev - 1
+    );
+  };
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-hidden flex flex-col">
           <AppHeader
-            title="Valuación del vehículo"
-            subtitle="Gestión de presupuesto y conexión con aseguradoras."
+            title="Valuacion del vehiculo"
+            subtitle="Panel de evidencia, presupuesto y comparativa con aseguradora."
             showSearch={false}
             actions={
               <>
+                <div className="hidden md:flex flex-col items-end border-r border-border-dark pr-4 mr-1">
+                  <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                    Expediente
+                  </span>
+                  <span className="text-sm font-black text-white">
+                    {record?.reporte_siniestro || "Sin folio"}
+                  </span>
+                </div>
                 <button
-                  className="flex items-center gap-2 bg-surface-dark hover:bg-primary/20 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all border border-border-dark"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-sm">history</span>
-                  Historial de precios
-                </button>
-                <button
-                  className="flex items-center gap-2 bg-surface-dark hover:bg-primary/20 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all border border-border-dark"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                  Generar PDF
-                </button>
-                <button
-                  className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-primary/20"
+                  className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-primary/20"
                   type="button"
                   onClick={handleSaveValuacion}
                 >
-                  {savingValuacion ? "Guardando..." : "Guardar valuación"}
+                  <span className="material-symbols-outlined text-sm">save</span>
+                  {savingValuacion ? "Guardando..." : "Guardar cambios"}
                 </button>
               </>
             }
           />
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-            {loading ? <p className="text-sm text-slate-400">Cargando valuación...</p> : null}
+            {loading ? <p className="text-sm text-slate-400">Cargando valuacion...</p> : null}
             {error ? <p className="text-sm text-alert-red">{error}</p> : null}
 
             {!loading && !error && record ? (
-              <div className="grid grid-cols-12 gap-6">
-                <section className="col-span-12 lg:col-span-4 flex flex-col gap-4">
-                  <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h1 className="text-xl font-black text-white leading-none">{vehiculoTitle}</h1>
-                        <p className="text-slate-400 text-xs mt-1 font-medium tracking-wide">
-                          Expediente: {record.reporte_siniestro || "Sin folio"}
-                        </p>
-                      </div>
-                      <span className="bg-primary/20 text-primary text-[10px] font-bold px-2 py-1 rounded border border-primary/30 uppercase">
-                        {record.estatus || "Pendiente"}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 border-t border-border-dark pt-4">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">
-                          Placas
-                        </span>
-                        <span className="text-white font-semibold">{record.placas || "-"}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">
-                          Cliente
-                        </span>
-                        <span className="text-white font-semibold">{record.nb_cliente || "-"}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">
-                          Serie
-                        </span>
-                        <span className="text-white font-semibold font-mono">
-                          {record.serie_auto || "-"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-surface-dark border border-border-dark rounded-xl p-4 flex flex-col gap-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                        Evidencia de recepción
-                      </h3>
-                      <span className="text-[10px] text-slate-500">Daños del siniestro</span>
-                    </div>
-                    <label
-                      className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-dark px-4 py-8 text-center text-sm text-slate-400 hover:border-primary/60 hover:text-slate-200 transition-colors cursor-pointer bg-background-dark/60"
-                      htmlFor="valuacion-evidencia"
-                    >
-                      <span className="material-symbols-outlined text-3xl">upload_file</span>
-                      <span className="text-xs font-bold uppercase tracking-widest">
-                        Arrastra fotos o haz clic para cargar
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        PNG, JPG o JPEG
-                      </span>
-                      {uploading ? (
-                        <span className="text-[10px] text-primary">Subiendo archivos...</span>
-                      ) : null}
-                      <input
-                        id="valuacion-evidencia"
-                        className="hidden"
-                        type="file"
-                        accept=".jpg,.jpeg,.png"
-                        multiple
-                        onChange={handleUploadEvidencia}
-                      />
-                    </label>
-                    {uploadError ? (
-                      <span className="text-[10px] text-alert-red">{uploadError}</span>
-                    ) : null}
-                    {valuacionFotos.length ? (
-                      <div className="grid grid-cols-4 gap-2">
-                        {valuacionFotos.slice(0, 8).map((item) => (
-                          <div
-                            key={item.path}
-                            className="aspect-square rounded bg-background-dark border border-border-dark bg-cover bg-center"
-                            style={{
-                              backgroundImage: item.path ? `url(${import.meta.env.VITE_API_URL}${item.path})` : undefined
-                            }}
-                            title={item.archivo_nombre || "Foto"}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="bg-surface-dark border border-border-dark rounded-xl p-4 flex flex-col gap-3">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                        Lista de operaciones
-                      </h3>
-                      <button
-                        className="flex items-center gap-1 bg-primary px-2 py-1 rounded text-[10px] font-bold"
-                        type="button"
-                        onClick={() =>
-                          setOperations((prev) => [
-                            ...prev,
-                            { id: crypto.randomUUID(), tipo: "MO", descripcion: "", monto: 0 }
-                          ])
-                        }
-                      >
-                        <span className="material-symbols-outlined text-[12px]">add</span>
-                        Añadir
-                      </button>
-                    </div>
-                    <div className="overflow-hidden border border-border-dark rounded-lg bg-background-dark/60">
-                      <table className="w-full text-left">
-                        <thead className="bg-background-dark">
-                          <tr>
-                            <th className="text-[10px] font-bold uppercase p-2 text-slate-400">Tipo</th>
-                            <th className="text-[10px] font-bold uppercase p-2 text-slate-400">
-                              Descripción
-                            </th>
-                            <th className="text-[10px] font-bold uppercase p-2 text-slate-400 text-right">
-                              Monto
-                            </th>
-                            <th className="text-[10px] font-bold uppercase p-2 text-slate-400 text-right">
-                              Acción
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-xs">
-                          {operations.map((item) => (
-                            <tr key={item.id} className="border-t border-border-dark">
-                              <td className="p-2">
-                                <select
-                                  className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[10px] text-white"
-                                  value={item.tipo}
-                                  onChange={(event) =>
-                                    setOperations((prev) =>
-                                      prev.map((row) =>
-                                        row.id === item.id ? { ...row, tipo: event.target.value } : row
-                                      )
-                                    )
-                                  }
-                                >
-                                  <option value="SUST">SUST</option>
-                                  <option value="MO">MO</option>
-                                  <option value="BYD">BYD</option>
-                                </select>
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white"
-                                  value={item.descripcion}
-                                  onChange={(event) =>
-                                    setOperations((prev) =>
-                                      prev.map((row) =>
-                                        row.id === item.id ? { ...row, descripcion: event.target.value } : row
-                                      )
-                                    )
-                                  }
-                                  placeholder="Descripción de operación"
-                                />
-                              </td>
-                              <td className="p-2 text-right">
-                                <input
-                                  type="number"
-                                  className="w-24 bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
-                                  value={item.monto}
-                                  onChange={(event) =>
-                                    setOperations((prev) =>
-                                      prev.map((row) =>
-                                        row.id === item.id
-                                          ? { ...row, monto: Number(event.target.value || 0) }
-                                          : row
-                                      )
-                                    )
-                                  }
-                                />
-                              </td>
-                              <td className="p-2 text-right">
-                                <button
-                                  type="button"
-                                  className="text-slate-400 hover:text-alert-red"
-                                  onClick={() =>
-                                    setOperations((prev) => prev.filter((row) => row.id !== item.id))
-                                  }
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">delete</span>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="col-span-12 lg:col-span-4 flex flex-col gap-4">
-                  <div className="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col h-full">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">
-                      Resumen de presupuesto
-                    </h3>
-                    <div className="space-y-4">
-                      {saveError ? (
-                        <p className="text-xs text-alert-red">{saveError}</p>
-                      ) : null}
-                      {saveSuccess ? (
-                        <p className="text-xs text-alert-green">{saveSuccess}</p>
-                      ) : null}
-                      {[
-                        ["Mano de Obra (MO)", montoPorTipo.mo],
-                        ["Refacciones (SUST)", montoPorTipo.sust],
-                        ["Insumos y Materiales (BYD)", montoPorTipo.byd]
-                      ].map(([label, value]) => (
-                        <div key={label} className="flex justify-between items-center py-2 border-b border-border-dark">
-                          <span className="text-sm text-slate-400">{label}</span>
-                          <span className="text-sm font-bold text-white">
-                            {Number(value).toLocaleString("es-MX", {
-                              style: "currency",
-                              currency: "MXN"
-                            })}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="pt-4">
-                        <div className="flex justify-between items-center text-sm mb-1">
-                          <span className="text-slate-400">Subtotal</span>
-                          <span className="font-bold">
-                            {subtotal.toLocaleString("es-MX", {
-                              style: "currency",
-                              currency: "MXN"
-                            })}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm mb-4">
-                          <span className="text-slate-400">IVA (16%)</span>
-                          <span className="font-bold">
-                            {iva.toLocaleString("es-MX", {
-                              style: "currency",
-                              currency: "MXN"
-                            })}
-                          </span>
-                        </div>
-                        <div className="bg-background-dark p-5 rounded border border-border-dark mb-6">
-                          <div className="flex justify-between items-end">
-                            <span className="text-[10px] uppercase font-black text-primary tracking-widest">
-                              Total valuación
-                            </span>
-                            <span className="text-3xl font-black text-white">
-                              {total.toLocaleString("es-MX", {
-                                style: "currency",
-                                currency: "MXN"
-                              })}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="p-4 bg-alert-amber/10 border-l-4 border-alert-amber rounded-r mb-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-alert-amber uppercase">
-                              Autorizado aseguradora
-                            </span>
-                            <input
-                              type="number"
-                              className="w-32 bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white text-right"
-                              value={autorizadoAseguradora}
-                              onChange={(event) =>
-                                setAutorizadoAseguradora(Number(event.target.value || 0))
-                              }
-                            />
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-alert-red/10 border border-alert-red/40 rounded">
-                          <span className="text-[10px] font-bold text-alert-red uppercase">
-                            Diferencia por cobrar
-                          </span>
-                          <span className="text-md font-black text-alert-red">
-                            {diferencia.toLocaleString("es-MX", {
-                              style: "currency",
-                              currency: "MXN"
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-auto pt-8">
-                      <p className="text-[10px] text-slate-400 uppercase font-bold mb-4 tracking-tighter">
-                        Observaciones de valuación
+              <div className="space-y-4">
+                <section className="border border-border-dark bg-surface-dark rounded-xl px-4 py-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                    <div>
+                      <h1 className="text-xl font-black text-white leading-none">{vehiculoTitle}</h1>
+                      <p className="text-slate-400 text-xs mt-1 font-medium tracking-wide">
+                        Cliente: {record.nb_cliente || "-"} | Placas: {record.placas || "-"} |
+                        Serie: {record.serie_auto || "-"}
                       </p>
-                      <textarea
-                        className="w-full bg-background-dark border-border-dark rounded text-xs p-3 text-white focus:ring-primary focus:border-primary placeholder:text-slate-500"
-                        placeholder="Añadir notas internas sobre el siniestro..."
-                        rows="3"
-                        value={observacionesValuacion}
-                        onChange={(event) => setObservacionesValuacion(event.target.value)}
-                      />
+                    </div>
+                    <div className="flex items-center gap-2 bg-background-dark/80 rounded-lg border border-border-dark p-1">
+                      {tabs.map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setActiveTab(tab.id)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-black uppercase tracking-widest transition-all ${
+                            activeTab === tab.id
+                              ? "bg-primary text-white"
+                              : "text-slate-400 hover:text-white hover:bg-surface-dark"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
+                  {saveError ? <p className="text-xs text-alert-red mt-3">{saveError}</p> : null}
+                  {saveSuccess ? <p className="text-xs text-alert-green mt-3">{saveSuccess}</p> : null}
                 </section>
 
-                <section className="col-span-12 lg:col-span-4 flex flex-col gap-4">
-                  <div className="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col h-full relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-2">
-                      <span className="flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary">dynamic_form</span>
-                      Conexión con aseguradoras
-                    </h3>
-                    <p className="text-slate-400 text-xs mb-6">
-                      Sincronización en tiempo real mediante API y scrapping de portales.
-                    </p>
-                    <div className="space-y-4 mb-8">
-                      <div className="p-4 bg-background-dark border border-border-dark rounded">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-widest">
-                          Aseguradora activa
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1">
-                            {aseguradoraLogo(aseguradoraActiva) ? (
-                              <img
-                                src={aseguradoraLogo(aseguradoraActiva)}
-                                alt={aseguradoraActiva}
-                                className="w-8 h-8 rounded bg-white object-cover"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 bg-white rounded flex items-center justify-center font-black text-blue-900 text-xs">
-                                {aseguradoraActiva ? aseguradoraActiva.slice(0, 3).toUpperCase() : "--"}
-                              </div>
-                            )}
-                            <select
-                              className="flex-1 bg-surface-dark border border-border-dark text-white text-xs rounded-lg py-2 px-3 focus:ring-1 focus:ring-primary focus:border-primary"
-                              value={aseguradoraActiva}
-                              onChange={(event) => setAseguradoraActiva(event.target.value)}
-                            >
-                              <option value="">Selecciona aseguradora</option>
-                              {aseguradoras.map((item) => (
-                                <option key={item.id} value={item.nb_aseguradora}>
-                                  {item.nb_aseguradora}
-                                </option>
-                              ))}
-                            </select>
+                {activeTab === "evidencia" ? (
+                  <section className="grid grid-cols-12 gap-4 min-h-[68vh]">
+                    <aside className="col-span-12 xl:col-span-3 bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
+                      <div className="p-4 space-y-6 h-full overflow-y-auto custom-scrollbar">
+                        <div>
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3">
+                            Captura de datos
+                          </h3>
+                          <label
+                            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-dark px-4 py-8 text-center text-sm text-slate-400 hover:border-primary/60 hover:text-slate-200 transition-colors cursor-pointer bg-background-dark/40"
+                            htmlFor="valuacion-evidencia"
+                          >
+                            <span className="material-symbols-outlined text-4xl">cloud_upload</span>
+                            <span className="text-xs font-black uppercase tracking-wider text-white">
+                              Cargar fotografias
+                            </span>
+                            <span className="text-[11px]">Arrastra archivos o haz clic aqui</span>
+                            {uploading ? (
+                              <span className="text-[10px] text-primary">Subiendo archivos...</span>
+                            ) : null}
+                            <input
+                              id="valuacion-evidencia"
+                              className="hidden"
+                              type="file"
+                              accept=".jpg,.jpeg,.png"
+                              multiple
+                              onChange={handleUploadEvidencia}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="w-full mt-3 flex items-center justify-center gap-2 bg-white text-slate-900 py-3 rounded-lg text-xs font-black uppercase tracking-wider hover:bg-slate-200 transition-all"
+                          >
+                            <span className="material-symbols-outlined text-base">photo_camera</span>
+                            Tomar foto
+                          </button>
+                          {uploadError ? (
+                            <span className="text-[11px] text-alert-red mt-2 block">{uploadError}</span>
+                          ) : null}
+                          {uploadedFiles.length ? (
+                            <p className="mt-2 text-[10px] text-slate-400">
+                              Cargadas en esta sesion: {uploadedFiles.length}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3">
+                            Categorizacion
+                          </h3>
+                          <div className="grid grid-cols-1 gap-2">
+                            {evidenceCategories.map((category) => {
+                              const isActive = selectedCategory === category.id;
+                              return (
+                                <button
+                                  key={category.id}
+                                  type="button"
+                                  onClick={() => setSelectedCategory(category.id)}
+                                  className={`flex items-center justify-between p-3 rounded border text-xs font-bold transition-colors ${
+                                    isActive
+                                      ? "bg-primary/20 border-primary text-white"
+                                      : "bg-background-dark/30 border-border-dark text-slate-400 hover:text-white hover:border-primary/50"
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-sm">{category.icon}</span>
+                                    {category.label}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] ${
+                                      isActive ? "bg-primary" : "bg-border-dark text-slate-300"
+                                    }`}
+                                  >
+                                    {categoryCounts[category.id] || 0}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
-                      <div className="p-4 bg-background-dark border border-border-dark rounded">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-widest">
-                          Estatus en portal
-                        </p>
-                        <div className="flex items-center gap-3">
-                          <span className="material-symbols-outlined text-alert-amber">
-                            hourglass_empty
-                          </span>
-                          <span className="text-sm font-bold text-alert-amber">
-                            En espera de autorización
+                    </aside>
+
+                    <section className="col-span-12 xl:col-span-6 bg-background-dark border border-border-dark rounded-xl p-5 relative flex flex-col items-center justify-center">
+                      {visibleEvidence.length ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={prevEvidence}
+                            className="absolute left-5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center bg-surface-dark/80 hover:bg-primary rounded-full border border-border-dark transition-all z-10"
+                          >
+                            <span className="material-symbols-outlined">chevron_left</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={nextEvidence}
+                            className="absolute right-5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center bg-surface-dark/80 hover:bg-primary rounded-full border border-border-dark transition-all z-10"
+                          >
+                            <span className="material-symbols-outlined">chevron_right</span>
+                          </button>
+
+                          <div className="relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark">
+                            <img
+                              src={filePreviewUrl(selectedEvidence)}
+                              alt={selectedEvidence?.archivo_nombre || "Evidencia"}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute top-1/4 left-1/3 w-12 h-12 border-2 border-red-500 rounded-full animate-pulse flex items-center justify-center">
+                              <span className="bg-red-500 text-white text-[10px] font-black px-1 rounded absolute -top-4">
+                                DAN-01
+                              </span>
+                            </div>
+                            <div className="absolute bottom-1/3 right-1/4 w-20 h-10 border-2 border-amber-500 rounded border-dashed">
+                              <span className="bg-amber-500 text-white text-[10px] font-black px-1 rounded absolute -top-4">
+                                RAYON
+                              </span>
+                            </div>
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-surface-dark/90 backdrop-blur-md px-4 py-2 rounded-full border border-border-dark flex items-center gap-5 shadow-xl">
+                              <button type="button" className="text-white hover:text-amber-400 transition-colors">
+                                <span className="material-symbols-outlined text-xl">zoom_in</span>
+                              </button>
+                              <button type="button" className="text-white hover:text-amber-400 transition-colors">
+                                <span className="material-symbols-outlined text-xl">zoom_out</span>
+                              </button>
+                              <div className="w-px h-6 bg-border-dark"></div>
+                              <button type="button" className="text-amber-400">
+                                <span className="material-symbols-outlined text-xl">edit</span>
+                              </button>
+                              <button type="button" className="text-white hover:text-alert-red transition-colors">
+                                <span className="material-symbols-outlined text-xl">delete</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 text-center">
+                            <div className="flex items-center justify-center gap-2 mb-1">
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded border bg-red-500/20 border-red-500/30 text-red-400 uppercase">
+                                {evidenceTag(selectedEvidence).label}
+                              </span>
+                              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                                {selectedEvidence?.archivo_nombre || `foto_${selectedEvidenceIndex + 1}.jpg`}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-400">
+                              Evidencia {selectedEvidenceIndex + 1} de {visibleEvidence.length}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full h-full min-h-[360px] rounded-lg border border-dashed border-border-dark bg-surface-dark/40 flex flex-col items-center justify-center text-center p-6">
+                          <span className="material-symbols-outlined text-5xl text-slate-500 mb-2">image</span>
+                          <p className="text-sm text-slate-300 font-bold uppercase tracking-wider">
+                            Sin evidencia para esta categoria
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Cambia de categoria o carga nuevas fotografias.
+                          </p>
+                        </div>
+                      )}
+                    </section>
+
+                    <aside className="col-span-12 xl:col-span-3 bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
+                      <div className="p-4 h-full flex flex-col">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+                            Galeria de evidencia
+                          </h3>
+                          <span className="text-[10px] text-slate-500">
+                            {visibleEvidence.length} archivos
                           </span>
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-2 italic">
-                          Última actualización: hace 4 minutos
-                        </p>
-                      </div>
-                      <div className="p-4 bg-alert-amber/10 border border-alert-amber/30 rounded flex items-start gap-3">
-                        <span className="material-symbols-outlined text-alert-amber text-lg">
-                          warning
-                        </span>
-                        <div>
-                          <p className="text-xs font-bold text-alert-amber uppercase tracking-tight">
-                            Diferencia detectada
-                          </p>
-                          <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                            El portal registra un monto autorizado de{" "}
-                            <span className="text-white font-bold">$7,500.00</span>. Existe una
-                            discrepancia de{" "}
-                            <span className="text-white font-bold">$1,010.00</span> con el
-                            presupuesto actual.
-                          </p>
+                        {visibleEvidence.length ? (
+                          <div className="grid grid-cols-2 gap-3 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                            {visibleEvidence.map((item, index) => {
+                              const badge = evidenceTag(item);
+                              const selected = index === selectedEvidenceIndex;
+                              return (
+                                <button
+                                  key={item.path || item.archivo_nombre || index}
+                                  type="button"
+                                  className={`relative aspect-square rounded-lg border overflow-hidden text-left ${
+                                    selected
+                                      ? "border-primary ring-2 ring-primary/50"
+                                      : "border-border-dark hover:border-primary/50"
+                                  }`}
+                                  onClick={() => setSelectedEvidenceIndex(index)}
+                                  title={item.archivo_nombre || "Evidencia"}
+                                >
+                                  <img
+                                    alt={item.archivo_nombre || "Evidencia"}
+                                    className="w-full h-full object-cover"
+                                    src={filePreviewUrl(item)}
+                                  />
+                                  <span
+                                    className={`absolute top-2 left-2 text-[8px] font-black px-1.5 py-0.5 rounded border uppercase ${badge.classes}`}
+                                  >
+                                    {badge.label}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center text-center border border-dashed border-border-dark rounded-lg bg-background-dark/40 p-4">
+                            <p className="text-xs text-slate-500">No hay imagenes en esta categoria.</p>
+                          </div>
+                        )}
+                        <div className="mt-4 pt-4 border-t border-border-dark text-[10px] text-slate-400 uppercase font-bold tracking-widest flex items-center justify-between">
+                          <span>Total de evidencias</span>
+                          <span className="text-white">{valuacionFotos.length} archivos</span>
                         </div>
                       </div>
-                    </div>
-                    <div className="mt-auto">
-                      <button
-                        className="w-full py-3 bg-primary hover:bg-primary/80 text-white rounded font-bold text-sm flex items-center justify-center gap-3 transition-all"
-                        type="button"
-                      >
-                        <span
-                          className="material-symbols-outlined animate-spin"
-                          style={{ animationDuration: "3s" }}
+                    </aside>
+                  </section>
+                ) : null}
+
+                {activeTab === "presupuesto" ? (
+                  <section className="grid grid-cols-12 gap-4">
+                    <div className="col-span-12 xl:col-span-8 bg-surface-dark border border-border-dark rounded-xl p-4 flex flex-col gap-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                          Lista de operaciones
+                        </h3>
+                        <button
+                          className="flex items-center gap-1 bg-primary px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider"
+                          type="button"
+                          onClick={() =>
+                            setOperations((prev) => [
+                              ...prev,
+                              { id: crypto.randomUUID(), tipo: "MO", descripcion: "", monto: 0 }
+                            ])
+                          }
                         >
-                          sync
-                        </span>
-                        Sincronizar estatus ahora
-                      </button>
-                      <div className="mt-4 grid grid-cols-3 gap-2">
-                        <div className="text-center p-2 border border-border-dark rounded bg-background-dark/80">
-                          <p className="text-[9px] text-slate-400 uppercase font-bold">Refacciones</p>
-                          <p className="text-xs font-bold text-alert-green">Solicitadas</p>
-                        </div>
-                        <div className="text-center p-2 border border-border-dark rounded bg-background-dark/80">
-                          <p className="text-[9px] text-slate-400 uppercase font-bold">Deducible</p>
-                          <p className="text-xs font-bold">$3,500</p>
-                        </div>
-                        <div className="text-center p-2 border border-border-dark rounded bg-background-dark/80">
-                          <p className="text-[9px] text-slate-400 uppercase font-bold">Folio</p>
-                          <p className="text-xs font-bold">AX-29102</p>
-                        </div>
+                          <span className="material-symbols-outlined text-sm">add</span>
+                          Anadir operacion
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto border border-border-dark rounded-lg bg-background-dark/50">
+                        <table className="w-full min-w-[720px] text-left">
+                          <thead className="bg-background-dark/80">
+                            <tr>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400">Tipo</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400">Descripcion</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Monto</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Accion</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-xs">
+                            {operations.length ? (
+                              operations.map((item) => (
+                                <tr key={item.id} className="border-t border-border-dark">
+                                  <td className="p-3 w-28">
+                                    <select
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[10px] text-white"
+                                      value={item.tipo}
+                                      onChange={(event) =>
+                                        setOperations((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id ? { ...row, tipo: event.target.value } : row
+                                          )
+                                        )
+                                      }
+                                    >
+                                      <option value="SUST">SUST</option>
+                                      <option value="MO">MO</option>
+                                      <option value="BYD">BYD</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-3">
+                                    <input
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white"
+                                      value={item.descripcion}
+                                      onChange={(event) =>
+                                        setOperations((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, descripcion: event.target.value }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                      placeholder="Descripcion de operacion"
+                                    />
+                                  </td>
+                                  <td className="p-3 text-right w-40">
+                                    <input
+                                      type="number"
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      value={item.monto}
+                                      onChange={(event) =>
+                                        setOperations((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, monto: Number(event.target.value || 0) }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td className="p-3 text-right w-24">
+                                    <button
+                                      type="button"
+                                      className="text-slate-400 hover:text-alert-red"
+                                      onClick={() =>
+                                        setOperations((prev) => prev.filter((row) => row.id !== item.id))
+                                      }
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan="4" className="p-10 text-center text-slate-500 text-sm">
+                                  Aun no hay operaciones capturadas.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
-                  </div>
-                </section>
+
+                    <aside className="col-span-12 xl:col-span-4 bg-surface-dark border border-border-dark rounded-xl p-5 flex flex-col">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-5">
+                        Resumen de presupuesto
+                      </h3>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center pb-2 border-b border-border-dark">
+                          <span className="text-slate-400">Mano de Obra (MO)</span>
+                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.mo)}</span>
+                        </div>
+                        <div className="flex justify-between items-center pb-2 border-b border-border-dark">
+                          <span className="text-slate-400">Refacciones (SUST)</span>
+                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.sust)}</span>
+                        </div>
+                        <div className="flex justify-between items-center pb-2 border-b border-border-dark">
+                          <span className="text-slate-400">Materiales (BYD)</span>
+                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.byd)}</span>
+                        </div>
+
+                        <div className="pt-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">Subtotal</span>
+                            <span className="font-bold text-white">{formatCurrency(subtotal)}</span>
+                          </div>
+                          <div className="flex justify-between items-center mt-1">
+                            <span className="text-slate-400">IVA (16%)</span>
+                            <span className="font-bold text-white">{formatCurrency(iva)}</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-background-dark border border-border-dark rounded-lg p-4 mt-2">
+                          <div className="flex justify-between items-end">
+                            <span className="text-[10px] uppercase tracking-widest font-black text-primary">
+                              Total valuacion
+                            </span>
+                            <span className="text-2xl font-black text-white">{formatCurrency(total)}</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3">
+                            <p className="text-[10px] uppercase text-amber-400 font-bold">Autorizado</p>
+                            <p className="text-sm font-black mt-1 text-white">{formatCurrency(autorizado)}</p>
+                          </div>
+                          <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
+                            <p className="text-[10px] uppercase text-red-400 font-bold">Diferencia</p>
+                            <p className="text-sm font-black mt-1 text-white">{formatCurrency(diferencia)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </aside>
+                  </section>
+                ) : null}
+
+                {activeTab === "comparativa" ? (
+                  <section className="grid grid-cols-12 gap-4">
+                    <div className="col-span-12 xl:col-span-5 bg-surface-dark border border-border-dark rounded-xl p-5">
+                      <h3 className="text-sm font-black uppercase tracking-wider text-white mb-4">
+                        Conexion con aseguradora
+                      </h3>
+                      <div className="space-y-4">
+                        <div className="p-4 bg-background-dark border border-border-dark rounded-lg">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-widest">
+                            Aseguradora activa
+                          </p>
+                          <select
+                            className="w-full bg-surface-dark border border-border-dark text-white text-sm rounded-lg py-2 px-3 focus:ring-1 focus:ring-primary focus:border-primary"
+                            value={aseguradoraActiva}
+                            onChange={(event) => setAseguradoraActiva(event.target.value)}
+                          >
+                            <option value="">Selecciona aseguradora</option>
+                            {aseguradoras.map((item) => (
+                              <option key={item.id} value={item.nb_aseguradora}>
+                                {item.nb_aseguradora}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="p-4 bg-background-dark border border-border-dark rounded-lg">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-widest">
+                            Monto autorizado por aseguradora
+                          </p>
+                          <input
+                            type="number"
+                            className="w-full bg-surface-dark border border-border-dark rounded px-3 py-2 text-sm text-white"
+                            value={autorizadoAseguradora}
+                            onChange={(event) => setAutorizadoAseguradora(Number(event.target.value || 0))}
+                          />
+                        </div>
+
+                        <button
+                          className="w-full py-3 bg-primary hover:bg-primary/80 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all"
+                          type="button"
+                        >
+                          <span
+                            className="material-symbols-outlined animate-spin"
+                            style={{ animationDuration: "3s" }}
+                          >
+                            sync
+                          </span>
+                          Sincronizar estatus ahora
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="col-span-12 xl:col-span-7 bg-surface-dark border border-border-dark rounded-xl p-5">
+                      <h3 className="text-sm font-black uppercase tracking-wider text-white mb-4">
+                        Comparativa financiera
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+                        <div className="bg-background-dark border border-border-dark rounded-lg p-4">
+                          <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                            Total valuacion
+                          </p>
+                          <p className="text-lg font-black text-white mt-1">{formatCurrency(total)}</p>
+                        </div>
+                        <div className="bg-background-dark border border-border-dark rounded-lg p-4">
+                          <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                            Autorizado portal
+                          </p>
+                          <p className="text-lg font-black text-white mt-1">{formatCurrency(autorizado)}</p>
+                        </div>
+                        <div className="bg-background-dark border border-border-dark rounded-lg p-4">
+                          <p className="text-[10px] uppercase tracking-widest text-red-400 font-bold">
+                            Diferencia
+                          </p>
+                          <p className="text-lg font-black text-red-400 mt-1">{formatCurrency(diferencia)}</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-5">
+                        <div className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-amber-400">warning</span>
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-wider text-amber-400">
+                              Diferencia detectada
+                            </p>
+                            <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                              El monto de valuacion no coincide con el autorizado. Ajusta el
+                              presupuesto o solicita ampliacion a la aseguradora.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold mb-2 tracking-widest">
+                          Observaciones de valuacion
+                        </p>
+                        <textarea
+                          className="w-full bg-background-dark border border-border-dark rounded-lg text-xs p-3 text-white focus:ring-primary focus:border-primary placeholder:text-slate-500"
+                          placeholder="Anadir notas internas sobre discrepancias, autorizaciones o cambios de alcance..."
+                          rows="6"
+                          value={observacionesValuacion}
+                          onChange={(event) => setObservacionesValuacion(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
               </div>
             ) : null}
+
             <button
               className="mt-6 text-sm text-slate-400 hover:text-white inline-flex items-center gap-2"
               type="button"

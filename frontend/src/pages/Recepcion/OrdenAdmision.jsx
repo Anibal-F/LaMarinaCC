@@ -4,6 +4,94 @@ import Sidebar from "../../components/Sidebar.jsx";
 import SearchableSelect from "../../components/SearchableSelect.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 
+const STOPWORDS = new Set([
+  "DE",
+  "DEL",
+  "LA",
+  "EL",
+  "LOS",
+  "LAS",
+  "Y",
+  "AL",
+  "EN",
+  "POR",
+  "PARA",
+  "CON",
+  "SE",
+  "A",
+  "CHECAR",
+  "REVISION",
+  "REVISAR"
+]);
+
+const normalizeText = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const tokenize = (value) =>
+  normalizeText(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !STOPWORDS.has(token));
+
+function matchCatalogPartsFromDescription(description, catalogParts = []) {
+  if (!description || !catalogParts.length) return [];
+
+  const segments = String(description)
+    .split(/[,\n;/]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const indexedParts = catalogParts
+    .map((item) => {
+      const name = String(item.nb_parte || "").trim();
+      if (!name) return null;
+      const norm = normalizeText(name);
+      const tokens = tokenize(name);
+      return { name, norm, tokens };
+    })
+    .filter(Boolean);
+
+  const matches = new Set();
+  for (const segment of segments) {
+    const segNorm = normalizeText(segment);
+    const segTokens = new Set(tokenize(segment));
+    if (!segTokens.size) continue;
+
+    let best = null;
+    let bestScore = 0;
+    for (const part of indexedParts) {
+      if (!part.tokens.length) continue;
+      if (segNorm.includes(part.norm) || part.norm.includes(segNorm)) {
+        best = part;
+        bestScore = 10;
+        break;
+      }
+
+      const hits = part.tokens.filter((token) => segTokens.has(token)).length;
+      if (!hits) continue;
+
+      const coverage = hits / part.tokens.length;
+      const score = coverage + hits * 0.2;
+      if (score > bestScore) {
+        best = part;
+        bestScore = score;
+      }
+    }
+
+    if (best && bestScore >= 0.6) {
+      matches.add(best.name);
+    }
+  }
+
+  return Array.from(matches);
+}
+
 export default function OrdenAdmision() {
   const [records, setRecords] = useState([]);
   const [grupos, setGrupos] = useState([]);
@@ -100,6 +188,14 @@ export default function OrdenAdmision() {
 
     loadCatalogos();
   }, []);
+
+  useEffect(() => {
+    if (!form.descripcion_siniestro || danosSiniestroParts.length || !partesAuto.length) return;
+    const matched = matchCatalogPartsFromDescription(form.descripcion_siniestro, partesAuto);
+    if (matched.length) {
+      setDanosSiniestroParts(matched);
+    }
+  }, [form.descripcion_siniestro, danosSiniestroParts.length, partesAuto]);
 
   useEffect(() => {
     if (!previewModal?.archivo_path) return;
@@ -299,6 +395,12 @@ export default function OrdenAdmision() {
             .filter(Boolean);
           if (!list.length || prev.length) return prev;
           return list;
+        });
+      } else if (campos?.descripcion_siniestro && partesAuto.length) {
+        setDanosSiniestroParts((prev) => {
+          if (prev.length) return prev;
+          const matched = matchCatalogPartsFromDescription(campos.descripcion_siniestro, partesAuto);
+          return matched.length ? matched : prev;
         });
       }
       if (campos?.danos_preexistentes) {

@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { isAuthenticated } from "./utils/auth.js";
+import { AUTH_EVENT, isAuthenticated } from "./utils/auth.js";
 
 import Home from "./pages/Home/Home.jsx";
 import Login from "./pages/Login/Login.jsx";
@@ -33,11 +33,14 @@ export default function App() {
         setAuthPulse((value) => value + 1);
       }
     };
+    const onAuthChanged = () => setAuthPulse((value) => value + 1);
 
     window.addEventListener("storage", onStorage);
+    window.addEventListener(AUTH_EVENT, onAuthChanged);
     return () => {
       window.clearInterval(tick);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener(AUTH_EVENT, onAuthChanged);
     };
   }, []);
 

@@ -1,6 +1,13 @@
 const SESSION_KEY = "lmcc_user";
+const AUTH_EVENT = "lmcc-auth-changed";
 const HOURS_8_MS = 8 * 60 * 60 * 1000;
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
+
+function notifyAuthChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_EVENT));
+  }
+}
 
 export function createSession(userPayload, rememberMe = false) {
   const now = Date.now();
@@ -12,11 +19,13 @@ export function createSession(userPayload, rememberMe = false) {
     remember_me: Boolean(rememberMe)
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  notifyAuthChanged();
   return session;
 }
 
 export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
+  notifyAuthChanged();
 }
 
 export function getSession() {
@@ -43,3 +52,5 @@ export function getSession() {
 export function isAuthenticated() {
   return Boolean(getSession());
 }
+
+export { AUTH_EVENT };

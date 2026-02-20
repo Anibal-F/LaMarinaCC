@@ -40,12 +40,14 @@ export default function Recepcion() {
   useEffect(() => {
     const load = async () => {
       try {
+        setError("");
         const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros`);
         if (!response.ok) {
           throw new Error("No se pudieron cargar los registros");
         }
         const payload = await response.json();
         setRecords(payload);
+        setError("");
       } catch (err) {
         setError(err.message || "No se pudieron cargar los registros");
       }

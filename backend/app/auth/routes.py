@@ -6,7 +6,7 @@ from app.core.db import get_connection
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
 
 
 class LoginRequest(BaseModel):
@@ -40,7 +40,9 @@ class RegisterResponse(BaseModel):
 
 
 def _verify_password(plain_password: str, stored_password: str) -> bool:
-    if stored_password.startswith("$2a$") or stored_password.startswith("$2b$") or stored_password.startswith("$2y$"):
+    # If password looks like a supported hash, verify with passlib.
+    # Keep plain-text fallback for legacy records.
+    if pwd_context.identify(stored_password):
         return pwd_context.verify(plain_password, stored_password)
     return plain_password == stored_password
 

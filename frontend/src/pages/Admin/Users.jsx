@@ -123,7 +123,7 @@ export default function AdminUsers() {
     }
     if (!form.email.trim()) {
       errors.email = "Correo requerido";
-    } else if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(form.email)) {
+    } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) {
       errors.email = "Correo inválido";
     }
     if (!editingId && !form.password.trim()) {

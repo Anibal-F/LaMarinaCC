@@ -48,8 +48,12 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={authenticated ? <Navigate to="/" replace /> : <Login />} />
-      <Route path="/" element={authenticated ? <Home /> : <Navigate to="/login" replace />} />
+      <Route path="/login" element={authenticated ? <Navigate to="/home" replace /> : <Login />} />
+      <Route
+        path="/"
+        element={<Navigate to={authenticated ? "/home" : "/login"} replace />}
+      />
+      <Route path="/home" element={authenticated ? <Home /> : <Navigate to="/login" replace />} />
       <Route
         path="/recepcion"
         element={authenticated ? <Recepcion /> : <Navigate to="/login" replace />}
@@ -110,7 +114,7 @@ export default function App() {
         path="/valuacion/vehiculos/:id"
         element={authenticated ? <ValuarVehiculo /> : <Navigate to="/login" replace />}
       />
-      <Route path="*" element={<Navigate to={authenticated ? "/" : "/login"} replace />} />
+      <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
     </Routes>
   );
 }

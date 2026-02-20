@@ -24,7 +24,8 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      VITE_API_URL: http://44.204.161.253:8010
+      VITE_API_URL: ${VITE_API_URL:-/api}
+      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET:-http://backend:8010}
     ports:
       - "3010:3010"
     depends_on:

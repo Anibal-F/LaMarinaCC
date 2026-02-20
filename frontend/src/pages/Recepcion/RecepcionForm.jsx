@@ -177,18 +177,43 @@ export default function RecepcionForm() {
     audioStreamRef.current = null;
   };
 
+  const postTranscriptionWithRetry = async (formData, attempts = 2) => {
+    let lastError = null;
+    for (let tryIndex = 1; tryIndex <= attempts; tryIndex += 1) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 180000);
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/transcripciones`, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal
+        });
+        window.clearTimeout(timeoutId);
+        return response;
+      } catch (err) {
+        window.clearTimeout(timeoutId);
+        lastError = err;
+        if (err?.name === "AbortError") {
+          throw new Error("La transcripción tardó demasiado. Intenta con un audio más corto.");
+        }
+        if (tryIndex < attempts) {
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          continue;
+        }
+      }
+    }
+    throw new Error(lastError?.message || "No se pudo conectar al servicio de transcripción.");
+  };
+
   const transcribeObservationAudio = async (target, audioBlob) => {
     const mimeType = audioBlob.type || "audio/webm";
     const extension = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "webm";
     setTranscribingTarget(target);
     try {
       const formData = new FormData();
-      formData.append("file", new File([audioBlob], `observaciones-${Date.now()}.${extension}`, { type: mimeType }));
+      formData.append("file", audioBlob, `observaciones-${Date.now()}.${extension}`);
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/transcripciones`, {
-        method: "POST",
-        body: formData
-      });
+      const response = await postTranscriptionWithRetry(formData, 2);
       if (!response.ok) {
         const data = await response.json().catch(() => null);
         throw new Error(data?.detail || "No se pudo transcribir el audio.");

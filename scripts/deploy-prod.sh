@@ -13,7 +13,7 @@ echo "==> Build + deploy (prod)"
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 echo "==> Estado de contenedores"
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 
 echo "==> Health checks"
 curl -fsS http://localhost:3010/health >/dev/null

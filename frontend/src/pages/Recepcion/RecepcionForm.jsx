@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import SearchableSelect from "../../components/SearchableSelect.jsx";
+import { getSession } from "../../utils/auth.js";
 
 export default function RecepcionForm() {
   const navigate = useNavigate();
@@ -11,13 +12,7 @@ export default function RecepcionForm() {
   const editId = searchParams.get("edit");
   const isEditMode = Boolean(editId);
   const fuelLevels = ["Tanque Vacio", "1/4 Tanque", "1/2 Tanque", "3/4 Tanque", "Tanque Lleno"];
-  const storedUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("lmcc_user") || "null");
-    } catch {
-      return null;
-    }
-  })();
+  const storedUser = getSession();
   const displayUserName = storedUser?.name || storedUser?.user_name || "Usuario";
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");

@@ -1,5 +1,6 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useMemo, useState } from "react";
+import { clearSession, getSession } from "../utils/auth.js";
 
 const navItemBase =
   "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors";
@@ -9,13 +10,7 @@ const navItemActive = "bg-primary/20 text-white border-l-4 border-primary";
 
 export default function Sidebar() {
   const navigate = useNavigate();
-  const storedUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("lmcc_user") || "null");
-    } catch {
-      return null;
-    }
-  })();
+  const storedUser = getSession();
 
   const displayName = storedUser?.name || "Usuario";
   const displayProfile = storedUser?.profile || "Perfil";
@@ -451,7 +446,7 @@ export default function Sidebar() {
           type="button"
           className="text-slate-400 hover:text-white transition-colors"
           onClick={() => {
-            localStorage.removeItem("lmcc_user");
+            clearSession();
             navigate("/login", { replace: true });
           }}
         >

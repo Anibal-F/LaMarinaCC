@@ -1,13 +1,21 @@
 const heroImageUrl = "/assets/BG_LoginLaMarina.png";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { createSession, isAuthenticated } from "../../utils/auth.js";
 
 export default function Login() {
   const navigate = useNavigate();
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -26,7 +34,7 @@ export default function Login() {
       }
 
       const payload = await response.json();
-      localStorage.setItem("lmcc_user", JSON.stringify(payload));
+      createSession(payload, rememberMe);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "No se pudo iniciar sesión");
@@ -93,6 +101,8 @@ export default function Login() {
                     <input
                       className="rounded border-[#394c56] bg-[#1b2328] text-[#00527a] focus:ring-[#00527a] transition-all cursor-pointer"
                       type="checkbox"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
                     />
                     <span className="text-[#9ab0bc] group-hover:text-white transition-colors">
                       Recordarme

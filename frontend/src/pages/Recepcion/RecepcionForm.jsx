@@ -6,6 +6,9 @@ import AppHeader from "../../components/AppHeader.jsx";
 import SearchableSelect from "../../components/SearchableSelect.jsx";
 import { getSession } from "../../utils/auth.js";
 
+const MAX_OBSERVATION_RECORDING_MS = 12000;
+const MIN_OBSERVATION_RECORDING_MS = 800;
+
 export default function RecepcionForm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -84,6 +87,8 @@ export default function RecepcionForm() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const audioStreamRef = useRef(null);
+  const recordingTimeoutRef = useRef(null);
+  const recordingStartedAtRef = useRef(0);
   const [recordingTarget, setRecordingTarget] = useState("");
   const [transcribingTarget, setTranscribingTarget] = useState("");
   const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
@@ -177,6 +182,12 @@ export default function RecepcionForm() {
     audioStreamRef.current = null;
   };
 
+  const clearRecordingTimeout = () => {
+    if (!recordingTimeoutRef.current) return;
+    window.clearTimeout(recordingTimeoutRef.current);
+    recordingTimeoutRef.current = null;
+  };
+
   const postTranscriptionWithRetry = async (formData, attempts = 2) => {
     let lastError = null;
     for (let tryIndex = 1; tryIndex <= attempts; tryIndex += 1) {
@@ -243,6 +254,7 @@ export default function RecepcionForm() {
   const stopObservationRecording = () => {
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === "inactive") return;
+    clearRecordingTimeout();
     recorder.stop();
   };
 
@@ -277,16 +289,27 @@ export default function RecepcionForm() {
       };
 
       recorder.onstop = async () => {
+        clearRecordingTimeout();
         const chunks = audioChunksRef.current;
         audioChunksRef.current = [];
         setRecordingTarget("");
         stopAudioStream();
         if (!chunks.length) return;
+        const elapsed = Date.now() - recordingStartedAtRef.current;
+        if (elapsed < MIN_OBSERVATION_RECORDING_MS) {
+          setError("La grabación fue muy corta. Intenta hablar al menos 1 segundo.");
+          return;
+        }
         const blob = new Blob(chunks, { type: recorder.mimeType || selectedMimeType || "audio/webm" });
         await transcribeObservationAudio(target, blob);
       };
 
       recorder.start();
+      recordingStartedAtRef.current = Date.now();
+      clearRecordingTimeout();
+      recordingTimeoutRef.current = window.setTimeout(() => {
+        stopObservationRecording();
+      }, MAX_OBSERVATION_RECORDING_MS);
       setRecordingTarget(target);
       setError("");
     } catch (err) {
@@ -589,6 +612,7 @@ export default function RecepcionForm() {
 
   useEffect(
     () => () => {
+      clearRecordingTimeout();
       stopObservationRecording();
       stopAudioStream();
     },

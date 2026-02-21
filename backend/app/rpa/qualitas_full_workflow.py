@@ -9,6 +9,8 @@ Opciones:
     --headless      Ejecutar sin ventana visible
     --save-json     Guardar datos en archivo JSON
     --status NAME   Hacer click en un estatus específico y extraer detalle
+    --use-db        Usar credenciales desde la base de datos (por defecto)
+    --use-env       Usar credenciales desde archivo .env
 """
 
 import argparse
@@ -25,11 +27,50 @@ from app.rpa.qualitas_extractor import QualitasExtractor, DashboardData
 from app.rpa.qualitas_modal_handler import handle_qualitas_modal
 
 
-# Cargar variables de entorno
+# Cargar variables de entorno (fallback)
 backend_dir = Path(__file__).resolve().parents[2]
 env_qualitas = backend_dir / ".envQualitas"
 if env_qualitas.exists():
     load_dotenv(dotenv_path=env_qualitas, override=True)
+
+
+# Intentar importar helper de credenciales
+try:
+    from app.rpa.credentials_helper import setup_qualitas_env, get_qualitas_credentials
+    CREDENTIALS_HELPER_AVAILABLE = True
+except ImportError:
+    CREDENTIALS_HELPER_AVAILABLE = False
+    print("[Warning] No se pudo importar credentials_helper, se usará .env")
+
+
+def load_credentials(use_db=True):
+    """Carga credenciales desde DB o .env según configuración."""
+    if use_db and CREDENTIALS_HELPER_AVAILABLE:
+        print("[Credentials] Intentando cargar desde base de datos...")
+        if setup_qualitas_env():
+            return True
+        print("[Credentials] No se encontraron en DB, usando .env como fallback...")
+    
+    # Usar .env (ya cargado arriba)
+    return bool(os.getenv("QUALITAS_USER"))
+
+
+def get_credential(key: str, use_db: bool = True) -> str:
+    """Obtiene una credencial, priorizando DB si está disponible."""
+    if use_db and CREDENTIALS_HELPER_AVAILABLE:
+        creds = get_qualitas_credentials()
+        if creds:
+            mapping = {
+                "QUALITAS_LOGIN_URL": creds.get("plataforma_url"),
+                "QUALITAS_USER": creds.get("usuario"),
+                "QUALITAS_PASSWORD": creds.get("password"),
+                "QUALITAS_TALLER_ID": creds.get("taller_id"),
+            }
+            if key in mapping and mapping[key]:
+                return mapping[key]
+    
+    # Fallback a .env
+    return os.getenv(key, "")
 
 
 async def solve_recaptcha_2captcha(site_key: str, page_url: str) -> str:
@@ -161,13 +202,18 @@ async def inject_recaptcha_token(page, token: str):
     await asyncio.sleep(2)
 
 
-async def do_login(page) -> bool:
+async def do_login(page, use_db: bool = True) -> bool:
     """Realiza el login automático."""
-    login_url = os.getenv("QUALITAS_LOGIN_URL", "https://proordersistem.com.mx/")
-    user = os.getenv("QUALITAS_USER")
-    password = os.getenv("QUALITAS_PASSWORD")
-    taller_id = os.getenv("QUALITAS_TALLER_ID")
-    site_key = os.getenv("QUALITAS_RECAPTCHA_SITE_KEY")
+    login_url = get_credential("QUALITAS_LOGIN_URL", use_db) or "https://proordersistem.com.mx/"
+    user = get_credential("QUALITAS_USER", use_db)
+    password = get_credential("QUALITAS_PASSWORD", use_db)
+    taller_id = get_credential("QUALITAS_TALLER_ID", use_db)
+    site_key = os.getenv("QUALITAS_RECAPTCHA_SITE_KEY")  # Esta solo está en .env por seguridad
+    
+    if not user or not password:
+        print("[Login] ✗ Error: No se encontraron credenciales de QUALITAS")
+        print("[Login] Asegúrate de configurarlas en Admin → Credenciales o en el archivo .envQualitas")
+        return False
     
     print("[Login] Navegando...")
     await page.goto(login_url, wait_until="domcontentloaded")
@@ -197,7 +243,7 @@ async def do_login(page) -> bool:
 
 
 async def run_workflow(skip_login: bool = False, headless: bool = False, 
-                       save_json: bool = True, click_status: str = None):
+                       save_json: bool = True, click_status: str = None, use_db: bool = True):
     """Ejecuta el workflow completo."""
     
     session_path = Path(__file__).resolve().parent / "sessions" / "qualitas_session.json"
@@ -230,7 +276,7 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
             # Login si es necesario
             if not skip_login or not session_path.exists():
                 print("\n[1/4] LOGIN AUTOMÁTICO")
-                success = await do_login(page)
+                success = await do_login(page, use_db=use_db)
                 if not success:
                     raise RuntimeError("Login fallido")
                 
@@ -242,7 +288,8 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 print(f"[Login] Sesión guardada")
             else:
                 print("\n[1/4] NAVEGANDO AL DASHBOARD")
-                await page.goto("https://proordersistem.com.mx/dashboard", wait_until="networkidle")
+                dashboard_url = get_credential("QUALITAS_LOGIN_URL", use_db) or "https://proordersistem.com.mx/"
+                await page.goto(f"{dashboard_url.rstrip('/')}/dashboard", wait_until="networkidle")
                 await asyncio.sleep(2)
             
             # Manejar modal de aviso (si aparece)
@@ -315,14 +362,28 @@ def main():
     parser.add_argument("--headless", action="store_true", help="Modo headless")
     parser.add_argument("--no-save", action="store_true", help="No guardar JSON")
     parser.add_argument("--status", type=str, help="Estatus a explorar (ej: 'Asignados')")
+    parser.add_argument("--use-db", action="store_true", default=True, help="Usar credenciales desde la base de datos (default)")
+    parser.add_argument("--use-env", action="store_true", help="Usar credenciales desde archivo .envQualitas")
     args = parser.parse_args()
+    
+    # Determinar si usar DB o .env
+    use_db = args.use_db and not args.use_env
+    
+    # Cargar credenciales
+    if not load_credentials(use_db=use_db):
+        print("[Error] No se pudieron cargar las credenciales de QUALITAS")
+        print("[Info] Verifica que:")
+        print("  1. Tienes credenciales configuradas en Admin → Credenciales (para --use-db)")
+        print("  2. O tienes el archivo .envQualitas configurado (para --use-env)")
+        return
     
     try:
         asyncio.run(run_workflow(
             skip_login=args.skip_login,
             headless=args.headless,
             save_json=not args.no_save,
-            click_status=args.status
+            click_status=args.status,
+            use_db=use_db
         ))
     except KeyboardInterrupt:
         print("\n[Interrumpido]")

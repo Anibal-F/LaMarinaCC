@@ -8,6 +8,8 @@ Opciones:
     --skip-login    Usar sesión existente (más rápido)
     --headless      Ejecutar sin ventana visible
     --save-json     Guardar datos en archivo JSON
+    --use-db        Usar credenciales desde la base de datos (por defecto)
+    --use-env       Usar credenciales desde archivo .env
 """
 
 import argparse
@@ -21,11 +23,49 @@ from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
 
-# Cargar variables de entorno
+# Cargar variables de entorno (fallback)
 backend_dir = Path(__file__).resolve().parents[2]
 env_chubb = backend_dir / ".envChubb"
 if env_chubb.exists():
     load_dotenv(dotenv_path=env_chubb, override=True)
+
+
+# Intentar importar helper de credenciales
+try:
+    from app.rpa.credentials_helper import setup_chubb_env, get_chubb_credentials
+    CREDENTIALS_HELPER_AVAILABLE = True
+except ImportError:
+    CREDENTIALS_HELPER_AVAILABLE = False
+    print("[Warning] No se pudo importar credentials_helper, se usará .env")
+
+
+def load_credentials(use_db=True):
+    """Carga credenciales desde DB o .env según configuración."""
+    if use_db and CREDENTIALS_HELPER_AVAILABLE:
+        print("[Credentials] Intentando cargar desde base de datos...")
+        if setup_chubb_env():
+            return True
+        print("[Credentials] No se encontraron en DB, usando .env como fallback...")
+    
+    # Usar .env (ya cargado arriba)
+    return bool(os.getenv("CHUBB_USER"))
+
+
+def get_credential(key: str, use_db: bool = True) -> str:
+    """Obtiene una credencial, priorizando DB si está disponible."""
+    if use_db and CREDENTIALS_HELPER_AVAILABLE:
+        creds = get_chubb_credentials()
+        if creds:
+            mapping = {
+                "CHUBB_LOGIN_URL": creds.get("plataforma_url"),
+                "CHUBB_USER": creds.get("usuario"),
+                "CHUBB_PASSWORD": creds.get("password"),
+            }
+            if key in mapping and mapping[key]:
+                return mapping[key]
+    
+    # Fallback a .env
+    return os.getenv(key, "")
 
 
 async def take_screenshot(page, name):
@@ -116,11 +156,16 @@ async def is_logged_in(page):
     return (not is_login_page and not login_form_visible) or dashboard_found
 
 
-async def do_login(page) -> bool:
+async def do_login(page, use_db: bool = True) -> bool:
     """Realiza el login automático en CHUBB/Audatex."""
-    login_url = os.getenv("CHUBB_LOGIN_URL", "https://acg-prod-mx.audatex.com.mx/Audanet/")
-    user = os.getenv("CHUBB_USER")
-    password = os.getenv("CHUBB_PASSWORD")
+    login_url = get_credential("CHUBB_LOGIN_URL", use_db) or "https://acg-prod-mx.audatex.com.mx/Audanet/"
+    user = get_credential("CHUBB_USER", use_db)
+    password = get_credential("CHUBB_PASSWORD", use_db)
+    
+    if not user or not password:
+        print("[Login] ✗ Error: No se encontraron credenciales de CHUBB")
+        print("[Login] Asegúrate de configurarlas en Admin → Credenciales o en el archivo .envChubb")
+        return False
     
     print("[Login] Navegando a CHUBB/Audatex...")
     await page.goto(login_url, wait_until="domcontentloaded")
@@ -343,7 +388,7 @@ async def do_login(page) -> bool:
 
 
 async def run_workflow(skip_login: bool = False, headless: bool = False, 
-                       save_json: bool = False):
+                       save_json: bool = False, use_db: bool = True):
     """Ejecuta el workflow completo."""
     
     session_path = Path(__file__).resolve().parent / "sessions" / "chubb_session.json"
@@ -373,7 +418,7 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
         try:
             if not skip_login or not session_path.exists():
                 print("\n[1/2] LOGIN AUTOMÁTICO")
-                success = await do_login(page)
+                success = await do_login(page, use_db=use_db)
                 if not success:
                     raise RuntimeError("Login fallido - revisa los screenshots en /sessions/")
                 
@@ -384,7 +429,7 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 print(f"[Login] Sesión guardada")
             else:
                 print("\n[1/2] NAVEGANDO CON SESIÓN EXISTENTE")
-                await page.goto(os.getenv("CHUBB_LOGIN_URL"), wait_until="networkidle")
+                await page.goto(get_credential("CHUBB_LOGIN_URL", use_db) or "https://acg-prod-mx.audatex.com.mx/Audanet/", wait_until="networkidle")
                 await asyncio.sleep(2)
                 await handle_billing_message(page)
             
@@ -416,13 +461,27 @@ def main():
     parser.add_argument("--skip-login", action="store_true", help="Usar sesión existente")
     parser.add_argument("--headless", action="store_true", help="Modo headless")
     parser.add_argument("--save-json", action="store_true", help="Guardar datos en JSON")
+    parser.add_argument("--use-db", action="store_true", default=True, help="Usar credenciales desde la base de datos (default)")
+    parser.add_argument("--use-env", action="store_true", help="Usar credenciales desde archivo .envChubb")
     args = parser.parse_args()
+    
+    # Determinar si usar DB o .env
+    use_db = args.use_db and not args.use_env
+    
+    # Cargar credenciales
+    if not load_credentials(use_db=use_db):
+        print("[Error] No se pudieron cargar las credenciales de CHUBB")
+        print("[Info] Verifica que:")
+        print("  1. Tienes credenciales configuradas en Admin → Credenciales (para --use-db)")
+        print("  2. O tienes el archivo .envChubb configurado (para --use-env)")
+        return
     
     try:
         asyncio.run(run_workflow(
             skip_login=args.skip_login,
             headless=args.headless,
-            save_json=args.save_json
+            save_json=args.save_json,
+            use_db=use_db
         ))
     except KeyboardInterrupt:
         print("\n[Interrumpido]")

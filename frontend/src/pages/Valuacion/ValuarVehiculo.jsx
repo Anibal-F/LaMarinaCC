@@ -1259,25 +1259,25 @@ export default function ValuarVehiculo() {
                       </div>
 
                       <div className="overflow-x-auto border border-border-dark rounded-lg bg-background-dark/50">
-                        <table className="w-full min-w-[1040px] text-left">
+                        <table className="w-full min-w-[860px] table-fixed text-left">
                           <thead className="bg-background-dark/80">
                             <tr>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400">Tipo</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400">Descripcion</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Mano de Obra</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Pintura</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Refacciones</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Total</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Accion</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[11%]">Tipo</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[31%]">Descripcion</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[12%]">Mano de Obra</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[12%]">Pintura</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[12%]">Refacciones</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[12%]">Total</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-center w-[10%]">Accion</th>
                             </tr>
                           </thead>
                           <tbody className="text-xs">
                             {operations.length ? (
                               operations.map((item) => (
                                 <tr key={item.id} className="border-t border-border-dark">
-                                  <td className="p-3 w-28">
+                                  <td className="p-2">
                                     <select
-                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[10px] text-white"
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[10px] text-white text-center"
                                       value={item.tipo}
                                       onChange={(event) =>
                                         setOperations((prev) =>
@@ -1292,7 +1292,7 @@ export default function ValuarVehiculo() {
                                       <option value="BYD">BYD</option>
                                     </select>
                                   </td>
-                                  <td className="p-3">
+                                  <td className="p-2">
                                     <input
                                       className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white"
                                       value={item.descripcion}
@@ -1308,10 +1308,10 @@ export default function ValuarVehiculo() {
                                       placeholder="Descripcion de operacion"
                                     />
                                   </td>
-                                  <td className="p-3 text-right w-32">
+                                  <td className="p-2">
                                     <input
                                       type="number"
-                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      className="w-full max-w-[88px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
                                       value={item.mano_obra}
                                       onChange={(event) =>
                                         setOperations((prev) =>
@@ -1324,10 +1324,10 @@ export default function ValuarVehiculo() {
                                       }
                                     />
                                   </td>
-                                  <td className="p-3 text-right w-32">
+                                  <td className="p-2">
                                     <input
                                       type="number"
-                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      className="w-full max-w-[88px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
                                       value={item.pintura}
                                       onChange={(event) =>
                                         setOperations((prev) =>
@@ -1340,10 +1340,10 @@ export default function ValuarVehiculo() {
                                       }
                                     />
                                   </td>
-                                  <td className="p-3 text-right w-32">
+                                  <td className="p-2">
                                     <input
                                       type="number"
-                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      className="w-full max-w-[88px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
                                       value={item.refacciones}
                                       onChange={(event) =>
                                         setOperations((prev) =>
@@ -1356,10 +1356,10 @@ export default function ValuarVehiculo() {
                                       }
                                     />
                                   </td>
-                                  <td className="p-3 text-right w-36">
+                                  <td className="p-2">
                                     <input
                                       type="number"
-                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      className="w-full max-w-[96px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
                                       value={item.monto}
                                       onChange={(event) =>
                                         setOperations((prev) =>
@@ -1372,7 +1372,7 @@ export default function ValuarVehiculo() {
                                       }
                                     />
                                   </td>
-                                  <td className="p-3 text-right w-24">
+                                  <td className="p-2 text-center">
                                     <button
                                       type="button"
                                       className="text-slate-400 hover:text-alert-red"

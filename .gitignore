@@ -11,3 +11,5 @@ backend/app/media/
 backend/app/rpa/sessions/
 *.session.json
 login_error.png
+
+.env.prod

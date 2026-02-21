@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { clearSession, getSession } from "../utils/auth.js";
 
 const navItemBase =
@@ -16,6 +16,8 @@ export default function Sidebar() {
   const displayProfile = storedUser?.profile || "Perfil";
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [adminExpanded, setAdminExpanded] = useState(
     location.pathname.startsWith("/admin")
   );
@@ -52,36 +54,86 @@ export default function Sidebar() {
     () => location.pathname.startsWith("/reportes"),
     [location.pathname]
   );
+  const showLabels = !collapsed || isMobile;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+    const syncViewport = () => {
+      const mobile = mediaQuery.matches;
+      setIsMobile(mobile);
+      if (mobile) {
+        setCollapsed(false);
+      }
+    };
+
+    syncViewport();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncViewport);
+      return () => mediaQuery.removeEventListener("change", syncViewport);
+    }
+
+    mediaQuery.addListener(syncViewport);
+    return () => mediaQuery.removeListener(syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) {
+      setMobileOpen(false);
+    }
+  }, [location.pathname, isMobile]);
 
   return (
-    <aside
-      className={`relative border-r border-border-dark bg-background-dark flex flex-col shrink-0 transition-all duration-300 ${
-        collapsed ? "w-20" : "w-64"
-      }`}
-    >
-      <button
-        type="button"
-        className={`absolute -right-3 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center size-8 rounded-full border border-border-dark bg-surface-dark text-slate-300 hover:text-white transition-all ${
-          collapsed ? "rotate-180" : ""
+    <>
+      {isMobile ? (
+        <button
+          type="button"
+          className="fixed left-3 top-3 z-50 flex items-center justify-center size-10 rounded-lg border border-border-dark bg-background-dark/95 text-slate-200"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Abrir menú"
+        >
+          <span className="material-symbols-outlined text-[20px]">menu</span>
+        </button>
+      ) : null}
+      {isMobile && mobileOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-black/50"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Cerrar menú"
+        />
+      ) : null}
+      <aside
+        className={`border-r border-border-dark bg-background-dark flex flex-col transition-all duration-300 ${
+          isMobile
+            ? `fixed inset-y-0 left-0 z-40 w-64 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`
+            : `relative shrink-0 ${collapsed ? "w-20" : "w-64"}`
         }`}
-        onClick={() => setCollapsed((value) => !value)}
-        title={collapsed ? "Expandir sidebar" : "Contraer sidebar"}
       >
-        <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-      </button>
-      <div className={`p-6 flex items-center gap-3 border-b border-border-dark ${collapsed ? "justify-center" : ""}`}>
+      {!isMobile ? (
+        <button
+          type="button"
+          className={`absolute -right-3 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center size-8 rounded-full border border-border-dark bg-surface-dark text-slate-300 hover:text-white transition-all ${
+            collapsed ? "rotate-180" : ""
+          }`}
+          onClick={() => setCollapsed((value) => !value)}
+          title={collapsed ? "Expandir sidebar" : "Contraer sidebar"}
+        >
+          <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+        </button>
+      ) : null}
+      <div className={`p-6 flex items-center gap-3 border-b border-border-dark ${showLabels ? "" : "justify-center"}`}>
         <div
           className={`rounded-lg bg-white flex items-center justify-center overflow-hidden border border-white/70 shadow-[0_0_18px_rgba(56,189,248,0.35)] transition-all duration-300 ${
-            collapsed ? "size-10" : "size-11"
+            showLabels ? "size-11" : "size-10"
           }`}
         >
           <img
             src="/assets/LaMarinaCCLogoT.png"
             alt="La Marina Collision Center"
-            className={`object-contain transition-all duration-300 ${collapsed ? "h-6 w-6" : "h-8 w-8"}`}
+            className={`object-contain transition-all duration-300 ${showLabels ? "h-8 w-8" : "h-6 w-6"}`}
           />
         </div>
-        {!collapsed ? (
+        {showLabels ? (
           <div>
             <h1 className="text-sm font-bold uppercase tracking-wider text-white">La Marina</h1>
             <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
@@ -89,9 +141,19 @@ export default function Sidebar() {
             </p>
           </div>
         ) : null}
+        {isMobile ? (
+          <button
+            type="button"
+            className="ml-auto p-2 text-slate-300 hover:text-white"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Cerrar menú"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        ) : null}
       </div>
-      <nav className={`flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar ${collapsed ? "px-2" : ""}`}>
-        {!collapsed ? (
+      <nav className={`flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar ${showLabels ? "" : "px-2"}`}>
+        {showLabels ? (
           <div className="text-[10px] font-bold text-slate-500 uppercase px-3 py-2 tracking-widest">
             Inicio
           </div>
@@ -99,16 +161,19 @@ export default function Sidebar() {
         <NavLink
           to="/"
           end
-          onClick={() => collapsed && setCollapsed(false)}
-          title={collapsed ? "Inicio" : undefined}
+          onClick={() => {
+            if (!showLabels) setCollapsed(false);
+            if (isMobile) setMobileOpen(false);
+          }}
+          title={!showLabels ? "Inicio" : undefined}
           className={({ isActive }) =>
             `${navItemBase} ${isActive ? navItemActive : navItemInactive}`
           }
         >
           <span className="material-symbols-outlined text-[22px]">home</span>
-          {!collapsed ? <span className="text-sm font-medium">Inicio</span> : null}
+          {showLabels ? <span className="text-sm font-medium">Inicio</span> : null}
         </NavLink>
-        {!collapsed ? (
+        {showLabels ? (
           <div className="pt-6 text-[10px] font-bold text-slate-500 uppercase px-3 py-2 tracking-widest">
             Módulos Principales
           </div>
@@ -116,17 +181,17 @@ export default function Sidebar() {
         <button
           className={`${navItemBase} ${isRecepcionRoute ? navItemActive : navItemInactive} justify-between`}
           type="button"
-          title={collapsed ? "Recepción" : undefined}
+          title={!showLabels ? "Recepción" : undefined}
           onClick={() => {
-            if (collapsed) setCollapsed(false);
+            if (!showLabels) setCollapsed(false);
             setRecepcionExpanded((value) => !value);
           }}
         >
           <span className="flex items-center gap-3">
             <span className="material-symbols-outlined text-[22px]">assignment_turned_in</span>
-            {!collapsed ? <span className="text-sm font-medium">Recepción</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Recepción</span> : null}
           </span>
-          {!collapsed ? (
+          {showLabels ? (
             <span className="material-symbols-outlined text-lg">
               {recepcionExpanded ? "expand_more" : "chevron_right"}
             </span>
@@ -142,7 +207,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Orden de admisión</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Orden de admisión</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 assignment
               </span>
@@ -156,7 +221,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Recepción de vehículo</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Recepción de vehículo</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 directions_car
               </span>
@@ -166,17 +231,17 @@ export default function Sidebar() {
         <button
           className={`${navItemBase} ${isValuacionRoute ? navItemActive : navItemInactive} justify-between`}
           type="button"
-          title={collapsed ? "Valuación" : undefined}
+          title={!showLabels ? "Valuación" : undefined}
           onClick={() => {
-            if (collapsed) setCollapsed(false);
+            if (!showLabels) setCollapsed(false);
             setValuacionExpanded((value) => !value);
           }}
         >
           <span className="flex items-center gap-3">
             <span className="material-symbols-outlined text-[22px]">calculate</span>
-            {!collapsed ? <span className="text-sm font-medium">Valuación</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Valuación</span> : null}
           </span>
-          {!collapsed ? (
+          {showLabels ? (
             <span className="material-symbols-outlined text-lg">
               {valuacionExpanded ? "expand_more" : "chevron_right"}
             </span>
@@ -191,38 +256,38 @@ export default function Sidebar() {
               }`
             }
           >
-            {!collapsed ? <span className="text-sm font-medium">Listado de vehículos</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Listado de vehículos</span> : null}
             <span className="material-symbols-outlined text-[18px] ml-auto">table_rows</span>
           </NavLink>
         ) : null}
         <button
           className={`${navItemBase} ${navItemInactive}`}
           type="button"
-          title={collapsed ? "Taller" : undefined}
-          onClick={() => collapsed && setCollapsed(false)}
+          title={!showLabels ? "Taller" : undefined}
+          onClick={() => !showLabels && setCollapsed(false)}
         >
           <span className="material-symbols-outlined text-[22px]">build</span>
-          {!collapsed ? <span className="text-sm font-medium">Taller</span> : null}
+          {showLabels ? <span className="text-sm font-medium">Taller</span> : null}
         </button>
         <button
           className={`${navItemBase} ${navItemInactive}`}
           type="button"
-          title={collapsed ? "Pintura" : undefined}
-          onClick={() => collapsed && setCollapsed(false)}
+          title={!showLabels ? "Pintura" : undefined}
+          onClick={() => !showLabels && setCollapsed(false)}
         >
           <span className="material-symbols-outlined text-[22px]">format_paint</span>
-          {!collapsed ? <span className="text-sm font-medium">Pintura</span> : null}
+          {showLabels ? <span className="text-sm font-medium">Pintura</span> : null}
         </button>
         <button
           className={`${navItemBase} ${navItemInactive}`}
           type="button"
-          title={collapsed ? "Inventario" : undefined}
-          onClick={() => collapsed && setCollapsed(false)}
+          title={!showLabels ? "Inventario" : undefined}
+          onClick={() => !showLabels && setCollapsed(false)}
         >
           <span className="material-symbols-outlined text-[22px]">inventory_2</span>
-          {!collapsed ? <span className="text-sm font-medium">Inventario</span> : null}
+          {showLabels ? <span className="text-sm font-medium">Inventario</span> : null}
         </button>
-        {!collapsed ? (
+        {showLabels ? (
           <div className="pt-6 text-[10px] font-bold text-slate-500 uppercase px-3 py-2 tracking-widest">
             Sistema
           </div>
@@ -230,17 +295,17 @@ export default function Sidebar() {
         <button
           className={`${navItemBase} ${isAdminRoute ? navItemActive : navItemInactive} justify-between`}
           type="button"
-          title={collapsed ? "Admin" : undefined}
+          title={!showLabels ? "Admin" : undefined}
           onClick={() => {
-            if (collapsed) setCollapsed(false);
+            if (!showLabels) setCollapsed(false);
             setAdminExpanded((value) => !value);
           }}
         >
           <span className="flex items-center gap-3">
             <span className="material-symbols-outlined text-[22px]">admin_panel_settings</span>
-            {!collapsed ? <span className="text-sm font-medium">Admin</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Admin</span> : null}
           </span>
-          {!collapsed ? (
+          {showLabels ? (
             <span className="material-symbols-outlined text-lg">
               {adminExpanded ? "expand_more" : "chevron_right"}
             </span>
@@ -256,7 +321,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Usuarios</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Usuarios</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">group</span>
             </NavLink>
             <NavLink
@@ -267,7 +332,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Perfiles</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Perfiles</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">badge</span>
             </NavLink>
           </>
@@ -275,26 +340,26 @@ export default function Sidebar() {
         <button
           className={`${navItemBase} ${navItemInactive}`}
           type="button"
-          title={collapsed ? "Configuración" : undefined}
-          onClick={() => collapsed && setCollapsed(false)}
+          title={!showLabels ? "Configuración" : undefined}
+          onClick={() => !showLabels && setCollapsed(false)}
         >
           <span className="material-symbols-outlined text-[22px]">settings</span>
-          {!collapsed ? <span className="text-sm font-medium">Configuración</span> : null}
+          {showLabels ? <span className="text-sm font-medium">Configuración</span> : null}
         </button>
         <button
           className={`${navItemBase} ${isCatalogosRoute ? navItemActive : navItemInactive} justify-between`}
           type="button"
-          title={collapsed ? "Catálogos" : undefined}
+          title={!showLabels ? "Catálogos" : undefined}
           onClick={() => {
-            if (collapsed) setCollapsed(false);
+            if (!showLabels) setCollapsed(false);
             setCatalogosExpanded((value) => !value);
           }}
         >
           <span className="flex items-center gap-3">
             <span className="material-symbols-outlined text-[22px]">folder_open</span>
-            {!collapsed ? <span className="text-sm font-medium">Catálogos</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Catálogos</span> : null}
           </span>
-          {!collapsed ? (
+          {showLabels ? (
             <span className="material-symbols-outlined text-lg">
               {catalogosExpanded ? "expand_more" : "chevron_right"}
             </span>
@@ -310,7 +375,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Clientes</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Clientes</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">contacts</span>
             </NavLink>
             <NavLink
@@ -321,7 +386,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Grupos Automotrices</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Grupos Automotrices</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 domain
               </span>
@@ -334,7 +399,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Marcas Automotrices</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Marcas Automotrices</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 directions_car
               </span>
@@ -347,7 +412,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Aseguradoras</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Aseguradoras</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 policy
               </span>
@@ -360,7 +425,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Partes de Auto</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Partes de Auto</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 category
               </span>
@@ -373,7 +438,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Estatus de Valuación</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Estatus de Valuación</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 checklist
               </span>
@@ -386,7 +451,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              {!collapsed ? <span className="text-sm font-medium">Expedientes</span> : null}
+              {showLabels ? <span className="text-sm font-medium">Expedientes</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">
                 folder
               </span>
@@ -396,17 +461,17 @@ export default function Sidebar() {
         <button
           className={`${navItemBase} ${isReportesRoute ? navItemActive : navItemInactive} justify-between`}
           type="button"
-          title={collapsed ? "Reportes" : undefined}
+          title={!showLabels ? "Reportes" : undefined}
           onClick={() => {
-            if (collapsed) setCollapsed(false);
+            if (!showLabels) setCollapsed(false);
             setReportesExpanded((value) => !value);
           }}
         >
           <span className="flex items-center gap-3">
             <span className="material-symbols-outlined text-[22px]">monitoring</span>
-            {!collapsed ? <span className="text-sm font-medium">Reportes</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Reportes</span> : null}
           </span>
-          {!collapsed ? (
+          {showLabels ? (
             <span className="material-symbols-outlined text-lg">
               {reportesExpanded ? "expand_more" : "chevron_right"}
             </span>
@@ -421,13 +486,13 @@ export default function Sidebar() {
               }`
             }
           >
-            {!collapsed ? <span className="text-sm font-medium">Historial de ingresos</span> : null}
+            {showLabels ? <span className="text-sm font-medium">Historial de ingresos</span> : null}
             <span className="material-symbols-outlined text-[18px] ml-auto">table_view</span>
           </NavLink>
         ) : null}
       </nav>
-      <div className={`p-4 border-t border-border-dark flex items-center gap-3 ${collapsed ? "justify-center" : ""}`}>
-        {!collapsed ? (
+      <div className={`p-4 border-t border-border-dark flex items-center gap-3 ${showLabels ? "" : "justify-center"}`}>
+        {showLabels ? (
           <div
             className="size-10 rounded-full bg-surface-dark border border-border-dark bg-cover bg-center"
             style={{
@@ -436,7 +501,7 @@ export default function Sidebar() {
             }}
           ></div>
         ) : null}
-        {!collapsed ? (
+        {showLabels ? (
           <div className="flex-1 min-w-0">
             <p className="text-xs font-bold text-white truncate">{displayName}</p>
             <p className="text-[10px] text-slate-400 truncate">{displayProfile}</p>
@@ -454,5 +519,6 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

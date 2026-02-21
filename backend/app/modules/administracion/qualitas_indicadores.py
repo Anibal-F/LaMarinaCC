@@ -187,14 +187,10 @@ def run_qualitas_rpa_sync() -> Dict[str, Any]:
     if not script_path.exists():
         raise FileNotFoundError(f"Script no encontrado: {script_path}")
     
-    # Archivo temporal para output JSON
-    output_file = backend_dir / "app" / "rpa" / "data" / "latest_indicadores.json"
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    
     cmd = [
         "python3", "-m", "app.rpa.qualitas_full_workflow",
         "--headless",
-        "--save-json"
+        "--use-db"  # Usar credenciales de la base de datos
     ]
     
     try:
@@ -211,24 +207,16 @@ def run_qualitas_rpa_sync() -> Dict[str, Any]:
         if result.returncode != 0:
             raise RuntimeError(f"RPA falló: {result.stderr}")
         
-        # Buscar el archivo JSON más reciente
-        data_dir = backend_dir / "app" / "rpa" / "data"
-        json_files = sorted(data_dir.glob("qualitas_dashboard_*.json"), reverse=True)
+        # El RPA ya guarda en la base de datos, solo recuperamos los datos más recientes
+        indicadores = get_latest_indicadores()
         
-        if not json_files:
-            raise FileNotFoundError("No se encontró archivo de datos del RPA")
-        
-        # Leer el archivo más reciente
-        with open(json_files[0], 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # Guardar en base de datos
-        save_indicadores(data)
+        if not indicadores:
+            raise RuntimeError("El RPA se ejecutó pero no se encontraron datos en la base de datos")
         
         return {
             "success": True,
             "message": "RPA ejecutado exitosamente",
-            "data": data
+            "data": indicadores
         }
         
     except subprocess.TimeoutExpired:

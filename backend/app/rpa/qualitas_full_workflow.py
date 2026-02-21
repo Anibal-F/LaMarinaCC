@@ -322,6 +322,16 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 filepath = extractor.save_to_file(data)
                 print(f"\n[JSON] Guardado en: {filepath}")
             
+            # Guardar en base de datos
+            try:
+                print("\n[DB] Guardando en base de datos...")
+                from app.modules.administracion.qualitas_indicadores import save_indicadores
+                record_id = save_indicadores(data.to_dict())
+                print(f"[DB] ✓ Guardado con ID: {record_id}")
+            except Exception as e:
+                print(f"[DB] ⚠ Error guardando en DB: {e}")
+                # No fallar el workflow por error en DB
+            
             # Click en estatus específico si se solicitó
             if click_status:
                 print(f"\n[4/4] EXPLORANDO ESTATUS: {click_status}")

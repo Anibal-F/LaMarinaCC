@@ -2,7 +2,6 @@
 Endpoints para ejecutar RPA de aseguradoras desde el frontend.
 """
 
-import asyncio
 import subprocess
 import os
 from pathlib import Path
@@ -11,7 +10,7 @@ from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional, Literal
 
-router = APIRouter(prefix="/admin/rpa", tags=["rpa"])
+router = APIRouter(prefix="/rpa", tags=["rpa"])
 
 # Almacenar estado de las ejecuciones (en memoria - reinicia con el servidor)
 rpa_jobs = {}

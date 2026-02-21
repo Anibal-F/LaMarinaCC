@@ -66,7 +66,9 @@ def run_rpa_script(seguro: str, job_id: str, action: str, headless: bool, save_s
         "--use-db"  # Usar credenciales de la base de datos
     ]
     
-    if headless:
+    # Siempre usar headless en Docker (no hay display gráfico)
+    is_docker = os.path.exists('/.dockerenv') or os.getenv('DOCKER_CONTAINER', False)
+    if headless or is_docker:
         cmd.append("--headless")
     
     if save_session:

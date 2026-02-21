@@ -1,9 +1,11 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
+    PYTHONPATH=/app
 
-# Instalar dependencias del sistema necesarias para Playwright
+# Instalar dependencias del sistema necesarias para Playwright/Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 \
     libatk-bridge2.0-0 \
@@ -15,6 +17,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpangocairo-1.0-0 \
     libgtk-3-0 \
+    libx11-xcb1 \
+    libxss1 \
+    libxtst6 \
+    fonts-liberation \
+    libappindicator3-1 \
+    libu2f-udev \
+    libvpx7 \
+    libevent-2.1-7 \
+    libopus0 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -23,7 +37,8 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Instalar navegadores de Playwright
-RUN python -m playwright install chromium
+RUN python -m playwright install chromium && \
+    python -m playwright install-deps chromium
 
 COPY . /app/
 

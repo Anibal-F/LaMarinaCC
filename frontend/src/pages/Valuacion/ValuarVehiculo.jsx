@@ -1115,6 +1115,9 @@ export default function ValuarVehiculo() {
                             {visibleEvidence.map((item, index) => {
                               const badge = evidenceTag(item);
                               const selected = index === selectedEvidenceIndex;
+                              const evidenceKey =
+                                item?.archivo_path || item?.path || item?.archivo_nombre || "";
+                              const thumbAnnotations = annotationsByEvidence[evidenceKey] || [];
                               return (
                                 <div
                                   key={item.archivo_path || item.path || item.archivo_nombre || index}
@@ -1139,6 +1142,53 @@ export default function ValuarVehiculo() {
                                     className="w-full h-full object-cover"
                                     src={filePreviewUrl(item)}
                                   />
+                                  <div className="absolute inset-0 pointer-events-none">
+                                    {thumbAnnotations.map((annotation) => (
+                                      <div
+                                        key={annotation.id}
+                                        className="absolute"
+                                        style={{
+                                          left: `${annotation.x}%`,
+                                          top: `${annotation.y}%`,
+                                          width: `${annotation.w}%`,
+                                          height: `${annotation.h}%`
+                                        }}
+                                      >
+                                        <div
+                                          className="w-full h-full"
+                                          style={{
+                                            transform: `rotate(${Number(annotation.rotation) || 0}deg)`,
+                                            transformOrigin: "50% 50%"
+                                          }}
+                                        >
+                                          {annotation.type === "square" ? (
+                                            <div className="w-full h-full border border-red-400/80" />
+                                          ) : null}
+                                          {annotation.type === "circle" ? (
+                                            <div className="w-full h-full rounded-full border border-red-400/80" />
+                                          ) : null}
+                                          {annotation.type === "line" ? (
+                                            <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                              <line
+                                                x1="2"
+                                                y1="50"
+                                                x2="98"
+                                                y2="50"
+                                                stroke="#f87171"
+                                                strokeWidth="6"
+                                                strokeLinecap="round"
+                                              />
+                                            </svg>
+                                          ) : null}
+                                          {annotation.type === "arrow" ? (
+                                            <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                              <polygon points="2,44 76,44 76,30 98,50 76,70 76,56 2,56" fill="#f87171" />
+                                            </svg>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                   <span
                                     className={`absolute top-2 left-2 text-[8px] font-black px-1.5 py-0.5 rounded border uppercase ${badge.classes}`}
                                   >

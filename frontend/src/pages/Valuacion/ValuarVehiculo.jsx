@@ -491,6 +491,7 @@ export default function ValuarVehiculo() {
     setDragState({
       mode: "move",
       annotationId,
+      pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startAnnotation: { ...annotation }
@@ -508,6 +509,7 @@ export default function ValuarVehiculo() {
     setDragState({
       mode: "resize",
       annotationId,
+      pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startAnnotation: { ...annotation }
@@ -525,6 +527,7 @@ export default function ValuarVehiculo() {
     setDragState({
       mode: "rotate",
       annotationId,
+      pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startAnnotation: { ...annotation, rotation: Number(annotation.rotation) || 0 }
@@ -534,7 +537,9 @@ export default function ValuarVehiculo() {
   useEffect(() => {
     if (!dragState) return;
 
-    const onMouseMove = (event) => {
+    const onPointerMove = (event) => {
+      if (event.pointerId !== dragState.pointerId) return;
+      event.preventDefault();
       if (!stageRef.current) return;
       const rect = stageRef.current.getBoundingClientRect();
       const dxPct = ((event.clientX - dragState.startClientX) / rect.width) * 100;
@@ -574,13 +579,18 @@ export default function ValuarVehiculo() {
       );
     };
 
-    const onMouseUp = () => setDragState(null);
+    const onPointerUp = (event) => {
+      if (event.pointerId !== dragState.pointerId) return;
+      setDragState(null);
+    };
 
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
   }, [dragState, selectedEvidenceKey]);
 
@@ -779,7 +789,7 @@ export default function ValuarVehiculo() {
                             ref={stageRef}
                             onPointerDown={handleStagePointerDown}
                             onClick={handleStageClick}
-                            className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
+                            className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark touch-none ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
                           >
                             <img
                               src={filePreviewUrl(selectedEvidence)}
@@ -795,7 +805,7 @@ export default function ValuarVehiculo() {
                                   <div
                                     key={annotation.id}
                                     data-annotation-item="true"
-                                    onMouseDown={(event) => beginMoveAnnotation(event, annotation.id)}
+                                    onPointerDown={(event) => beginMoveAnnotation(event, annotation.id)}
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       if (annotationMode) return;
@@ -858,7 +868,7 @@ export default function ValuarVehiculo() {
                                       {isActive ? (
                                         <button
                                           type="button"
-                                          onMouseDown={(event) => beginRotateAnnotation(event, annotation.id)}
+                                          onPointerDown={(event) => beginRotateAnnotation(event, annotation.id)}
                                           onClick={(event) => event.stopPropagation()}
                                           disabled={annotationMode}
                                           className="w-5 h-5 rounded border border-amber-300 bg-amber-400 text-slate-900 flex items-center justify-center disabled:opacity-50"
@@ -871,7 +881,7 @@ export default function ValuarVehiculo() {
 
                                     <button
                                       type="button"
-                                      onMouseDown={(event) => beginResizeAnnotation(event, annotation.id)}
+                                      onPointerDown={(event) => beginResizeAnnotation(event, annotation.id)}
                                       onClick={(event) => event.stopPropagation()}
                                       disabled={annotationMode}
                                       className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-sm border ${isActive ? "bg-amber-400 border-amber-300" : "bg-red-500 border-red-400"}`}

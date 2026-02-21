@@ -84,6 +84,7 @@ export default function RecepcionForm() {
   const modalSvgRef = useRef(null);
   const damageDrawCanvasRef = useRef(null);
   const damageDrawLayerRef = useRef(null);
+  const damageDrawContentRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const audioStreamRef = useRef(null);
@@ -101,6 +102,7 @@ export default function RecepcionForm() {
   const activeDamageTool = damageEraseEnabled ? "erase" : damageDrawEnabled ? "draw" : "";
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [damageCanvasFullscreen, setDamageCanvasFullscreen] = useState(false);
+  const [damageCanvasZoom, setDamageCanvasZoom] = useState(1);
 
   const damageParts = [
     "FACIA DELANTERA",
@@ -1213,10 +1215,10 @@ export default function RecepcionForm() {
 
   const resizeDamageDrawCanvas = () => {
     const canvas = damageDrawCanvasRef.current;
-    const layer = damageDrawLayerRef.current;
-    if (!canvas || !layer) return;
-    const width = Math.max(1, Math.floor(layer.clientWidth));
-    const height = Math.max(1, Math.floor(layer.clientHeight));
+    const content = damageDrawContentRef.current;
+    if (!canvas || !content) return;
+    const width = Math.max(1, Math.floor(content.clientWidth));
+    const height = Math.max(1, Math.floor(content.clientHeight));
     const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.floor(width * ratio);
     canvas.height = Math.floor(height * ratio);
@@ -1312,12 +1314,12 @@ export default function RecepcionForm() {
 
   const clearDamageDrawing = () => {
     const canvas = damageDrawCanvasRef.current;
-    const layer = damageDrawLayerRef.current;
+    const content = damageDrawContentRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const width = canvas.clientWidth || layer?.clientWidth || 0;
-    const height = canvas.clientHeight || layer?.clientHeight || 0;
+    const width = canvas.clientWidth || content?.clientWidth || 0;
+    const height = canvas.clientHeight || content?.clientHeight || 0;
     ctx.clearRect(0, 0, width, height);
     setDamageDrawings((prev) => ({ ...prev, [damageMode]: "" }));
     setDamageDrawingDirty((prev) => ({ ...prev, [damageMode]: true }));
@@ -1329,7 +1331,7 @@ export default function RecepcionForm() {
     const onResize = () => resizeDamageDrawCanvas();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [damageModalOpen, damageMode, damageEraseEnabled, damageToolSizes]);
+  }, [damageModalOpen, damageMode, damageEraseEnabled, damageToolSizes, damageCanvasZoom]);
 
   useEffect(() => {
     if (!damageModalOpen) return;
@@ -1342,6 +1344,7 @@ export default function RecepcionForm() {
     setDamageEraseEnabled(false);
     setIsDamageDrawing(false);
     setDamageCanvasFullscreen(false);
+    setDamageCanvasZoom(1);
   }, [damageModalOpen]);
 
   useEffect(() => {
@@ -1359,6 +1362,7 @@ export default function RecepcionForm() {
   useEffect(() => {
     if (!damageModalOpen || !isMobileViewport) return;
     setDamageCanvasFullscreen(true);
+    setDamageCanvasZoom(1.4);
   }, [damageModalOpen, isMobileViewport]);
 
   return (
@@ -2339,38 +2343,50 @@ export default function RecepcionForm() {
                     damageDrawEnabled || damageEraseEnabled ? "none" : "pan-x pan-y pinch-zoom",
                 }}
               >
-                <div
-                  ref={modalSvgRef}
-                  className={`w-full select-none ${
-                    damageCanvasFullscreen
-                      ? "h-full touch-none [&_svg]:h-full [&_svg]:w-full [&_svg]:max-h-none"
-                      : "touch-none [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-[58vh]"
-                  }`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    if (damageDrawEnabled || damageEraseEnabled) return;
-                    const target = event.target;
-                    const element = target?.closest?.("#ZONAS [id]");
-                    const id = element?.getAttribute?.("id");
-                    if (id && (damageSvgIds.length === 0 || damageSvgIds.includes(id))) {
-                      toggleDamagePart(id);
-                    }
-                  }}
-                  dangerouslySetInnerHTML={{ __html: damageSvgMarkup }}
-                />
-                <canvas
-                  ref={damageDrawCanvasRef}
-                  className={`absolute inset-0 rounded-xl ${
-                    damageDrawEnabled || damageEraseEnabled
-                      ? "pointer-events-auto cursor-crosshair touch-none"
-                      : "pointer-events-none"
-                  }`}
-                  onPointerDown={startDamageDraw}
-                  onPointerMove={drawDamage}
-                  onPointerUp={endDamageDraw}
-                  onPointerLeave={endDamageDraw}
-                  onPointerCancel={endDamageDraw}
-                />
+                <div className="h-full w-full overflow-auto">
+                  <div
+                    ref={damageDrawContentRef}
+                    className="relative mx-auto"
+                    style={{
+                      width: `${Math.max(1, damageCanvasZoom) * 100}%`,
+                      minWidth: "100%",
+                      minHeight: damageCanvasFullscreen ? "100%" : "auto",
+                    }}
+                  >
+                    <div
+                      ref={modalSvgRef}
+                      className={`w-full select-none ${
+                        damageCanvasFullscreen
+                          ? "h-full touch-none [&_svg]:h-full [&_svg]:w-full [&_svg]:max-h-none"
+                          : "touch-none [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-[58vh]"
+                      }`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (damageDrawEnabled || damageEraseEnabled) return;
+                        const target = event.target;
+                        const element = target?.closest?.("#ZONAS [id]");
+                        const id = element?.getAttribute?.("id");
+                        if (id && (damageSvgIds.length === 0 || damageSvgIds.includes(id))) {
+                          toggleDamagePart(id);
+                        }
+                      }}
+                      dangerouslySetInnerHTML={{ __html: damageSvgMarkup }}
+                    />
+                    <canvas
+                      ref={damageDrawCanvasRef}
+                      className={`absolute inset-0 rounded-xl ${
+                        damageDrawEnabled || damageEraseEnabled
+                          ? "pointer-events-auto cursor-crosshair touch-none"
+                          : "pointer-events-none"
+                      }`}
+                      onPointerDown={startDamageDraw}
+                      onPointerMove={drawDamage}
+                      onPointerUp={endDamageDraw}
+                      onPointerLeave={endDamageDraw}
+                      onPointerCancel={endDamageDraw}
+                    />
+                  </div>
+                </div>
                 <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
                   <button
                     type="button"
@@ -2415,6 +2431,33 @@ export default function RecepcionForm() {
                     title="Limpiar todo"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                    onClick={() => setDamageCanvasZoom((prev) => Math.max(1, Number((prev - 0.2).toFixed(2))))}
+                    title="Alejar"
+                    disabled={damageCanvasZoom <= 1}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">zoom_out</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                    onClick={() => setDamageCanvasZoom((prev) => Math.min(3, Number((prev + 0.2).toFixed(2))))}
+                    title="Acercar"
+                    disabled={damageCanvasZoom >= 3}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">zoom_in</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex rounded-md border border-border-dark bg-surface-dark/90 px-2 py-1 text-[10px] font-bold text-slate-300 hover:text-white"
+                    onClick={() => setDamageCanvasZoom(1)}
+                    title="Restablecer zoom"
+                    disabled={damageCanvasZoom === 1}
+                  >
+                    x{damageCanvasZoom.toFixed(1)}
                   </button>
                   <div
                     className={`overflow-hidden transition-all duration-200 ease-out ${

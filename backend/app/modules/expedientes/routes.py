@@ -1,4 +1,5 @@
 import re
+import json
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -72,6 +73,51 @@ def _ensure_categoria_column(conn):
     )
 
 
+def _ensure_anotaciones_column(conn):
+    conn.execute(
+        """
+        ALTER TABLE expediente_archivos
+        ADD COLUMN IF NOT EXISTS anotaciones JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+
+
+def _sanitize_annotations(value):
+    def _to_float(raw, default=0.0):
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return float(default)
+
+    if not isinstance(value, list):
+        return []
+
+    clean = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            continue
+        annotation_id = str(raw.get("id") or "").strip()
+        annotation_type = str(raw.get("type") or "").strip().lower()
+        if not annotation_id:
+            continue
+        if annotation_type not in {"square", "circle", "arrow", "line"}:
+            annotation_type = "square"
+        clean.append(
+            {
+                "id": annotation_id,
+                "type": annotation_type,
+                "label": str(raw.get("label") or "").strip()[:120],
+                "x": max(0.0, min(100.0, _to_float(raw.get("x"), 0))),
+                "y": max(0.0, min(100.0, _to_float(raw.get("y"), 0))),
+                "w": max(1.0, min(100.0, _to_float(raw.get("w"), 1))),
+                "h": max(1.0, min(100.0, _to_float(raw.get("h"), 1))),
+                "rotation": _to_float(raw.get("rotation"), 0),
+            }
+        )
+
+    return clean
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_expediente(payload: dict):
     reporte_siniestro = (payload.get("reporte_siniestro") or "").strip()
@@ -119,6 +165,7 @@ def get_expediente(reporte_siniestro: str):
 
     with get_connection() as conn:
         _ensure_categoria_column(conn)
+        _ensure_anotaciones_column(conn)
         conn.row_factory = dict_row
         expediente = conn.execute(
             "SELECT id, reporte_siniestro, created_at FROM expedientes WHERE reporte_siniestro = %s",
@@ -129,7 +176,16 @@ def get_expediente(reporte_siniestro: str):
 
         archivos = conn.execute(
             """
-            SELECT id, tipo, categoria, archivo_path, archivo_nombre, archivo_size, mime_type, created_at
+            SELECT
+                id,
+                tipo,
+                categoria,
+                archivo_path,
+                archivo_nombre,
+                archivo_size,
+                mime_type,
+                created_at,
+                COALESCE(anotaciones, '[]'::jsonb) AS anotaciones
             FROM expediente_archivos
             WHERE expediente_id = %s
             ORDER BY created_at DESC
@@ -174,6 +230,7 @@ def upload_expediente_archivo(
 
     with get_connection() as conn:
         _ensure_categoria_column(conn)
+        _ensure_anotaciones_column(conn)
         expediente_id = _ensure_expediente(conn, reporte_siniestro)
         conn.execute(
             """
@@ -184,9 +241,10 @@ def upload_expediente_archivo(
                 archivo_path,
                 archivo_nombre,
                 archivo_size,
-                mime_type
+                mime_type,
+                anotaciones
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
             """,
             (
                 expediente_id,
@@ -206,7 +264,29 @@ def upload_expediente_archivo(
         "path": relative_path,
         "name": file.filename,
         "size": file_size,
+        "anotaciones": [],
     }
+
+
+@router.put("/archivos/{archivo_id}/anotaciones")
+def update_expediente_archivo_anotaciones(archivo_id: int, payload: dict):
+    anotaciones = _sanitize_annotations(payload.get("anotaciones"))
+
+    with get_connection() as conn:
+        _ensure_anotaciones_column(conn)
+        row = conn.execute(
+            "SELECT id FROM expediente_archivos WHERE id = %s LIMIT 1",
+            (archivo_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+        conn.execute(
+            "UPDATE expediente_archivos SET anotaciones = %s::jsonb WHERE id = %s",
+            (json.dumps(anotaciones, ensure_ascii=False), archivo_id),
+        )
+
+    return {"archivo_id": archivo_id, "anotaciones": anotaciones}
 
 
 @router.delete("/archivos/{archivo_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -76,6 +76,24 @@ function filePreviewUrl(item) {
   return `${import.meta.env.VITE_API_URL}${relativePath}`;
 }
 
+function normalizeAnnotation(raw) {
+  const toNumber = (value, fallback = 0) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  };
+
+  return {
+    id: String(raw?.id || crypto.randomUUID()),
+    type: ["square", "circle", "arrow", "line"].includes(raw?.type) ? raw.type : "square",
+    label: String(raw?.label || "").trim() || "Sin nombre",
+    x: clamp(toNumber(raw?.x, 0), 0, 100),
+    y: clamp(toNumber(raw?.y, 0), 0, 100),
+    w: clamp(toNumber(raw?.w, 12), 1, 100),
+    h: clamp(toNumber(raw?.h, 12), 1, 100),
+    rotation: toNumber(raw?.rotation, 0)
+  };
+}
+
 export default function ValuarVehiculo() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -101,6 +119,8 @@ export default function ValuarVehiculo() {
   const [dragState, setDragState] = useState(null);
   const stageRef = useRef(null);
   const lastPlacementTsRef = useRef(0);
+  const annotationSyncTimersRef = useRef({});
+  const syncedAnnotationsRef = useRef({});
 
   const [aseguradoras, setAseguradoras] = useState([]);
   const [aseguradoraActiva, setAseguradoraActiva] = useState("");
@@ -250,6 +270,7 @@ export default function ValuarVehiculo() {
   }, [visibleEvidence, selectedEvidenceIndex]);
 
   const selectedEvidence = visibleEvidence[selectedEvidenceIndex] || null;
+  const selectedEvidenceId = selectedEvidence?.id || null;
   const selectedEvidenceKey =
     selectedEvidence?.archivo_path || selectedEvidence?.path || selectedEvidence?.archivo_nombre || "";
   const currentAnnotations = useMemo(
@@ -258,11 +279,82 @@ export default function ValuarVehiculo() {
   );
 
   useEffect(() => {
+    if (!valuacionFotos.length) return;
+    setAnnotationsByEvidence((prev) => {
+      const next = { ...prev };
+      valuacionFotos.forEach((item) => {
+        const key = item?.archivo_path || item?.path || item?.archivo_nombre || "";
+        if (!key) return;
+        const incoming = Array.isArray(item?.anotaciones)
+          ? item.anotaciones.map((annotation) => normalizeAnnotation(annotation))
+          : [];
+        if (!Array.isArray(next[key])) {
+          next[key] = incoming;
+        }
+        syncedAnnotationsRef.current[key] = JSON.stringify(incoming);
+      });
+      return next;
+    });
+  }, [valuacionFotos]);
+
+  useEffect(() => {
     setActiveAnnotationId(null);
     setDragState(null);
     setShapeMenuOpen(false);
     setAnnotationMode(false);
   }, [selectedEvidenceKey]);
+
+  useEffect(() => {
+    if (!selectedEvidenceId || !selectedEvidenceKey) return;
+    const serialized = JSON.stringify(currentAnnotations);
+    if (syncedAnnotationsRef.current[selectedEvidenceKey] === serialized) return;
+
+    if (annotationSyncTimersRef.current[selectedEvidenceKey]) {
+      clearTimeout(annotationSyncTimersRef.current[selectedEvidenceKey]);
+    }
+
+    annotationSyncTimersRef.current[selectedEvidenceKey] = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/expedientes/archivos/${selectedEvidenceId}/anotaciones`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ anotaciones: currentAnnotations })
+          }
+        );
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.detail || "No se pudieron guardar las anotaciones.");
+        }
+
+        syncedAnnotationsRef.current[selectedEvidenceKey] = serialized;
+        setExpedienteFiles((prev) =>
+          prev.map((item) =>
+            String(item.id) === String(selectedEvidenceId)
+              ? { ...item, anotaciones: currentAnnotations }
+              : item
+          )
+        );
+      } catch (err) {
+        setEvidenceActionError(err.message || "No se pudieron guardar las anotaciones.");
+      } finally {
+        delete annotationSyncTimersRef.current[selectedEvidenceKey];
+      }
+    }, 450);
+
+    return () => {
+      if (annotationSyncTimersRef.current[selectedEvidenceKey]) {
+        clearTimeout(annotationSyncTimersRef.current[selectedEvidenceKey]);
+      }
+    };
+  }, [currentAnnotations, selectedEvidenceId, selectedEvidenceKey]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(annotationSyncTimersRef.current).forEach((timerId) => clearTimeout(timerId));
+    };
+  }, []);
 
   const montoPorTipo = useMemo(() => {
     return operations.reduce(
@@ -379,6 +471,11 @@ export default function ValuarVehiculo() {
 
       const evidenceKey = item?.archivo_path || item?.path || item?.archivo_nombre || "";
       if (evidenceKey) {
+        if (annotationSyncTimersRef.current[evidenceKey]) {
+          clearTimeout(annotationSyncTimersRef.current[evidenceKey]);
+          delete annotationSyncTimersRef.current[evidenceKey];
+        }
+        delete syncedAnnotationsRef.current[evidenceKey];
         setAnnotationsByEvidence((prev) => {
           if (!prev[evidenceKey]) return prev;
           const next = { ...prev };
@@ -595,6 +692,7 @@ export default function ValuarVehiculo() {
   }, [dragState, selectedEvidenceKey]);
 
   const activeAnnotation = currentAnnotations.find((item) => item.id === activeAnnotationId) || null;
+  const shouldLockStageTouch = annotationMode || Boolean(activeAnnotationId) || Boolean(dragState);
 
   const updateActiveAnnotationLabel = (value) => {
     if (!activeAnnotationId) return;
@@ -789,7 +887,7 @@ export default function ValuarVehiculo() {
                             ref={stageRef}
                             onPointerDown={handleStagePointerDown}
                             onClick={handleStageClick}
-                            className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark touch-none ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
+                            className={`relative w-full max-w-3xl aspect-[4/3] bg-surface-dark rounded-lg overflow-hidden border border-border-dark ${shouldLockStageTouch ? "touch-none" : "touch-auto"} ${annotationMode ? "cursor-crosshair" : "cursor-default"}`}
                           >
                             <img
                               src={filePreviewUrl(selectedEvidence)}

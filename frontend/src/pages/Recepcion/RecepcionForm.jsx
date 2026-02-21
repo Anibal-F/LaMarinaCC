@@ -99,6 +99,8 @@ export default function RecepcionForm() {
   const [damageDrawingDirty, setDamageDrawingDirty] = useState({ siniestro: false, preexistente: false });
   const [savingDamageDrawing, setSavingDamageDrawing] = useState(false);
   const activeDamageTool = damageEraseEnabled ? "erase" : damageDrawEnabled ? "draw" : "";
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [damageCanvasFullscreen, setDamageCanvasFullscreen] = useState(false);
 
   const damageParts = [
     "FACIA DELANTERA",
@@ -1222,6 +1224,14 @@ export default function RecepcionForm() {
   const startDamageDraw = (event) => {
     if (!damageDrawEnabled && !damageEraseEnabled) return;
     event.preventDefault();
+    event.stopPropagation();
+    if (event.currentTarget?.setPointerCapture && event.pointerId != null) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // ignore capture errors
+      }
+    }
     const canvas = damageDrawCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -1243,6 +1253,7 @@ export default function RecepcionForm() {
   const drawDamage = (event) => {
     if ((!damageDrawEnabled && !damageEraseEnabled) || !isDamageDrawing) return;
     event.preventDefault();
+    event.stopPropagation();
     const canvas = damageDrawCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -1252,8 +1263,15 @@ export default function RecepcionForm() {
     ctx.stroke();
   };
 
-  const endDamageDraw = () => {
+  const endDamageDraw = (event) => {
     if (!isDamageDrawing) return;
+    if (event?.currentTarget?.releasePointerCapture && event.pointerId != null) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // ignore release errors
+      }
+    }
     const canvas = damageDrawCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -1299,7 +1317,25 @@ export default function RecepcionForm() {
     setDamageDrawEnabled(false);
     setDamageEraseEnabled(false);
     setIsDamageDrawing(false);
+    setDamageCanvasFullscreen(false);
   }, [damageModalOpen]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
+    syncViewport();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncViewport);
+      return () => mediaQuery.removeEventListener("change", syncViewport);
+    }
+    mediaQuery.addListener(syncViewport);
+    return () => mediaQuery.removeListener(syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!damageModalOpen || !isMobileViewport) return;
+    setDamageCanvasFullscreen(true);
+  }, [damageModalOpen, isMobileViewport]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
@@ -2231,30 +2267,60 @@ export default function RecepcionForm() {
         </main>
       </div>
       {damageModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-          <div className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border-dark bg-surface-dark shadow-2xl">
-            <div className="flex items-center justify-between border-b border-border-dark px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-0 py-0 sm:px-4 sm:py-6">
+          <div className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-none border border-border-dark bg-surface-dark shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-border-dark px-4 py-3 sm:px-6 sm:py-4">
               <div>
                 <h3 className="text-lg font-bold text-white">Seleccionar daños</h3>
                 <p className="text-xs text-slate-400">
                   {damageMode === "siniestro" ? "Daños del siniestro" : "Daños preexistentes"}
                 </p>
               </div>
-              <button
-                type="button"
-                className="text-slate-400 hover:text-white transition-colors"
-                onClick={closeDamageModal}
-                disabled={savingDamageDrawing}
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md border border-border-dark px-2 py-1 text-[11px] font-bold uppercase text-slate-300 hover:text-white"
+                  onClick={() => setDamageCanvasFullscreen((prev) => !prev)}
+                  title={damageCanvasFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {damageCanvasFullscreen ? "fullscreen_exit" : "fullscreen"}
+                  </span>
+                  <span className="hidden sm:inline">
+                    {damageCanvasFullscreen ? "Normal" : "Full"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-white transition-colors"
+                  onClick={closeDamageModal}
+                  disabled={savingDamageDrawing}
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
             </div>
-            <div className="flex-1 overflow-hidden p-6 space-y-6">
-              <div ref={damageDrawLayerRef} className="relative w-full">
+            <div
+              className={`flex-1 overflow-hidden ${
+                damageCanvasFullscreen ? "flex flex-col p-3 sm:p-4" : "p-4 sm:p-6 space-y-6"
+              }`}
+            >
+              <div
+                ref={damageDrawLayerRef}
+                className={`relative w-full overflow-hidden rounded-xl border border-border-dark bg-white ${
+                  damageCanvasFullscreen ? "flex-1 min-h-0 p-2 sm:p-4" : "p-4"
+                }`}
+                style={{ touchAction: "none" }}
+              >
                 <div
                   ref={modalSvgRef}
-                  className="w-full rounded-xl border border-border-dark bg-white p-4"
+                  className={`w-full select-none ${
+                    damageCanvasFullscreen
+                      ? "h-full touch-none [&_svg]:h-full [&_svg]:w-full [&_svg]:max-h-none"
+                      : "touch-none [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-[58vh]"
+                  }`}
                   onClick={(event) => {
+                    event.preventDefault();
                     if (damageDrawEnabled || damageEraseEnabled) return;
                     const target = event.target;
                     const element = target?.closest?.("#ZONAS [id]");
@@ -2269,13 +2335,14 @@ export default function RecepcionForm() {
                   ref={damageDrawCanvasRef}
                   className={`absolute inset-0 rounded-xl ${
                     damageDrawEnabled || damageEraseEnabled
-                      ? "pointer-events-auto cursor-crosshair"
+                      ? "pointer-events-auto cursor-crosshair touch-none"
                       : "pointer-events-none"
                   }`}
                   onPointerDown={startDamageDraw}
                   onPointerMove={drawDamage}
                   onPointerUp={endDamageDraw}
                   onPointerLeave={endDamageDraw}
+                  onPointerCancel={endDamageDraw}
                 />
                 <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
                   <button
@@ -2356,7 +2423,8 @@ export default function RecepcionForm() {
                   </div>
                 </div>
               </div>
-              <div className="space-y-4">
+              {!damageCanvasFullscreen ? (
+                <div className="space-y-4">
                 <div className="flex items-center justify-between text-[11px] uppercase tracking-widest text-slate-500">
                   <span>Partes</span>
                   <span>{activeDamageParts.length} seleccionadas</span>
@@ -2479,9 +2547,10 @@ export default function RecepcionForm() {
                     )}
                   </div>
                 </div>
-              </div>
+                </div>
+              ) : null}
             </div>
-            <div className="flex items-center justify-end gap-3 border-t border-border-dark px-6 py-4">
+            <div className="flex items-center justify-end gap-3 border-t border-border-dark px-4 py-3 sm:px-6 sm:py-4">
               <button
                 type="button"
                 className="rounded-lg border border-border-dark px-4 py-2 text-sm text-slate-300"

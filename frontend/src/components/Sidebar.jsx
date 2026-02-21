@@ -335,6 +335,17 @@ export default function Sidebar() {
               {showLabels ? <span className="text-sm font-medium">Perfiles</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">badge</span>
             </NavLink>
+            <NavLink
+              to="/admin/credenciales"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Credenciales</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">key</span>
+            </NavLink>
           </>
         ) : null}
         <button

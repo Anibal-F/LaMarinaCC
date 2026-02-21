@@ -6,6 +6,7 @@ import Home from "./pages/Home/Home.jsx";
 import Login from "./pages/Login/Login.jsx";
 import AdminUsers from "./pages/Admin/Users.jsx";
 import AdminProfiles from "./pages/Admin/Profiles.jsx";
+import AdminCredenciales from "./pages/Admin/Credenciales.jsx";
 import Recepcion from "./pages/Recepcion/Recepcion.jsx";
 import RecepcionForm from "./pages/Recepcion/RecepcionForm.jsx";
 import OrdenAdmision from "./pages/Recepcion/OrdenAdmision.jsx";
@@ -73,6 +74,10 @@ export default function App() {
       <Route
         path="/admin/profiles"
         element={authenticated ? <AdminProfiles /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/admin/credenciales"
+        element={authenticated ? <AdminCredenciales /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/catalogos/clientes"

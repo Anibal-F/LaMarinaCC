@@ -308,7 +308,13 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         
         # Actualizar tarea como completada
         # Serializar result a JSON string para evitar error de psycopg
-        result_json = json.dumps(indicadores) if isinstance(indicadores, dict) else indicadores
+        # Usar custom serializer para manejar datetime objects
+        def json_serial(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+        
+        result_json = json.dumps(indicadores, default=json_serial) if isinstance(indicadores, dict) else indicadores
         
         update_task(
             task_id,
@@ -416,6 +422,17 @@ start_worker()
 # ENDPOINTS
 # ============================================================================
 
+def serialize_datetime_recursive(obj):
+    """Recursively serialize datetime objects to ISO format strings."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: serialize_datetime_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_datetime_recursive(item) for item in obj]
+    return obj
+
+
 def serialize_task(task: Dict[str, Any]) -> Dict[str, Any]:
     """Serializa una tarea para la respuesta JSON."""
     # Manejar result (puede ser dict, str o None)
@@ -425,6 +442,10 @@ def serialize_task(task: Dict[str, Any]) -> Dict[str, Any]:
             result = json.loads(result)
         except (json.JSONDecodeError, TypeError):
             pass  # Mantener como string si no es JSON válido
+    
+    # Serializar fechas en el resultado recursivamente
+    if isinstance(result, (dict, list)):
+        result = serialize_datetime_recursive(result)
     
     # Manejar fechas (pueden ser datetime o string)
     def format_date(dt):

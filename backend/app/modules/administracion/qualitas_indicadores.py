@@ -144,6 +144,24 @@ def save_indicadores(data: Dict[str, Any]) -> int:
         raise
 
 
+def serialize_datetime(obj):
+    """Serializa objetos datetime a string ISO format."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
+
+
+def serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Serializa todas las fechas datetime en un diccionario."""
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+        else:
+            result[key] = value
+    return result
+
+
 def get_latest_indicadores() -> Optional[Dict[str, Any]]:
     """Obtiene los indicadores más recientes."""
     ensure_table_exists()
@@ -157,13 +175,15 @@ def get_latest_indicadores() -> Optional[Dict[str, Any]]:
         """).fetchone()
         
         if row:
+            row = dict(row)
             # Calcular total de complementos
             row['total_complementos'] = (
                 row['complemento_autorizado'] + 
                 row['complemento_solicitado'] + 
                 row['complemento_rechazado']
             )
-            return dict(row)
+            # Serializar fechas
+            return serialize_row(row)
         return None
 
 
@@ -184,7 +204,7 @@ def get_indicadores_history(limit: int = 30) -> List[Dict[str, Any]]:
             LIMIT %s
         """, (limit,)).fetchall()
         
-        return [dict(row) for row in rows]
+        return [serialize_row(dict(row)) for row in rows]
 
 
 # ============================================================================

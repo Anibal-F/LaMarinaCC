@@ -6,6 +6,10 @@ from app.auth.routes import pwd_context
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+# Importar y registrar rutas de RPA
+from app.modules.administracion.rpa_routes import router as rpa_router
+router.include_router(rpa_router)
+
 
 @router.get("/health")
 def health_check():

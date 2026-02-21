@@ -1,5 +1,6 @@
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import RPAExecutor from "../../components/RPAExecutor.jsx";
 
 export default function Home() {
   return (
@@ -12,6 +13,8 @@ export default function Home() {
             searchPlaceholder="Buscar OT, Vehículo o Cliente..."
             actions={
               <>
+                <RPAExecutor />
+                <div className="h-8 w-[1px] bg-border-dark mx-2"></div>
                 <button className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-primary/10">
                   <span className="material-symbols-outlined text-sm">add</span>
                   Nueva OT

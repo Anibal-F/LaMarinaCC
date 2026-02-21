@@ -125,7 +125,7 @@ async def solve_recaptcha_2captcha(site_key: str, page_url: str) -> str:
         
         # Poll por resultado con manejo de errores
         result_url = "https://2captcha.com/res.php"
-        max_wait = 180
+        max_wait = 300  # 5 minutos
         consecutive_errors = 0
         
         for attempt in range(max_wait // 5):

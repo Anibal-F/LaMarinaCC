@@ -234,7 +234,7 @@ def run_qualitas_rpa_sync(use_existing_session: bool = True) -> Dict[str, Any]:
             cwd=str(backend_dir),
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minutos
+            timeout=400,  # ~6.5 minutos (el RPA puede tardar hasta 5 min + overhead)
             encoding='utf-8',
             errors='replace'
         )

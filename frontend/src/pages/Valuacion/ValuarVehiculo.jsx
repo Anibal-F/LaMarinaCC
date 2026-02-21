@@ -531,11 +531,6 @@ export default function ValuarVehiculo() {
     });
   };
 
-  const beginRotateActiveAnnotation = (event) => {
-    if (!activeAnnotationId) return;
-    beginRotateAnnotation(event, activeAnnotationId);
-  };
-
   useEffect(() => {
     if (!dragState) return;
 
@@ -854,11 +849,25 @@ export default function ValuarVehiculo() {
                                       ) : null}
                                     </div>
 
-                                    <span
-                                      className={`absolute -top-6 left-0 text-[10px] font-black px-1.5 py-0.5 rounded border uppercase whitespace-nowrap ${isActive ? "bg-amber-500 text-white border-amber-400" : "bg-red-500/90 text-white border-red-400/70"}`}
-                                    >
-                                      {annotation.label || "Sin nombre"}
-                                    </span>
+                                    <div className="absolute -top-6 left-0 flex items-center gap-1">
+                                      <span
+                                        className={`text-[10px] font-black px-1.5 py-0.5 rounded border uppercase whitespace-nowrap ${isActive ? "bg-amber-500 text-white border-amber-400" : "bg-red-500/90 text-white border-red-400/70"}`}
+                                      >
+                                        {annotation.label || "Sin nombre"}
+                                      </span>
+                                      {isActive ? (
+                                        <button
+                                          type="button"
+                                          onMouseDown={(event) => beginRotateAnnotation(event, annotation.id)}
+                                          onClick={(event) => event.stopPropagation()}
+                                          disabled={annotationMode}
+                                          className="w-5 h-5 rounded border border-amber-300 bg-amber-400 text-slate-900 flex items-center justify-center disabled:opacity-50"
+                                          title="Arrastra para girar"
+                                        >
+                                          <span className="material-symbols-outlined text-[11px]">refresh</span>
+                                        </button>
+                                      ) : null}
+                                    </div>
 
                                     <button
                                       type="button"
@@ -888,16 +897,6 @@ export default function ValuarVehiculo() {
                                   onClick={(event) => event.stopPropagation()}
                                   placeholder="Ej: Dano defensa"
                                 />
-                                <button
-                                  type="button"
-                                  onMouseDown={beginRotateActiveAnnotation}
-                                  onClick={(event) => event.stopPropagation()}
-                                  disabled={annotationMode}
-                                  className="w-8 h-8 rounded border border-border-dark bg-background-dark text-slate-200 hover:text-amber-400 hover:border-amber-400/60 transition-colors flex items-center justify-center disabled:opacity-50"
-                                  title="Arrastra para girar"
-                                >
-                                  <span className="material-symbols-outlined text-sm">refresh</span>
-                                </button>
                               </div>
                             ) : null}
 

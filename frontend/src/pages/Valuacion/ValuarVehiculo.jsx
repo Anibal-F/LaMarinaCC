@@ -531,6 +531,11 @@ export default function ValuarVehiculo() {
     });
   };
 
+  const beginRotateActiveAnnotation = (event) => {
+    if (!activeAnnotationId) return;
+    beginRotateAnnotation(event, activeAnnotationId);
+  };
+
   useEffect(() => {
     if (!dragState) return;
 
@@ -857,17 +862,6 @@ export default function ValuarVehiculo() {
 
                                     <button
                                       type="button"
-                                      onMouseDown={(event) => beginRotateAnnotation(event, annotation.id)}
-                                      onClick={(event) => event.stopPropagation()}
-                                      disabled={annotationMode}
-                                      className={`absolute -top-5 right-0 w-4 h-4 rounded-full border flex items-center justify-center ${isActive ? "bg-amber-400 border-amber-300 text-slate-900" : "bg-red-500 border-red-400 text-white"} disabled:opacity-50`}
-                                      title="Girar"
-                                    >
-                                      <span className="material-symbols-outlined text-[10px]">refresh</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
                                       onMouseDown={(event) => beginResizeAnnotation(event, annotation.id)}
                                       onClick={(event) => event.stopPropagation()}
                                       disabled={annotationMode}
@@ -894,6 +888,16 @@ export default function ValuarVehiculo() {
                                   onClick={(event) => event.stopPropagation()}
                                   placeholder="Ej: Dano defensa"
                                 />
+                                <button
+                                  type="button"
+                                  onMouseDown={beginRotateActiveAnnotation}
+                                  onClick={(event) => event.stopPropagation()}
+                                  disabled={annotationMode}
+                                  className="w-8 h-8 rounded border border-border-dark bg-background-dark text-slate-200 hover:text-amber-400 hover:border-amber-400/60 transition-colors flex items-center justify-center disabled:opacity-50"
+                                  title="Arrastra para girar"
+                                >
+                                  <span className="material-symbols-outlined text-sm">refresh</span>
+                                </button>
                               </div>
                             ) : null}
 

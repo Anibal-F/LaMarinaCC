@@ -450,7 +450,8 @@ export default function ValuarVehiculo() {
       x: clamp(clickX - shapeDefaults.w / 2, 0, maxX),
       y: clamp(clickY - shapeDefaults.h / 2, 0, maxY),
       w: shapeDefaults.w,
-      h: shapeDefaults.h
+      h: shapeDefaults.h,
+      rotation: 0
     };
 
     updateCurrentAnnotations((existing) => [...existing, annotation]);
@@ -513,6 +514,23 @@ export default function ValuarVehiculo() {
     });
   };
 
+  const beginRotateAnnotation = (event, annotationId) => {
+    if (annotationMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const annotation = currentAnnotations.find((item) => item.id === annotationId);
+    if (!annotation || !stageRef.current) return;
+
+    setActiveAnnotationId(annotationId);
+    setDragState({
+      mode: "rotate",
+      annotationId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startAnnotation: { ...annotation, rotation: Number(annotation.rotation) || 0 }
+    });
+  };
+
   useEffect(() => {
     if (!dragState) return;
 
@@ -525,6 +543,22 @@ export default function ValuarVehiculo() {
       updateCurrentAnnotations((existing) =>
         existing.map((item) => {
           if (item.id !== dragState.annotationId) return item;
+
+          if (dragState.mode === "rotate") {
+            const base = dragState.startAnnotation;
+            const centerX = rect.left + ((base.x + base.w / 2) / 100) * rect.width;
+            const centerY = rect.top + ((base.y + base.h / 2) / 100) * rect.height;
+            const startAngle =
+              (Math.atan2(dragState.startClientY - centerY, dragState.startClientX - centerX) *
+                180) /
+              Math.PI;
+            const currentAngle =
+              (Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180) / Math.PI;
+            return {
+              ...item,
+              rotation: (Number(base.rotation) || 0) + (currentAngle - startAngle)
+            };
+          }
 
           if (dragState.mode === "move") {
             const nextX = clamp(dragState.startAnnotation.x + dxPct, 0, 100 - item.w);
@@ -775,43 +809,62 @@ export default function ValuarVehiculo() {
                                       height: `${annotation.h}%`
                                     }}
                                   >
-                                    {annotation.type === "square" ? (
-                                      <div
-                                        className={`w-full h-full border-2 ${isActive ? "border-amber-400" : "border-red-500/80"}`}
-                                      />
-                                    ) : null}
-                                    {annotation.type === "circle" ? (
-                                      <div
-                                        className={`w-full h-full rounded-full border-2 ${isActive ? "border-amber-400" : "border-red-500/80"}`}
-                                      />
-                                    ) : null}
-                                    {annotation.type === "line" ? (
-                                      <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                        <line
-                                          x1="2"
-                                          y1="50"
-                                          x2="98"
-                                          y2="50"
-                                          stroke={isActive ? "#f59e0b" : "#ef4444"}
-                                          strokeWidth="8"
-                                          strokeLinecap="round"
+                                    <div
+                                      className="w-full h-full"
+                                      style={{
+                                        transform: `rotate(${Number(annotation.rotation) || 0}deg)`,
+                                        transformOrigin: "50% 50%"
+                                      }}
+                                    >
+                                      {annotation.type === "square" ? (
+                                        <div
+                                          className={`w-full h-full border-2 ${isActive ? "border-amber-400" : "border-red-500/80"}`}
                                         />
-                                      </svg>
-                                    ) : null}
-                                    {annotation.type === "arrow" ? (
-                                      <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                        <polygon
-                                          points="2,44 76,44 76,30 98,50 76,70 76,56 2,56"
-                                          fill={isActive ? "#f59e0b" : "#ef4444"}
+                                      ) : null}
+                                      {annotation.type === "circle" ? (
+                                        <div
+                                          className={`w-full h-full rounded-full border-2 ${isActive ? "border-amber-400" : "border-red-500/80"}`}
                                         />
-                                      </svg>
-                                    ) : null}
+                                      ) : null}
+                                      {annotation.type === "line" ? (
+                                        <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                          <line
+                                            x1="2"
+                                            y1="50"
+                                            x2="98"
+                                            y2="50"
+                                            stroke={isActive ? "#f59e0b" : "#ef4444"}
+                                            strokeWidth="8"
+                                            strokeLinecap="round"
+                                          />
+                                        </svg>
+                                      ) : null}
+                                      {annotation.type === "arrow" ? (
+                                        <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                          <polygon
+                                            points="2,44 76,44 76,30 98,50 76,70 76,56 2,56"
+                                            fill={isActive ? "#f59e0b" : "#ef4444"}
+                                          />
+                                        </svg>
+                                      ) : null}
+                                    </div>
 
                                     <span
                                       className={`absolute -top-6 left-0 text-[10px] font-black px-1.5 py-0.5 rounded border uppercase whitespace-nowrap ${isActive ? "bg-amber-500 text-white border-amber-400" : "bg-red-500/90 text-white border-red-400/70"}`}
                                     >
                                       {annotation.label || "Sin nombre"}
                                     </span>
+
+                                    <button
+                                      type="button"
+                                      onMouseDown={(event) => beginRotateAnnotation(event, annotation.id)}
+                                      onClick={(event) => event.stopPropagation()}
+                                      disabled={annotationMode}
+                                      className={`absolute -top-5 right-0 w-4 h-4 rounded-full border flex items-center justify-center ${isActive ? "bg-amber-400 border-amber-300 text-slate-900" : "bg-red-500 border-red-400 text-white"} disabled:opacity-50`}
+                                      title="Girar"
+                                    >
+                                      <span className="material-symbols-outlined text-[10px]">refresh</span>
+                                    </button>
 
                                     <button
                                       type="button"

@@ -10,6 +10,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 from app.modules.administracion.rpa_routes import router as rpa_router
 router.include_router(rpa_router)
 
+# Importar y registrar rutas de Qualitas (indicadores)
+from app.modules.administracion.qualitas_indicadores import router as qualitas_router
+router.include_router(qualitas_router)
+
 
 @router.get("/health")
 def health_check():

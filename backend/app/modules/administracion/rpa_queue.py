@@ -188,7 +188,22 @@ def get_recent_tasks(limit: int = 20) -> List[Dict[str, Any]]:
             LIMIT %s
         """, (limit,)).fetchall()
         
-        return [dict(row) for row in rows]
+        def format_date(dt):
+            if dt is None:
+                return None
+            if isinstance(dt, datetime):
+                return dt.isoformat()
+            return str(dt) if dt else None
+        
+        result = []
+        for row in rows:
+            row_dict = dict(row)
+            row_dict['created_at'] = format_date(row_dict.get('created_at'))
+            row_dict['started_at'] = format_date(row_dict.get('started_at'))
+            row_dict['completed_at'] = format_date(row_dict.get('completed_at'))
+            result.append(row_dict)
+        
+        return result
 
 
 # ============================================================================
@@ -401,6 +416,38 @@ start_worker()
 # ENDPOINTS
 # ============================================================================
 
+def serialize_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Serializa una tarea para la respuesta JSON."""
+    # Manejar result (puede ser dict, str o None)
+    result = task.get('result')
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            pass  # Mantener como string si no es JSON válido
+    
+    # Manejar fechas (pueden ser datetime o string)
+    def format_date(dt):
+        if dt is None:
+            return None
+        if isinstance(dt, datetime):
+            return dt.isoformat()
+        return str(dt) if dt else None
+    
+    return {
+        "id": task['id'],
+        "type": task['type'],
+        "status": task['status'],
+        "created_at": format_date(task.get('created_at')),
+        "started_at": format_date(task.get('started_at')),
+        "completed_at": format_date(task.get('completed_at')),
+        "result": result,
+        "error": task.get('error'),
+        "logs": task.get('logs') or "",
+        "retry_count": task.get('retry_count', 0)
+    }
+
+
 @router.post("/tasks", response_model=TaskResponse)
 async def create_task_endpoint(request: CreateTaskRequest):
     """
@@ -411,18 +458,7 @@ async def create_task_endpoint(request: CreateTaskRequest):
     
     # Retornar estado inicial
     task = get_task(task_id)
-    return {
-        "id": task['id'],
-        "type": task['type'],
-        "status": task['status'],
-        "created_at": task['created_at'].isoformat(),
-        "started_at": task['started_at'].isoformat() if task['started_at'] else None,
-        "completed_at": task['completed_at'].isoformat() if task['completed_at'] else None,
-        "result": task['result'],
-        "error": task['error'],
-        "logs": task['logs'] or "",
-        "retry_count": task['retry_count']
-    }
+    return serialize_task(task)
 
 
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
@@ -433,18 +469,7 @@ async def get_task_endpoint(task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
     
-    return {
-        "id": task['id'],
-        "type": task['type'],
-        "status": task['status'],
-        "created_at": task['created_at'].isoformat(),
-        "started_at": task['started_at'].isoformat() if task['started_at'] else None,
-        "completed_at": task['completed_at'].isoformat() if task['completed_at'] else None,
-        "result": task['result'],
-        "error": task['error'],
-        "logs": task['logs'] or "",
-        "retry_count": task['retry_count']
-    }
+    return serialize_task(task)
 
 
 @router.get("/tasks")

@@ -45,7 +45,9 @@ def load_credentials(use_db=True):
         print("[Credentials] Intentando cargar desde base de datos...")
         if setup_chubb_env():
             return True
-        print("[Credentials] No se encontraron en DB, usando .env como fallback...")
+        print("[Credentials] Usando credenciales desde archivo .envChubb")
+    else:
+        print("[Credentials] Usando credenciales desde archivo .envChubb")
     
     # Usar .env (ya cargado arriba)
     return bool(os.getenv("CHUBB_USER"))
@@ -305,6 +307,7 @@ async def do_login(page, use_db: bool = True) -> bool:
     
     # Click en botón ACEPTAR
     print("[Login] Clic en botón ACEPTAR...")
+    click_success = False
     try:
         # Verificar que el botón existe y está habilitado
         btn_locator = page.locator('#btnEnter')
@@ -314,35 +317,38 @@ async def do_login(page, use_db: bool = True) -> bool:
             is_enabled = await btn_locator.is_enabled()
             print(f"[Login] Botón btnEnter existe y está habilitado: {is_enabled}")
             
-            # Hacer click con más tiempo de espera
-            await btn_locator.click(timeout=10000)
+            # Hacer click sin esperar navegación (a veces tarda)
+            await btn_locator.click(timeout=5000, no_wait_after=True)
             print("[Login] ✓ ACEPTAR clickeado")
+            click_success = True
         else:
             print("[Login] Botón btnEnter no encontrado, intentando alternativas...")
             # Fallback a input[type="submit"]
             submit_btn = page.locator('input[type="submit"]:visible').first
             if await submit_btn.count() > 0:
-                await submit_btn.click()
+                await submit_btn.click(timeout=5000, no_wait_after=True)
                 print("[Login] ✓ Botón submit clickeado")
+                click_success = True
             else:
                 # JavaScript
                 print("[Login] Usando JavaScript para enviar formulario...")
                 await page.evaluate("""() => {
                     const form = document.getElementById('loginForm');
                     if (form) {
-                        // Disparar evento submit manualmente
-                        const event = new Event('submit', { bubbles: true, cancelable: true });
-                        form.dispatchEvent(event);
-                        // También intentar submit directo
-                        setTimeout(() => form.submit(), 100);
+                        form.submit();
                         return true;
                     }
                     return false;
                 }""")
                 print("[Login] ✓ Formulario enviado vía JavaScript")
+                click_success = True
             
     except Exception as e:
-        print(f"[Login] ✗ Error clickeando ACEPTAR: {e}")
+        print(f"[Login] ⚠ Advertencia en click: {e}")
+        print("[Login] Continuando de todos modos...")
+        click_success = True  # Asumimos que el click se realizó
+    
+    if not click_success:
         await take_screenshot(page, "error_aceptar")
         return False
     

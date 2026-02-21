@@ -7,6 +7,7 @@ usar archivos .env
 """
 
 import os
+import socket
 from pathlib import Path
 
 # Agregar el backend al path para importar el módulo de DB
@@ -14,8 +15,25 @@ import sys
 backend_dir = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(backend_dir))
 
-from app.core.db import get_connection
-from psycopg.rows import dict_row
+# Verificar si estamos dentro de Docker (si 'db' resuelve)
+def _is_db_host_available():
+    """Verifica si el hostname 'db' está disponible (estamos en Docker)."""
+    try:
+        socket.gethostbyname('db')
+        return True
+    except socket.gaierror:
+        return False
+
+# Solo importar DB si estamos en Docker o si DATABASE_URL apunta a localhost
+try:
+    if _is_db_host_available() or 'localhost' in os.getenv('DATABASE_URL', ''):
+        from app.core.db import get_connection
+        from psycopg.rows import dict_row
+        DB_AVAILABLE = True
+    else:
+        DB_AVAILABLE = False
+except Exception:
+    DB_AVAILABLE = False
 
 
 def get_credentials_by_seguro(seguro_name: str) -> dict | None:
@@ -37,6 +55,9 @@ def get_credentials_by_seguro(seguro_name: str) -> dict | None:
             'activo': bool
         }
     """
+    if not DB_AVAILABLE:
+        return None
+    
     try:
         with get_connection() as conn:
             conn.row_factory = dict_row
@@ -66,6 +87,8 @@ def get_all_active_credentials() -> list[dict]:
     Returns:
         Lista de dicts con las credenciales
     """
+    if not DB_AVAILABLE:
+        return []
     try:
         with get_connection() as conn:
             conn.row_factory = dict_row

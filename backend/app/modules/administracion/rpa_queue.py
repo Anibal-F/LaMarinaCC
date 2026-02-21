@@ -142,6 +142,10 @@ def update_task(task_id: str, **kwargs):
     if not updates:
         return
     
+    # Serializar campos JSON si son dict
+    if 'result' in updates and isinstance(updates['result'], dict):
+        updates['result'] = json.dumps(updates['result'])
+    
     set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
     values = list(updates.values()) + [task_id]
     
@@ -288,11 +292,14 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         log(f"✓ Éxito - {indicadores.get('total_ordenes', 0)} órdenes encontradas")
         
         # Actualizar tarea como completada
+        # Serializar result a JSON string para evitar error de psycopg
+        result_json = json.dumps(indicadores) if isinstance(indicadores, dict) else indicadores
+        
         update_task(
             task_id,
             status=TaskStatus.COMPLETED.value,
             completed_at=datetime.now(),
-            result=indicadores,
+            result=result_json,
             logs="\n".join(logs)
         )
         

@@ -12,6 +12,22 @@ const DEFAULT_DAMAGE_CANVAS_ZOOM = 1;
 const MOBILE_DEFAULT_DAMAGE_CANVAS_ZOOM = 3.5;
 const MAX_DAMAGE_CANVAS_ZOOM = 3.5;
 
+const resolveApiBaseUrl = () => {
+  const configured = import.meta.env.VITE_API_URL || "/api";
+  if (typeof window === "undefined") return configured;
+  const isPublicHost = !["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const pointsToLocalApi = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configured);
+  if (isPublicHost && pointsToLocalApi) return "/api";
+  return configured;
+};
+
+const getTranscriptionEndpoints = () => {
+  const base = resolveApiBaseUrl();
+  const primary = `${base}/recepcion/transcripciones`;
+  if (primary.startsWith("/api/")) return [primary];
+  return [primary, "/api/recepcion/transcripciones"];
+};
+
 export default function RecepcionForm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -197,29 +213,37 @@ export default function RecepcionForm() {
   };
 
   const postTranscriptionWithRetry = async (formData, attempts = 2) => {
+    const endpoints = getTranscriptionEndpoints();
     let lastError = null;
-    for (let tryIndex = 1; tryIndex <= attempts; tryIndex += 1) {
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 180000);
-      try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/transcripciones`, {
-          method: "POST",
-          body: formData,
-          signal: controller.signal
-        });
-        window.clearTimeout(timeoutId);
-        return response;
-      } catch (err) {
-        window.clearTimeout(timeoutId);
-        lastError = err;
-        if (err?.name === "AbortError") {
-          throw new Error("La transcripción tardó demasiado. Intenta con un audio más corto.");
-        }
-        if (tryIndex < attempts) {
-          await new Promise((resolve) => window.setTimeout(resolve, 700));
-          continue;
+    for (const endpoint of endpoints) {
+      for (let tryIndex = 1; tryIndex <= attempts; tryIndex += 1) {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 180000);
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            body: formData,
+            signal: controller.signal
+          });
+          window.clearTimeout(timeoutId);
+          return response;
+        } catch (err) {
+          window.clearTimeout(timeoutId);
+          lastError = err;
+          if (err?.name === "AbortError") {
+            throw new Error("La transcripción tardó demasiado. Intenta con un audio más corto.");
+          }
+          if (tryIndex < attempts) {
+            await new Promise((resolve) => window.setTimeout(resolve, 700));
+            continue;
+          }
         }
       }
+    }
+    if (lastError?.message?.toLowerCase?.().includes("failed to fetch")) {
+      throw new Error(
+        "No se pudo conectar al servicio de transcripción (error de red). Verifica conexión y que /api esté disponible."
+      );
     }
     throw new Error(lastError?.message || "No se pudo conectar al servicio de transcripción.");
   };

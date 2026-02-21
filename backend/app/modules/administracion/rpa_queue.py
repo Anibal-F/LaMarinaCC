@@ -313,7 +313,13 @@ def worker_loop():
                 
                 task_id = task['id']
                 task_type = task['type']
-                params = json.loads(task['params'] or '{}')
+                
+                # params puede ser dict (psycopg lo deserializa) o string
+                params_raw = task.get('params', '{}')
+                if isinstance(params_raw, dict):
+                    params = params_raw
+                else:
+                    params = json.loads(params_raw or '{}')
                 
                 logger.info(f"[Worker] Procesando tarea: {task_id}")
                 

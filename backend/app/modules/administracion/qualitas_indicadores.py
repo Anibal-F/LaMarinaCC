@@ -267,9 +267,16 @@ def run_qualitas_rpa_sync(use_existing_session: bool = True) -> Dict[str, Any]:
         
     except subprocess.TimeoutExpired:
         raise TimeoutError("El RPA tardó más de 5 minutos")
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"[RPA] Timeout después de 400 segundos")
+        raise RuntimeError(f"RPA timeout: El proceso tardó más de 6.5 minutos. Esto suele indicar que 2captcha está tardando demasiado o hay un problema de conectividad.")
     except Exception as e:
         logger.exception("[RPA] Error ejecutando RPA")
-        raise RuntimeError(f"Error ejecutando RPA: {str(e)}")
+        # Incluir stdout en el error si está disponible
+        error_msg = str(e)
+        if 'result' in locals() and result.stdout:
+            error_msg += f"\n\nLogs del RPA:\n{result.stdout[-3000:]}"
+        raise RuntimeError(f"Error ejecutando RPA: {error_msg}")
 
 
 # ============================================================================
@@ -297,13 +304,16 @@ async def get_indicadores():
 async def actualizar_indicadores():
     """
     Ejecuta el RPA para actualizar los indicadores.
-    Esto puede tardar 30-120 segundos.
+    Esto puede tardar 30-120 segundos (hasta 5 min si hay CAPTCHA).
     Retorna los logs completos para debug.
     """
     import logging
-    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
     
     job_id = f"qualitas_update_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    # Capturar logs del RPA
+    rpa_logs = []
     
     try:
         # Ejecutar síncronamente (puede tardar)
@@ -319,21 +329,28 @@ async def actualizar_indicadores():
         
     except Exception as e:
         import traceback
-        # Log del error
-        logging.error(f"[actualizar_indicadores] Error: {e}")
-        logging.error(traceback.format_exc())
+        error_trace = traceback.format_exc()
         
-        # Siempre retornar JSON válido, nunca dejar que FastAPI retorne HTML
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=200,  # Retornamos 200 pero con success=false
-            content={
-                "success": False,
-                "message": f"Error: {str(e)}",
-                "job_id": job_id,
-                "error_detail": traceback.format_exc()
-            }
-        )
+        # Log del error
+        logger.error(f"[actualizar_indicadores] Error: {e}")
+        logger.error(error_trace)
+        
+        # Extraer logs del error si están disponibles
+        error_str = str(e)
+        logs_from_error = ""
+        if "Logs del RPA:" in error_str:
+            parts = error_str.split("Logs del RPA:")
+            error_str = parts[0].strip()
+            logs_from_error = parts[1].strip() if len(parts) > 1 else ""
+        
+        # Siempre retornar JSON válido
+        return {
+            "success": False,
+            "message": error_str,
+            "job_id": job_id,
+            "error_detail": error_trace,
+            "logs": logs_from_error
+        }
 
 
 @router.get("/indicadores/historial")

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export default function QualitasIndicators({ onRefresh }) {
   const [indicadores, setIndicadores] = useState(null);
@@ -8,8 +8,8 @@ export default function QualitasIndicators({ onRefresh }) {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [logs, setLogs] = useState("");
   const [showLogs, setShowLogs] = useState(false);
-
   const [estatusInfo, setEstatusInfo] = useState(null);
+  const [activeTask, setActiveTask] = useState(null);
 
   // Cargar indicadores al montar
   useEffect(() => {
@@ -17,19 +17,16 @@ export default function QualitasIndicators({ onRefresh }) {
     fetchEstatus();
   }, []);
 
-  const fetchEstatus = async () => {
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/qualitas/indicadores/estatus`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setEstatusInfo(data);
-      }
-    } catch (err) {
-      console.error("Error fetching estatus:", err);
-    }
-  };
+  // Polling de tarea activa
+  useEffect(() => {
+    if (!activeTask) return;
+    
+    const interval = setInterval(async () => {
+      await checkTaskStatus(activeTask);
+    }, 3000); // Cada 3 segundos
+    
+    return () => clearInterval(interval);
+  }, [activeTask]);
 
   const fetchIndicadores = async () => {
     try {
@@ -41,7 +38,6 @@ export default function QualitasIndicators({ onRefresh }) {
       );
       
       if (response.status === 404) {
-        // No hay datos aún
         setIndicadores(null);
         setError("No hay datos disponibles. Presiona 'Actualizar' para obtener los indicadores.");
         return;
@@ -61,6 +57,20 @@ export default function QualitasIndicators({ onRefresh }) {
     }
   };
 
+  const fetchEstatus = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/admin/qualitas/indicadores/estatus`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setEstatusInfo(data);
+      }
+    } catch (err) {
+      console.error("Error fetching estatus:", err);
+    }
+  };
+
   const handleRefresh = async () => {
     try {
       setUpdating(true);
@@ -68,11 +78,11 @@ export default function QualitasIndicators({ onRefresh }) {
       setLogs("");
       setShowLogs(false);
       
-      // Notificar al padre que se está actualizando
       if (onRefresh) onRefresh(true);
       
+      // Usar cola asíncrona
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/qualitas/indicadores/actualizar`,
+        `${import.meta.env.VITE_API_URL}/admin/rpa-queue/qualitas/actualizar`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" }
@@ -81,28 +91,60 @@ export default function QualitasIndicators({ onRefresh }) {
       
       const data = await response.json();
       
-      // Guardar logs para debug
-      if (data.logs) {
-        setLogs(data.logs);
-      }
-      if (data.error_detail) {
-        setLogs(data.error_detail);
-      }
-      
       if (!data.success) {
-        throw new Error(data.message || "Error actualizando indicadores");
+        throw new Error(data.message || "Error encolando tarea");
       }
       
-      if (data.indicadores) {
-        setIndicadores(data.indicadores);
-        setLastUpdate(new Date(data.indicadores.fecha_extraccion));
-      }
+      // Guardar ID de tarea para polling
+      setActiveTask(data.task_id);
+      
     } catch (err) {
       setError(err.message);
-      setShowLogs(true); // Auto-mostrar logs en error
-    } finally {
       setUpdating(false);
       if (onRefresh) onRefresh(false);
+    }
+  };
+
+  const checkTaskStatus = async (taskId) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/admin/rpa-queue/tasks/${taskId}`
+      );
+      
+      if (!response.ok) return;
+      
+      const task = await response.json();
+      
+      // Guardar logs si hay
+      if (task.logs) {
+        setLogs(task.logs);
+      }
+      
+      // Si la tarea terminó
+      if (task.status === 'completed') {
+        setActiveTask(null);
+        setUpdating(false);
+        if (onRefresh) onRefresh(false);
+        
+        // Recargar indicadores
+        await fetchIndicadores();
+        await fetchEstatus();
+        
+      } else if (task.status === 'failed') {
+        setActiveTask(null);
+        setUpdating(false);
+        if (onRefresh) onRefresh(false);
+        
+        setError(`Error: ${task.error || 'La tarea falló'}`);
+        if (task.logs) {
+          setLogs(task.logs);
+          setShowLogs(true);
+        }
+      }
+      // Si está pending o running, seguir esperando
+      
+    } catch (err) {
+      console.error("Error checking task:", err);
     }
   };
 
@@ -117,6 +159,14 @@ export default function QualitasIndicators({ onRefresh }) {
   // Formatear número con separador de miles
   const formatNumber = (num) => {
     return num?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") || "0";
+  };
+
+  // Calcular tiempo estimado
+  const getEstimatedTime = () => {
+    if (estatusInfo?.tiene_sesion) {
+      return "~10-30 segundos (usando sesión guardada)";
+    }
+    return "~1-3 minutos (resolviendo CAPTCHA)";
   };
 
   if (loading) {
@@ -186,15 +236,36 @@ export default function QualitasIndicators({ onRefresh }) {
         </button>
       </div>
 
+      {/* Mensaje de actualización en progreso */}
+      {updating && (
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-blue-400 animate-spin">refresh</span>
+            <div>
+              <p className="text-sm text-blue-400 font-bold">Actualización en progreso</p>
+              <p className="text-xs text-slate-400">
+                {getEstimatedTime()}
+              </p>
+            </div>
+          </div>
+          
+          {/* Logs en tiempo real */}
+          {logs && (
+            <div className="mt-3 p-2 bg-black/50 rounded text-[9px] font-mono text-slate-300 overflow-auto max-h-32">
+              <pre>{logs.split('\n').slice(-10).join('\n')}</pre>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Error */}
-      {error && (
+      {error && !updating && (
         <div className="bg-alert-red/10 border border-alert-red/30 rounded-lg p-3">
           <div className="flex items-center gap-2 mb-2">
             <span className="material-symbols-outlined text-alert-red">error</span>
             <span className="text-xs text-alert-red font-bold">{error}</span>
           </div>
           
-          {/* Botón para ver logs */}
           {logs && (
             <div className="mt-2">
               <button
@@ -300,7 +371,7 @@ export default function QualitasIndicators({ onRefresh }) {
       )}
 
       {/* Estado vacío */}
-      {!indicadores && !loading && !error && (
+      {!indicadores && !loading && !error && !updating && (
         <div className="bg-surface-dark border border-border-dark border-dashed rounded-xl p-8 text-center">
           <span className="material-symbols-outlined text-4xl text-slate-600 mb-2">
             analytics

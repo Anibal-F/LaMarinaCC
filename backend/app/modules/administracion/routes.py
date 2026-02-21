@@ -14,6 +14,10 @@ router.include_router(rpa_router)
 from app.modules.administracion.qualitas_indicadores import router as qualitas_router
 router.include_router(qualitas_router)
 
+# Importar y registrar rutas de cola de RPA
+from app.modules.administracion.rpa_queue import router as rpa_queue_router
+router.include_router(rpa_queue_router)
+
 
 @router.get("/health")
 def health_check():

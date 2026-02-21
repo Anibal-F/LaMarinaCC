@@ -416,6 +416,11 @@ export default function ValuarVehiculo() {
     });
   };
 
+  const disablePlacementMode = () => {
+    setAnnotationMode(false);
+    setShapeMenuOpen(false);
+  };
+
   const placeAnnotationAtEvent = (event) => {
     if (!annotationMode || !selectedEvidenceKey || !stageRef.current) return;
     const target = event.target;
@@ -462,10 +467,20 @@ export default function ValuarVehiculo() {
   const handleStageClick = (event) => {
     // Fallback for environments where pointer events don't dispatch as expected.
     if (Date.now() - lastPlacementTsRef.current < 200) return;
+    if (!annotationMode) {
+      const target = event.target;
+      if (typeof target?.closest === "function") {
+        if (target.closest("[data-annotation-item='true']")) return;
+        if (target.closest("[data-annotation-control='true']")) return;
+      }
+      setActiveAnnotationId(null);
+      return;
+    }
     placeAnnotationAtEvent(event);
   };
 
   const beginMoveAnnotation = (event, annotationId) => {
+    if (annotationMode) return;
     event.preventDefault();
     event.stopPropagation();
     const annotation = currentAnnotations.find((item) => item.id === annotationId);
@@ -482,6 +497,7 @@ export default function ValuarVehiculo() {
   };
 
   const beginResizeAnnotation = (event, annotationId) => {
+    if (annotationMode) return;
     event.preventDefault();
     event.stopPropagation();
     const annotation = currentAnnotations.find((item) => item.id === annotationId);
@@ -519,16 +535,6 @@ export default function ValuarVehiculo() {
           const minSize = 3;
           const rawW = clamp(dragState.startAnnotation.w + dxPct, minSize, 100 - item.x);
           const rawH = clamp(dragState.startAnnotation.h + dyPct, minSize, 100 - item.y);
-
-          if (item.type === "square" || item.type === "circle") {
-            const edge = clamp(
-              Math.max(rawW, rawH),
-              minSize,
-              Math.min(100 - item.x, 100 - item.y)
-            );
-            return { ...item, w: edge, h: edge };
-          }
-
           return { ...item, w: rawW, h: rawH };
         })
       );
@@ -758,6 +764,7 @@ export default function ValuarVehiculo() {
                                     onMouseDown={(event) => beginMoveAnnotation(event, annotation.id)}
                                     onClick={(event) => {
                                       event.stopPropagation();
+                                      if (annotationMode) return;
                                       setActiveAnnotationId(annotation.id);
                                     }}
                                     className={`absolute select-none ${isActive ? "z-20" : "z-10"}`}
@@ -793,30 +800,9 @@ export default function ValuarVehiculo() {
                                     ) : null}
                                     {annotation.type === "arrow" ? (
                                       <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                        <defs>
-                                          <marker
-                                            id={`arrow-head-${annotation.id}`}
-                                            markerWidth="10"
-                                            markerHeight="7"
-                                            refX="9"
-                                            refY="3.5"
-                                            orient="auto"
-                                          >
-                                            <polygon
-                                              points="0 0, 10 3.5, 0 7"
-                                              fill={isActive ? "#f59e0b" : "#ef4444"}
-                                            />
-                                          </marker>
-                                        </defs>
-                                        <line
-                                          x1="2"
-                                          y1="50"
-                                          x2="96"
-                                          y2="50"
-                                          stroke={isActive ? "#f59e0b" : "#ef4444"}
-                                          strokeWidth="8"
-                                          markerEnd={`url(#arrow-head-${annotation.id})`}
-                                          strokeLinecap="round"
+                                        <polygon
+                                          points="2,44 76,44 76,30 98,50 76,70 76,56 2,56"
+                                          fill={isActive ? "#f59e0b" : "#ef4444"}
                                         />
                                       </svg>
                                     ) : null}
@@ -831,6 +817,7 @@ export default function ValuarVehiculo() {
                                       type="button"
                                       onMouseDown={(event) => beginResizeAnnotation(event, annotation.id)}
                                       onClick={(event) => event.stopPropagation()}
+                                      disabled={annotationMode}
                                       className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-sm border ${isActive ? "bg-amber-400 border-amber-300" : "bg-red-500 border-red-400"}`}
                                       title="Redimensionar"
                                     />
@@ -895,7 +882,12 @@ export default function ValuarVehiculo() {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setShapeMenuOpen((prev) => !prev);
+                                  if (annotationMode || shapeMenuOpen) {
+                                    disablePlacementMode();
+                                    return;
+                                  }
+                                  setActiveAnnotationId(null);
+                                  setShapeMenuOpen(true);
                                   setAnnotationMode(true);
                                 }}
                                 className={`${shapeMenuOpen || annotationMode ? "text-amber-400" : "text-white hover:text-amber-400"} transition-colors`}

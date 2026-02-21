@@ -6,6 +6,8 @@ export default function QualitasIndicators({ onRefresh }) {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [logs, setLogs] = useState("");
+  const [showLogs, setShowLogs] = useState(false);
 
   // Cargar indicadores al montar
   useEffect(() => {
@@ -46,6 +48,8 @@ export default function QualitasIndicators({ onRefresh }) {
     try {
       setUpdating(true);
       setError(null);
+      setLogs("");
+      setShowLogs(false);
       
       // Notificar al padre que se está actualizando
       if (onRefresh) onRefresh(true);
@@ -58,19 +62,27 @@ export default function QualitasIndicators({ onRefresh }) {
         }
       );
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Error actualizando indicadores");
-      }
-      
       const data = await response.json();
       
-      if (data.success && data.indicadores) {
+      // Guardar logs para debug
+      if (data.logs) {
+        setLogs(data.logs);
+      }
+      if (data.error_detail) {
+        setLogs(data.error_detail);
+      }
+      
+      if (!data.success) {
+        throw new Error(data.message || "Error actualizando indicadores");
+      }
+      
+      if (data.indicadores) {
         setIndicadores(data.indicadores);
         setLastUpdate(new Date(data.indicadores.fecha_extraccion));
       }
     } catch (err) {
       setError(err.message);
+      setShowLogs(true); // Auto-mostrar logs en error
     } finally {
       setUpdating(false);
       if (onRefresh) onRefresh(false);
@@ -152,9 +164,29 @@ export default function QualitasIndicators({ onRefresh }) {
 
       {/* Error */}
       {error && (
-        <div className="bg-alert-red/10 border border-alert-red/30 rounded-lg p-3 flex items-center gap-2">
-          <span className="material-symbols-outlined text-alert-red">error</span>
-          <span className="text-xs text-alert-red">{error}</span>
+        <div className="bg-alert-red/10 border border-alert-red/30 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="material-symbols-outlined text-alert-red">error</span>
+            <span className="text-xs text-alert-red font-bold">{error}</span>
+          </div>
+          
+          {/* Botón para ver logs */}
+          {logs && (
+            <div className="mt-2">
+              <button
+                onClick={() => setShowLogs(!showLogs)}
+                className="text-[10px] text-alert-red underline hover:no-underline"
+              >
+                {showLogs ? 'Ocultar logs' : 'Ver logs de debug'}
+              </button>
+              
+              {showLogs && (
+                <div className="mt-2 p-2 bg-black/50 rounded text-[9px] font-mono text-slate-300 overflow-auto max-h-48">
+                  <pre>{logs}</pre>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

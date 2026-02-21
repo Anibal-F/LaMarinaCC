@@ -88,10 +88,18 @@ def ensure_table_exists():
 
 def save_indicadores(data: Dict[str, Any]) -> int:
     """Guarda los indicadores extraídos en la base de datos."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[save_indicadores] Iniciando guardado de datos: {data.get('taller_nombre', 'N/A')}")
+    
     ensure_table_exists()
     
     # Extraer valores de los estatus
-    estatus_map = {e['nombre']: e['cantidad'] for e in data.get('estatus', [])}
+    estatus_list = data.get('estatus', [])
+    logger.info(f"[save_indicadores] Estatus encontrados: {len(estatus_list)}")
+    
+    estatus_map = {e['nombre']: e['cantidad'] for e in estatus_list}
     
     asignados = estatus_map.get('Asignados', 0)
     revisar_valuacion = estatus_map.get('Revisar Valuación', 0)
@@ -106,27 +114,34 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     total_complementos = complemento_autorizado + complemento_solicitado + complemento_rechazado
     total_ordenes = data.get('total_ordenes', 0)
     
-    with get_connection() as conn:
-        row = conn.execute("""
-            INSERT INTO qualitas_indicadores (
-                taller_id, taller_nombre, fecha_extraccion,
+    try:
+        with get_connection() as conn:
+            row = conn.execute("""
+                INSERT INTO qualitas_indicadores (
+                    taller_id, taller_nombre, fecha_extraccion,
+                    asignados, revisar_valuacion,
+                    complemento_autorizado, complemento_solicitado, complemento_rechazado,
+                    pago_danos, perdida_total, dano_menor_deducible, pendiente_terminar,
+                    total_ordenes, raw_data
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                data.get('taller_id', ''),
+                data.get('taller_nombre', ''),
+                data.get('fecha_extraccion', datetime.now().isoformat()),
                 asignados, revisar_valuacion,
                 complemento_autorizado, complemento_solicitado, complemento_rechazado,
                 pago_danos, perdida_total, dano_menor_deducible, pendiente_terminar,
-                total_ordenes, raw_data
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            data.get('taller_id', ''),
-            data.get('taller_nombre', ''),
-            data.get('fecha_extraccion', datetime.now().isoformat()),
-            asignados, revisar_valuacion,
-            complemento_autorizado, complemento_solicitado, complemento_rechazado,
-            pago_danos, perdida_total, dano_menor_deducible, pendiente_terminar,
-            total_ordenes, json.dumps(data)
-        )).fetchone()
-        conn.commit()
-        return row[0]
+                total_ordenes, json.dumps(data)
+            )).fetchone()
+            conn.commit()
+            logger.info(f"[save_indicadores] ✓ Guardado con ID: {row[0]}")
+            return row[0]
+    except Exception as e:
+        logger.error(f"[save_indicadores] ✗ Error en INSERT: {e}")
+        import traceback
+        logger.error(f"[save_indicadores] Traceback: {traceback.format_exc()}")
+        raise
 
 
 def get_latest_indicadores() -> Optional[Dict[str, Any]]:
@@ -181,8 +196,13 @@ def run_qualitas_rpa_sync() -> Dict[str, Any]:
     Ejecuta el RPA de Qualitas y devuelve los indicadores.
     Esta función es síncrona y bloqueante - usar en background tasks.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     backend_dir = Path(__file__).resolve().parents[3]
     script_path = backend_dir / "app" / "rpa" / "qualitas_full_workflow.py"
+    
+    logger.info(f"[RPA] Iniciando ejecución desde: {script_path}")
     
     if not script_path.exists():
         raise FileNotFoundError(f"Script no encontrado: {script_path}")
@@ -192,6 +212,8 @@ def run_qualitas_rpa_sync() -> Dict[str, Any]:
         "--headless",
         "--use-db"  # Usar credenciales de la base de datos
     ]
+    
+    logger.info(f"[RPA] Comando: {' '.join(cmd)}")
     
     try:
         result = subprocess.run(
@@ -204,24 +226,36 @@ def run_qualitas_rpa_sync() -> Dict[str, Any]:
             errors='replace'
         )
         
+        # Log completo del output
+        logger.info(f"[RPA] Return code: {result.returncode}")
+        logger.info(f"[RPA] STDOUT:\n{result.stdout}")
+        if result.stderr:
+            logger.warning(f"[RPA] STDERR:\n{result.stderr}")
+        
         if result.returncode != 0:
-            raise RuntimeError(f"RPA falló: {result.stderr}")
+            raise RuntimeError(f"RPA falló (code {result.returncode}): {result.stderr or result.stdout}")
         
         # El RPA ya guarda en la base de datos, solo recuperamos los datos más recientes
         indicadores = get_latest_indicadores()
         
         if not indicadores:
+            logger.error("[RPA] No se encontraron datos en la base de datos después de ejecutar el RPA")
+            logger.error(f"[RPA] Output completo:\n{result.stdout}")
             raise RuntimeError("El RPA se ejecutó pero no se encontraron datos en la base de datos")
+        
+        logger.info(f"[RPA] Éxito - Indicadores recuperados: {indicadores.get('total_ordenes', 0)} órdenes")
         
         return {
             "success": True,
             "message": "RPA ejecutado exitosamente",
-            "data": indicadores
+            "data": indicadores,
+            "logs": result.stdout[-2000:]  # Últimos 2000 caracteres de logs
         }
         
     except subprocess.TimeoutExpired:
         raise TimeoutError("El RPA tardó más de 5 minutos")
     except Exception as e:
+        logger.exception("[RPA] Error ejecutando RPA")
         raise RuntimeError(f"Error ejecutando RPA: {str(e)}")
 
 
@@ -246,30 +280,38 @@ async def get_indicadores():
     return indicadores
 
 
-@router.post("/indicadores/actualizar", response_model=RPAUpdateResponse)
-async def actualizar_indicadores(background_tasks: BackgroundTasks):
+@router.post("/indicadores/actualizar")
+async def actualizar_indicadores():
     """
     Ejecuta el RPA para actualizar los indicadores.
     Esto puede tardar 30-120 segundos.
+    Retorna los logs completos para debug.
     """
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    
     job_id = f"qualitas_update_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
     try:
         # Ejecutar síncronamente (puede tardar)
         result = run_qualitas_rpa_sync()
         
-        return RPAUpdateResponse(
-            success=True,
-            message="Indicadores actualizados exitosamente",
-            job_id=job_id,
-            indicadores=get_latest_indicadores()
-        )
+        return {
+            "success": True,
+            "message": "Indicadores actualizados exitosamente",
+            "job_id": job_id,
+            "indicadores": get_latest_indicadores(),
+            "logs": result.get("logs", "")
+        }
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error actualizando indicadores: {str(e)}"
-        )
+        import traceback
+        return {
+            "success": False,
+            "message": f"Error: {str(e)}",
+            "job_id": job_id,
+            "error_detail": traceback.format_exc()
+        }
 
 
 @router.get("/indicadores/historial")

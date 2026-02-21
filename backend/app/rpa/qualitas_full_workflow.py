@@ -325,11 +325,14 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
             # Guardar en base de datos
             try:
                 print("\n[DB] Guardando en base de datos...")
+                print(f"[DB] Datos a guardar: {data.to_dict()}")
                 from app.modules.administracion.qualitas_indicadores import save_indicadores
                 record_id = save_indicadores(data.to_dict())
                 print(f"[DB] ✓ Guardado con ID: {record_id}")
             except Exception as e:
-                print(f"[DB] ⚠ Error guardando en DB: {e}")
+                print(f"[DB] ✗ Error guardando en DB: {e}")
+                import traceback
+                print(f"[DB] Traceback: {traceback.format_exc()}")
                 # No fallar el workflow por error en DB
             
             # Click en estatus específico si se solicitó

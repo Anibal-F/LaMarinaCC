@@ -195,6 +195,9 @@ export default function ValuarVehiculo() {
               id: item.id || crypto.randomUUID(),
               tipo: item.tipo,
               descripcion: item.descripcion,
+              mano_obra: Number(item.mano_obra || 0),
+              pintura: Number(item.pintura || 0),
+              refacciones: Number(item.refacciones || 0),
               monto: Number(item.monto || 0)
             }))
           );
@@ -359,17 +362,16 @@ export default function ValuarVehiculo() {
   const montoPorTipo = useMemo(() => {
     return operations.reduce(
       (acc, item) => {
-        const amount = Number(item.monto) || 0;
-        if (item.tipo === "MO") acc.mo += amount;
-        if (item.tipo === "SUST") acc.sust += amount;
-        if (item.tipo === "BYD") acc.byd += amount;
+        acc.mo += Number(item.mano_obra) || 0;
+        acc.sust += Number(item.refacciones) || 0;
+        acc.byd += Number(item.pintura) || 0;
         return acc;
       },
       { mo: 0, sust: 0, byd: 0 }
     );
   }, [operations]);
 
-  const subtotal = montoPorTipo.mo + montoPorTipo.sust + montoPorTipo.byd;
+  const subtotal = operations.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
   const iva = subtotal * 0.16;
   const total = subtotal + iva;
   const autorizado = autorizadoAseguradora || 0;
@@ -393,6 +395,9 @@ export default function ValuarVehiculo() {
             detalle: operations.map((item) => ({
               tipo: item.tipo,
               descripcion: item.descripcion,
+              mano_obra: Number(item.mano_obra || 0),
+              pintura: Number(item.pintura || 0),
+              refacciones: Number(item.refacciones || 0),
               monto: Number(item.monto || 0)
             }))
           })
@@ -1236,7 +1241,15 @@ export default function ValuarVehiculo() {
                           onClick={() =>
                             setOperations((prev) => [
                               ...prev,
-                              { id: crypto.randomUUID(), tipo: "MO", descripcion: "", monto: 0 }
+                              {
+                                id: crypto.randomUUID(),
+                                tipo: "MO",
+                                descripcion: "",
+                                mano_obra: 0,
+                                pintura: 0,
+                                refacciones: 0,
+                                monto: 0
+                              }
                             ])
                           }
                         >
@@ -1246,12 +1259,15 @@ export default function ValuarVehiculo() {
                       </div>
 
                       <div className="overflow-x-auto border border-border-dark rounded-lg bg-background-dark/50">
-                        <table className="w-full min-w-[720px] text-left">
+                        <table className="w-full min-w-[1040px] text-left">
                           <thead className="bg-background-dark/80">
                             <tr>
                               <th className="text-[10px] font-bold uppercase p-3 text-slate-400">Tipo</th>
                               <th className="text-[10px] font-bold uppercase p-3 text-slate-400">Descripcion</th>
-                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Monto</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Mano de Obra</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Pintura</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Refacciones</th>
+                              <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Total</th>
                               <th className="text-[10px] font-bold uppercase p-3 text-slate-400 text-right">Accion</th>
                             </tr>
                           </thead>
@@ -1292,7 +1308,55 @@ export default function ValuarVehiculo() {
                                       placeholder="Descripcion de operacion"
                                     />
                                   </td>
-                                  <td className="p-3 text-right w-40">
+                                  <td className="p-3 text-right w-32">
+                                    <input
+                                      type="number"
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      value={item.mano_obra}
+                                      onChange={(event) =>
+                                        setOperations((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, mano_obra: Number(event.target.value || 0) }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td className="p-3 text-right w-32">
+                                    <input
+                                      type="number"
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      value={item.pintura}
+                                      onChange={(event) =>
+                                        setOperations((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, pintura: Number(event.target.value || 0) }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td className="p-3 text-right w-32">
+                                    <input
+                                      type="number"
+                                      className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
+                                      value={item.refacciones}
+                                      onChange={(event) =>
+                                        setOperations((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, refacciones: Number(event.target.value || 0) }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td className="p-3 text-right w-36">
                                     <input
                                       type="number"
                                       className="w-full bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-right"
@@ -1323,7 +1387,7 @@ export default function ValuarVehiculo() {
                               ))
                             ) : (
                               <tr>
-                                <td colSpan="4" className="p-10 text-center text-slate-500 text-sm">
+                                <td colSpan="7" className="p-10 text-center text-slate-500 text-sm">
                                   Aun no hay operaciones capturadas.
                                 </td>
                               </tr>
@@ -1347,7 +1411,7 @@ export default function ValuarVehiculo() {
                           <span className="font-bold text-white">{formatCurrency(montoPorTipo.sust)}</span>
                         </div>
                         <div className="flex justify-between items-center pb-2 border-b border-border-dark">
-                          <span className="text-slate-400">Materiales (BYD)</span>
+                          <span className="text-slate-400">Pintura</span>
                           <span className="font-bold text-white">{formatCurrency(montoPorTipo.byd)}</span>
                         </div>
 

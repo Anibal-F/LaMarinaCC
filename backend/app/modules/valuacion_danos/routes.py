@@ -7,6 +7,27 @@ from app.core.db import get_connection
 router = APIRouter(prefix="/valuacion", tags=["valuacion"])
 
 
+def _ensure_detalle_columns(conn):
+    conn.execute(
+        """
+        ALTER TABLE valuacion_detalle
+        ADD COLUMN IF NOT EXISTS mano_obra NUMERIC(12,2) NOT NULL DEFAULT 0
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE valuacion_detalle
+        ADD COLUMN IF NOT EXISTS pintura NUMERIC(12,2) NOT NULL DEFAULT 0
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE valuacion_detalle
+        ADD COLUMN IF NOT EXISTS refacciones NUMERIC(12,2) NOT NULL DEFAULT 0
+        """
+    )
+
+
 @router.get("/health")
 def health_check():
     return {"module": "valuacion", "status": "ok"}
@@ -81,6 +102,9 @@ class ValuacionDetalle(BaseModel):
     tipo: str
     descripcion: str
     monto: float
+    mano_obra: float = 0
+    pintura: float = 0
+    refacciones: float = 0
 
 
 class ValuacionPayload(BaseModel):
@@ -93,6 +117,7 @@ class ValuacionPayload(BaseModel):
 @router.get("/ordenes/{orden_id}")
 def get_valuacion_by_orden(orden_id: int):
     with get_connection() as conn:
+        _ensure_detalle_columns(conn)
         conn.row_factory = dict_row
         valuacion = conn.execute(
             """
@@ -107,7 +132,14 @@ def get_valuacion_by_orden(orden_id: int):
 
         detalle = conn.execute(
             """
-            SELECT id, tipo, descripcion, monto
+            SELECT
+                id,
+                tipo,
+                descripcion,
+                monto,
+                COALESCE(mano_obra, 0)::float8 AS mano_obra,
+                COALESCE(pintura, 0)::float8 AS pintura,
+                COALESCE(refacciones, 0)::float8 AS refacciones
             FROM valuacion_detalle
             WHERE valuacion_id = %s
             ORDER BY id ASC
@@ -121,6 +153,7 @@ def get_valuacion_by_orden(orden_id: int):
 @router.post("/ordenes/{orden_id}", status_code=status.HTTP_201_CREATED)
 def upsert_valuacion_by_orden(orden_id: int, payload: ValuacionPayload):
     with get_connection() as conn:
+        _ensure_detalle_columns(conn)
         conn.row_factory = dict_row
         orden = conn.execute(
             "SELECT id FROM orden_admision WHERE id = %s",
@@ -174,10 +207,26 @@ def upsert_valuacion_by_orden(orden_id: int, payload: ValuacionPayload):
         for item in payload.detalle:
             conn.execute(
                 """
-                INSERT INTO valuacion_detalle (valuacion_id, tipo, descripcion, monto)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO valuacion_detalle (
+                    valuacion_id,
+                    tipo,
+                    descripcion,
+                    monto,
+                    mano_obra,
+                    pintura,
+                    refacciones
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (valuacion_id, item.tipo, item.descripcion, item.monto),
+                (
+                    valuacion_id,
+                    item.tipo,
+                    item.descripcion,
+                    item.monto,
+                    item.mano_obra,
+                    item.pintura,
+                    item.refacciones,
+                ),
             )
 
         # Al guardar una valuacion se marca como borrador.

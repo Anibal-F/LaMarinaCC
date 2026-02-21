@@ -1157,8 +1157,8 @@ export default function RecepcionForm() {
     });
   };
 
-  const fitModalSvgToZones = () => {
-    const container = modalSvgRef.current;
+  const fitSvgToZones = (containerRef) => {
+    const container = containerRef.current;
     if (!container) return;
     const svg = container.querySelector("svg");
     if (!svg) return;
@@ -1180,6 +1180,8 @@ export default function RecepcionForm() {
     if (!damageSvgMarkup) return;
     applySvgSelection(siniestroSvgRef, damagePartsSiniestro, "siniestro");
     applySvgSelection(preexistSvgRef, damagePartsPreexist, "preexistente");
+    fitSvgToZones(siniestroSvgRef);
+    fitSvgToZones(preexistSvgRef);
   }, [damageSvgMarkup, damagePartsSiniestro, damagePartsPreexist]);
 
   useEffect(() => {
@@ -1190,7 +1192,7 @@ export default function RecepcionForm() {
       damageMode
     );
     const raf = window.requestAnimationFrame(() => {
-      fitModalSvgToZones();
+      fitSvgToZones(modalSvgRef);
       resizeDamageDrawCanvas();
     });
     return () => window.cancelAnimationFrame(raf);

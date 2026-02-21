@@ -9,10 +9,27 @@ export default function QualitasIndicators({ onRefresh }) {
   const [logs, setLogs] = useState("");
   const [showLogs, setShowLogs] = useState(false);
 
+  const [estatusInfo, setEstatusInfo] = useState(null);
+
   // Cargar indicadores al montar
   useEffect(() => {
     fetchIndicadores();
+    fetchEstatus();
   }, []);
+
+  const fetchEstatus = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/admin/qualitas/indicadores/estatus`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setEstatusInfo(data);
+      }
+    } catch (err) {
+      console.error("Error fetching estatus:", err);
+    }
+  };
 
   const fetchIndicadores = async () => {
     try {
@@ -125,17 +142,24 @@ export default function QualitasIndicators({ onRefresh }) {
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">Indicadores Qualitas</h3>
-            {lastUpdate && (
-              <p className={`text-xs ${isDataFresh() ? 'text-alert-green' : 'text-alert-amber'}`}>
-                Actualizado: {lastUpdate.toLocaleString('es-MX', { 
-                  hour: '2-digit', 
-                  minute: '2-digit',
-                  day: '2-digit',
-                  month: 'short'
-                })}
-                {!isDataFresh() && ' (Datos antiguos)'}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {lastUpdate && (
+                <p className={`text-xs ${isDataFresh() ? 'text-alert-green' : 'text-alert-amber'}`}>
+                  Actualizado: {lastUpdate.toLocaleString('es-MX', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    day: '2-digit',
+                    month: 'short'
+                  })}
+                  {!isDataFresh() && ' (Datos antiguos)'}
+                </p>
+              )}
+              {estatusInfo?.tiene_sesion && (
+                <span className="text-[10px] bg-alert-green/20 text-alert-green px-1.5 py-0.5 rounded">
+                  Sesión activa
+                </span>
+              )}
+            </div>
           </div>
         </div>
         

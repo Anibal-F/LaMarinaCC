@@ -191,7 +191,7 @@ def get_indicadores_history(limit: int = 30) -> List[Dict[str, Any]]:
 # EJECUCIÓN DEL RPA
 # ============================================================================
 
-def run_qualitas_rpa_sync() -> Dict[str, Any]:
+def run_qualitas_rpa_sync(use_existing_session: bool = True) -> Dict[str, Any]:
     """
     Ejecuta el RPA de Qualitas y devuelve los indicadores.
     Esta función es síncrona y bloqueante - usar en background tasks.
@@ -201,17 +201,30 @@ def run_qualitas_rpa_sync() -> Dict[str, Any]:
     
     backend_dir = Path(__file__).resolve().parents[3]
     script_path = backend_dir / "app" / "rpa" / "qualitas_full_workflow.py"
+    session_path = backend_dir / "app" / "rpa" / "sessions" / "qualitas_session.json"
     
     logger.info(f"[RPA] Iniciando ejecución desde: {script_path}")
     
     if not script_path.exists():
         raise FileNotFoundError(f"Script no encontrado: {script_path}")
     
+    # Determinar si usar sesión existente
+    has_session = session_path.exists() and use_existing_session
+    if has_session:
+        logger.info(f"[RPA] Sesión encontrada en: {session_path}")
+    
     cmd = [
         "python3", "-m", "app.rpa.qualitas_full_workflow",
         "--headless",
         "--use-db"  # Usar credenciales de la base de datos
     ]
+    
+    # Si hay sesión, usarla para evitar CAPTCHA
+    if has_session:
+        cmd.append("--skip-login")
+        logger.info("[RPA] Usando sesión existente (sin CAPTCHA)")
+    else:
+        logger.info("[RPA] No hay sesión, se requerirá resolver CAPTCHA (puede tardar 30-120s)")
     
     logger.info(f"[RPA] Comando: {' '.join(cmd)}")
     
@@ -306,12 +319,21 @@ async def actualizar_indicadores():
         
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "message": f"Error: {str(e)}",
-            "job_id": job_id,
-            "error_detail": traceback.format_exc()
-        }
+        # Log del error
+        logging.error(f"[actualizar_indicadores] Error: {e}")
+        logging.error(traceback.format_exc())
+        
+        # Siempre retornar JSON válido, nunca dejar que FastAPI retorne HTML
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=200,  # Retornamos 200 pero con success=false
+            content={
+                "success": False,
+                "message": f"Error: {str(e)}",
+                "job_id": job_id,
+                "error_detail": traceback.format_exc()
+            }
+        )
 
 
 @router.get("/indicadores/historial")
@@ -327,11 +349,16 @@ async def get_estatus():
     """
     indicadores = get_latest_indicadores()
     
+    # Verificar si hay sesión guardada
+    session_path = Path(__file__).resolve().parents[3] / "app" / "rpa" / "sessions" / "qualitas_session.json"
+    tiene_sesion = session_path.exists()
+    
     if not indicadores:
         return {
             "hay_datos": False,
+            "tiene_sesion": tiene_sesion,
             "mensaje": "No hay datos disponibles",
-            "recomendacion": "Ejecute POST /admin/qualitas/indicadores/actualizar"
+            "recomendacion": "Ejecute POST /admin/qualitas/indicadores/actualizar" + (" (usará sesión guardada)" if tiene_sesion else " (requiere login con CAPTCHA)")
         }
     
     # Calcular antigüedad
@@ -341,8 +368,9 @@ async def get_estatus():
     
     return {
         "hay_datos": True,
+        "tiene_sesion": tiene_sesion,
         "fecha_ultima_actualizacion": indicadores['fecha_extraccion'],
-        "antiguedad_horas": antiguedad.total_seconds() / 3600,
+        "antiguedad_horas": round(antiguedad.total_seconds() / 3600, 1),
         "datos_frescos": antiguedad < timedelta(hours=2),
         "total_ordenes": indicadores['total_ordenes'],
         "taller": indicadores['taller_nombre']

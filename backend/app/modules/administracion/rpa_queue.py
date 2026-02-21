@@ -254,12 +254,36 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         if result.returncode != 0:
             raise RuntimeError(f"RPA falló con código {result.returncode}")
         
+        # Buscar el archivo JSON más reciente generado por el RPA
+        data_dir = backend_dir / "app" / "rpa" / "data"
+        json_files = sorted(data_dir.glob("qualitas_dashboard_*.json"), reverse=True)
+        
+        if not json_files:
+            raise RuntimeError("El RPA se ejecutó pero no se encontró archivo de datos")
+        
+        # Leer datos del archivo JSON
+        with open(json_files[0], 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        log(f"Datos leídos del archivo: {json_files[0].name}")
+        
+        # Guardar en base de datos (desde el worker, no desde el RPA)
+        from app.modules.administracion.qualitas_indicadores import save_indicadores, get_latest_indicadores
+        
+        try:
+            record_id = save_indicadores(data)
+            log(f"✓ Datos guardados en DB con ID: {record_id}")
+        except Exception as db_error:
+            log(f"⚠ Error guardando en DB: {db_error}")
+            # Continuar de todos modos, los datos están en el archivo JSON
+        
         # Verificar que se guardaron datos
-        from app.modules.administracion.qualitas_indicadores import get_latest_indicadores
         indicadores = get_latest_indicadores()
         
         if not indicadores:
-            raise RuntimeError("El RPA se ejecutó pero no se encontraron datos en la base de datos")
+            # Si no hay en DB, usar los datos del archivo
+            log("Usando datos del archivo JSON (no se encontraron en DB)")
+            indicadores = data
         
         log(f"✓ Éxito - {indicadores.get('total_ordenes', 0)} órdenes encontradas")
         

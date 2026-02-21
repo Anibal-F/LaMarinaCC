@@ -322,18 +322,10 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 filepath = extractor.save_to_file(data)
                 print(f"\n[JSON] Guardado en: {filepath}")
             
-            # Guardar en base de datos
-            try:
-                print("\n[DB] Guardando en base de datos...")
-                print(f"[DB] Datos a guardar: {data.to_dict()}")
-                from app.modules.administracion.qualitas_indicadores import save_indicadores
-                record_id = save_indicadores(data.to_dict())
-                print(f"[DB] ✓ Guardado con ID: {record_id}")
-            except Exception as e:
-                print(f"[DB] ✗ Error guardando en DB: {e}")
-                import traceback
-                print(f"[DB] Traceback: {traceback.format_exc()}")
-                # No fallar el workflow por error en DB
+            # Nota: El guardado en DB se hace desde el worker, no desde el RPA
+            # porque el subprocess no tiene acceso a la red del contenedor
+            print("\n[DB] Los datos se guardarán en la base de datos por el worker")
+            print("[DB] Archivo JSON generado para el worker")
             
             # Click en estatus específico si se solicitó
             if click_status:

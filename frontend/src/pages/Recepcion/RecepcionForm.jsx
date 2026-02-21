@@ -8,6 +8,9 @@ import { getSession } from "../../utils/auth.js";
 
 const MAX_OBSERVATION_RECORDING_MS = 12000;
 const MIN_OBSERVATION_RECORDING_MS = 800;
+const DEFAULT_DAMAGE_CANVAS_ZOOM = 1;
+const MOBILE_DEFAULT_DAMAGE_CANVAS_ZOOM = 3.5;
+const MAX_DAMAGE_CANVAS_ZOOM = 3.5;
 
 export default function RecepcionForm() {
   const navigate = useNavigate();
@@ -102,7 +105,7 @@ export default function RecepcionForm() {
   const activeDamageTool = damageEraseEnabled ? "erase" : damageDrawEnabled ? "draw" : "";
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [damageCanvasFullscreen, setDamageCanvasFullscreen] = useState(false);
-  const [damageCanvasZoom, setDamageCanvasZoom] = useState(1);
+  const [damageCanvasZoom, setDamageCanvasZoom] = useState(DEFAULT_DAMAGE_CANVAS_ZOOM);
 
   const damageParts = [
     "FACIA DELANTERA",
@@ -1344,7 +1347,7 @@ export default function RecepcionForm() {
     setDamageEraseEnabled(false);
     setIsDamageDrawing(false);
     setDamageCanvasFullscreen(false);
-    setDamageCanvasZoom(1);
+    setDamageCanvasZoom(DEFAULT_DAMAGE_CANVAS_ZOOM);
   }, [damageModalOpen]);
 
   useEffect(() => {
@@ -1362,7 +1365,7 @@ export default function RecepcionForm() {
   useEffect(() => {
     if (!damageModalOpen || !isMobileViewport) return;
     setDamageCanvasFullscreen(true);
-    setDamageCanvasZoom(1.4);
+    setDamageCanvasZoom(MOBILE_DEFAULT_DAMAGE_CANVAS_ZOOM);
   }, [damageModalOpen, isMobileViewport]);
 
   return (
@@ -2444,9 +2447,13 @@ export default function RecepcionForm() {
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
-                    onClick={() => setDamageCanvasZoom((prev) => Math.min(3, Number((prev + 0.2).toFixed(2))))}
+                    onClick={() =>
+                      setDamageCanvasZoom((prev) =>
+                        Math.min(MAX_DAMAGE_CANVAS_ZOOM, Number((prev + 0.2).toFixed(2)))
+                      )
+                    }
                     title="Acercar"
-                    disabled={damageCanvasZoom >= 3}
+                    disabled={damageCanvasZoom >= MAX_DAMAGE_CANVAS_ZOOM}
                   >
                     <span className="material-symbols-outlined text-[18px]">zoom_in</span>
                   </button>

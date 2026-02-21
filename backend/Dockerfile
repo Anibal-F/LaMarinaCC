@@ -1,21 +1,27 @@
-FROM python:3.11-slim
+FROM ubuntu:22.04
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
+    DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH=/app
+
+# Instalar Python y pip
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Instalar navegadores de Playwright y sus dependencias del sistema
-RUN python -m playwright install chromium && \
-    python -m playwright install-deps chromium
+# Instalar navegadores de Playwright y sus dependencias
+RUN python3 -m playwright install chromium && \
+    python3 -m playwright install-deps chromium
 
 COPY . /app/
 
 EXPOSE 8010
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]

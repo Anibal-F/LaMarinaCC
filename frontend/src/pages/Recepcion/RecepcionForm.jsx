@@ -97,6 +97,7 @@ export default function RecepcionForm() {
   const [transcribingTarget, setTranscribingTarget] = useState("");
   const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
   const [damageEraseEnabled, setDamageEraseEnabled] = useState(false);
+  const [damagePanEnabled, setDamagePanEnabled] = useState(false);
   const [damageToolSizes, setDamageToolSizes] = useState({ draw: 3, erase: 14 });
   const [isDamageDrawing, setIsDamageDrawing] = useState(false);
   const [damageDrawings, setDamageDrawings] = useState({ siniestro: "", preexistente: "" });
@@ -1253,7 +1254,7 @@ export default function RecepcionForm() {
   };
 
   const startDamageDraw = (event) => {
-    if (!damageDrawEnabled && !damageEraseEnabled) return;
+    if ((!damageDrawEnabled && !damageEraseEnabled) || damagePanEnabled) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.currentTarget?.setPointerCapture && event.pointerId != null) {
@@ -1347,6 +1348,7 @@ export default function RecepcionForm() {
     if (damageModalOpen) return;
     setDamageDrawEnabled(false);
     setDamageEraseEnabled(false);
+    setDamagePanEnabled(false);
     setIsDamageDrawing(false);
     setDamageCanvasFullscreen(false);
     setDamageCanvasZoom(DEFAULT_DAMAGE_CANVAS_ZOOM);
@@ -2345,7 +2347,11 @@ export default function RecepcionForm() {
                 }`}
                 style={{
                   touchAction:
-                    damageDrawEnabled || damageEraseEnabled ? "none" : "pan-x pan-y pinch-zoom",
+                    damageDrawEnabled || damageEraseEnabled
+                      ? damagePanEnabled
+                        ? "pan-x pan-y pinch-zoom"
+                        : "none"
+                      : "pan-x pan-y pinch-zoom",
                 }}
               >
                 <div className="h-full w-full overflow-auto">
@@ -2380,7 +2386,7 @@ export default function RecepcionForm() {
                     <canvas
                       ref={damageDrawCanvasRef}
                       className={`absolute inset-0 rounded-xl ${
-                        damageDrawEnabled || damageEraseEnabled
+                        (damageDrawEnabled || damageEraseEnabled) && !damagePanEnabled
                           ? "pointer-events-auto cursor-crosshair touch-none"
                           : "pointer-events-none"
                       }`}
@@ -2403,7 +2409,10 @@ export default function RecepcionForm() {
                     onClick={() => {
                       setDamageDrawEnabled((prev) => {
                         const next = !prev;
-                        if (next) setDamageEraseEnabled(false);
+                        if (next) {
+                          setDamageEraseEnabled(false);
+                          setDamagePanEnabled(false);
+                        }
                         return next;
                       });
                     }}
@@ -2421,7 +2430,10 @@ export default function RecepcionForm() {
                     onClick={() => {
                       setDamageEraseEnabled((prev) => {
                         const next = !prev;
-                        if (next) setDamageDrawEnabled(false);
+                        if (next) {
+                          setDamageDrawEnabled(false);
+                          setDamagePanEnabled(false);
+                        }
                         return next;
                       });
                     }}
@@ -2437,6 +2449,20 @@ export default function RecepcionForm() {
                   >
                     <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
                   </button>
+                  {activeDamageTool ? (
+                    <button
+                      type="button"
+                      className={`inline-flex size-8 items-center justify-center rounded-md border transition-colors ${
+                        damagePanEnabled
+                          ? "border-primary/60 bg-primary/20 text-primary"
+                          : "border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
+                      }`}
+                      onClick={() => setDamagePanEnabled((prev) => !prev)}
+                      title={damagePanEnabled ? "Activar dibujo" : "Mover sin dibujar"}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">pan_tool_alt</span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-md border border-border-dark bg-surface-dark/90 text-slate-300 hover:text-white"
@@ -2462,43 +2488,43 @@ export default function RecepcionForm() {
                   <button
                     type="button"
                     className="inline-flex rounded-md border border-border-dark bg-surface-dark/90 px-2 py-1 text-[10px] font-bold text-slate-300 hover:text-white"
-                    onClick={() => setDamageCanvasZoom(1)}
+                    onClick={() => setDamageCanvasZoom(DEFAULT_DAMAGE_CANVAS_ZOOM)}
                     title="Restablecer zoom"
-                    disabled={damageCanvasZoom === 1}
+                    disabled={damageCanvasZoom === DEFAULT_DAMAGE_CANVAS_ZOOM}
                   >
                     x{damageCanvasZoom.toFixed(1)}
                   </button>
-                  <div
-                    className={`overflow-hidden transition-all duration-200 ease-out ${
-                      activeDamageTool ? "max-w-xs opacity-100 translate-y-0" : "max-w-0 opacity-0 -translate-y-1"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 rounded-md border border-border-dark bg-surface-dark/90 px-2 py-1">
-                      <span className="text-[10px] font-bold uppercase text-slate-300">
-                        {activeDamageTool === "erase" ? "Borrador" : "Lápiz"}
-                      </span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={28}
-                        step={1}
-                        value={activeDamageTool === "erase" ? damageToolSizes.erase : damageToolSizes.draw}
-                        onChange={(event) => {
-                          const size = Number(event.target.value);
-                          if (activeDamageTool === "erase") {
-                            setDamageToolSizes((prev) => ({ ...prev, erase: size }));
-                          } else if (activeDamageTool === "draw") {
-                            setDamageToolSizes((prev) => ({ ...prev, draw: size }));
-                          }
-                        }}
-                        className="w-20 accent-primary"
-                        title={`Grosor ${activeDamageTool === "erase" ? "borrador" : "lápiz"}`}
-                        disabled={!activeDamageTool}
-                      />
-                      <span className="w-6 text-right text-[10px] font-bold text-slate-300">
-                        {activeDamageTool === "erase" ? damageToolSizes.erase : damageToolSizes.draw}
-                      </span>
-                    </div>
+                </div>
+                <div
+                  className={`absolute right-3 top-14 z-10 overflow-hidden transition-all duration-200 ease-out ${
+                    activeDamageTool ? "max-w-xs opacity-100 translate-y-0" : "max-w-0 opacity-0 -translate-y-1"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 rounded-md border border-border-dark bg-surface-dark/90 px-2 py-1">
+                    <span className="text-[10px] font-bold uppercase text-slate-300">
+                      {activeDamageTool === "erase" ? "Borrador" : "Lápiz"}
+                    </span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={28}
+                      step={1}
+                      value={activeDamageTool === "erase" ? damageToolSizes.erase : damageToolSizes.draw}
+                      onChange={(event) => {
+                        const size = Number(event.target.value);
+                        if (activeDamageTool === "erase") {
+                          setDamageToolSizes((prev) => ({ ...prev, erase: size }));
+                        } else if (activeDamageTool === "draw") {
+                          setDamageToolSizes((prev) => ({ ...prev, draw: size }));
+                        }
+                      }}
+                      className="w-20 accent-primary"
+                      title={`Grosor ${activeDamageTool === "erase" ? "borrador" : "lápiz"}`}
+                      disabled={!activeDamageTool}
+                    />
+                    <span className="w-6 text-right text-[10px] font-bold text-slate-300">
+                      {activeDamageTool === "erase" ? damageToolSizes.erase : damageToolSizes.draw}
+                    </span>
                   </div>
                 </div>
               </div>

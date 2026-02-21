@@ -69,6 +69,24 @@ function formatCurrency(value) {
   });
 }
 
+function formatMoneyInput(value) {
+  const numeric = Number(value || 0);
+  return numeric.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function parseMoneyInput(raw) {
+  const normalized = String(raw || "")
+    .replace(/[^\d.,-]/g, "")
+    .replace(/,/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function filePreviewUrl(item) {
   const relativePath = item?.archivo_path || item?.path || "";
   if (!relativePath) return "";
@@ -364,10 +382,10 @@ export default function ValuarVehiculo() {
       (acc, item) => {
         acc.mo += Number(item.mano_obra) || 0;
         acc.sust += Number(item.refacciones) || 0;
-        acc.byd += Number(item.pintura) || 0;
+        acc.bym += Number(item.pintura) || 0;
         return acc;
       },
-      { mo: 0, sust: 0, byd: 0 }
+      { mo: 0, sust: 0, bym: 0 }
     );
   }, [operations]);
 
@@ -1289,7 +1307,7 @@ export default function ValuarVehiculo() {
                                     >
                                       <option value="SUST">SUST</option>
                                       <option value="MO">MO</option>
-                                      <option value="BYD">BYD</option>
+                                      <option value="DYM">DYM</option>
                                     </select>
                                   </td>
                                   <td className="p-2">
@@ -1310,14 +1328,15 @@ export default function ValuarVehiculo() {
                                   </td>
                                   <td className="p-2">
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="decimal"
                                       className="w-full max-w-[88px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
-                                      value={item.mano_obra}
+                                      value={formatMoneyInput(item.mano_obra)}
                                       onChange={(event) =>
                                         setOperations((prev) =>
                                           prev.map((row) =>
                                             row.id === item.id
-                                              ? { ...row, mano_obra: Number(event.target.value || 0) }
+                                              ? { ...row, mano_obra: parseMoneyInput(event.target.value) }
                                               : row
                                           )
                                         )
@@ -1326,14 +1345,15 @@ export default function ValuarVehiculo() {
                                   </td>
                                   <td className="p-2">
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="decimal"
                                       className="w-full max-w-[88px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
-                                      value={item.pintura}
+                                      value={formatMoneyInput(item.pintura)}
                                       onChange={(event) =>
                                         setOperations((prev) =>
                                           prev.map((row) =>
                                             row.id === item.id
-                                              ? { ...row, pintura: Number(event.target.value || 0) }
+                                              ? { ...row, pintura: parseMoneyInput(event.target.value) }
                                               : row
                                           )
                                         )
@@ -1342,14 +1362,15 @@ export default function ValuarVehiculo() {
                                   </td>
                                   <td className="p-2">
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="decimal"
                                       className="w-full max-w-[88px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
-                                      value={item.refacciones}
+                                      value={formatMoneyInput(item.refacciones)}
                                       onChange={(event) =>
                                         setOperations((prev) =>
                                           prev.map((row) =>
                                             row.id === item.id
-                                              ? { ...row, refacciones: Number(event.target.value || 0) }
+                                              ? { ...row, refacciones: parseMoneyInput(event.target.value) }
                                               : row
                                           )
                                         )
@@ -1358,14 +1379,15 @@ export default function ValuarVehiculo() {
                                   </td>
                                   <td className="p-2">
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="decimal"
                                       className="w-full max-w-[96px] mx-auto bg-surface-dark border border-border-dark rounded px-2 py-1 text-[11px] text-white text-center"
-                                      value={item.monto}
+                                      value={formatMoneyInput(item.monto)}
                                       onChange={(event) =>
                                         setOperations((prev) =>
                                           prev.map((row) =>
                                             row.id === item.id
-                                              ? { ...row, monto: Number(event.target.value || 0) }
+                                              ? { ...row, monto: parseMoneyInput(event.target.value) }
                                               : row
                                           )
                                         )
@@ -1412,7 +1434,7 @@ export default function ValuarVehiculo() {
                         </div>
                         <div className="flex justify-between items-center pb-2 border-b border-border-dark">
                           <span className="text-slate-400">Pintura</span>
-                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.byd)}</span>
+                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.bym)}</span>
                         </div>
 
                         <div className="pt-3">

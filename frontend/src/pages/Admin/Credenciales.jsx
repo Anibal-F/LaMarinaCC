@@ -13,6 +13,8 @@ export default function AdminCredenciales() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [toast, setToast] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [visiblePasswords, setVisiblePasswords] = useState(new Set());
   const [form, setForm] = useState({
     seguro: "",
     plataforma_url: "",
@@ -248,13 +250,25 @@ export default function AdminCredenciales() {
 
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Contraseña *</label>
-                  <input
-                    className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
-                    placeholder={editingId ? "Nueva contraseña (opcional)" : "Contraseña"}
-                    type="password"
-                    value={form.password}
-                    onChange={(event) => setForm({ ...form, password: event.target.value })}
-                  />
+                  <div className="relative">
+                    <input
+                      className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 pr-10 text-sm text-white"
+                      placeholder={editingId ? "Nueva contraseña (opcional)" : "Contraseña"}
+                      type={showPassword ? "text" : "password"}
+                      value={form.password}
+                      onChange={(event) => setForm({ ...form, password: event.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 rounded transition-colors"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    >
+                      <span className="material-symbols-outlined text-lg">
+                        {showPassword ? "visibility_off" : "visibility"}
+                      </span>
+                    </button>
+                  </div>
                   {fieldErrors.password ? (
                     <p className="text-xs text-alert-red mt-1">{fieldErrors.password}</p>
                   ) : null}
@@ -357,7 +371,31 @@ export default function AdminCredenciales() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{cred.usuario}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">
-                        <span className="font-mono bg-surface-dark px-2 py-1 rounded text-xs">••••••••</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono bg-surface-dark px-2 py-1 rounded text-xs">
+                            {visiblePasswords.has(cred.id) ? cred.password : "••••••••"}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-white p-0.5 rounded transition-colors"
+                            onClick={() => {
+                              setVisiblePasswords((prev) => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(cred.id)) {
+                                  newSet.delete(cred.id);
+                                } else {
+                                  newSet.add(cred.id);
+                                }
+                                return newSet;
+                              });
+                            }}
+                            title={visiblePasswords.has(cred.id) ? "Ocultar contraseña" : "Mostrar contraseña"}
+                          >
+                            <span className="material-symbols-outlined text-base">
+                              {visiblePasswords.has(cred.id) ? "visibility_off" : "visibility"}
+                            </span>
+                          </button>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{cred.taller_id || "-"}</td>
                       <td className="px-4 py-3">

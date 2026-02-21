@@ -14,3 +14,5 @@ playwright==1.53.0
 playwright-stealth==2.0.2
 aiohttp>=3.9.0
 brotli>=1.1.0
+openpyxl==3.1.5
+xlrd==2.0.1

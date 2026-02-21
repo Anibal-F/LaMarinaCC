@@ -173,3 +173,116 @@ def delete_profile(profile_id: int):
     if result.rowcount == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Perfil no encontrado")
     return None
+
+
+# ============================================================================
+# CREDENCIALES DE ASEGURADORAS (RPA)
+# ============================================================================
+
+@router.get("/credenciales")
+def list_credenciales():
+    """Lista todas las credenciales de aseguradoras para RPA."""
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        rows = conn.execute(
+            """
+            SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo, created_at, updated_at
+            FROM aseguradora_credenciales
+            ORDER BY id ASC
+            """
+        ).fetchall()
+    return rows
+
+
+@router.post("/credenciales", status_code=status.HTTP_201_CREATED)
+def create_credencial(payload: dict):
+    """Crea una nueva credencial de aseguradora."""
+    seguro = (payload.get("seguro") or "").strip()
+    plataforma_url = (payload.get("plataforma_url") or "").strip()
+    usuario = (payload.get("usuario") or "").strip()
+    password = payload.get("password")
+    taller_id = (payload.get("taller_id") or "").strip() or None
+    activo = payload.get("activo", True)
+
+    if not seguro:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seguro requerido")
+    if not plataforma_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="plataforma_url requerida")
+    if not usuario:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="usuario requerido")
+    if not password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="password requerido")
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO aseguradora_credenciales (seguro, plataforma_url, usuario, password, taller_id, activo)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, created_at
+            """,
+            (seguro, plataforma_url, usuario, password, taller_id, activo),
+        ).fetchone()
+
+    return {
+        "id": row[0],
+        "seguro": row[1],
+        "plataforma_url": row[2],
+        "usuario": row[3],
+        "password": row[4],
+        "taller_id": row[5],
+        "activo": row[6],
+        "created_at": row[7],
+    }
+
+
+@router.put("/credenciales/{credencial_id}")
+def update_credencial(credencial_id: int, payload: dict):
+    """Actualiza una credencial existente."""
+    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo"}
+    updates = {key: value for key, value in payload.items() if key in allowed}
+
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sin cambios para actualizar")
+
+    # Si no se envía password (edición), no lo actualizamos
+    if "password" in updates and not updates["password"]:
+        del updates["password"]
+
+    fields = ", ".join(f"{key} = %s" for key in updates)
+    values = list(updates.values()) + [credencial_id]
+
+    with get_connection() as conn:
+        row = conn.execute(
+            f"""
+            UPDATE aseguradora_credenciales
+            SET {fields}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, created_at, updated_at
+            """,
+            values,
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credencial no encontrada")
+
+    return {
+        "id": row[0],
+        "seguro": row[1],
+        "plataforma_url": row[2],
+        "usuario": row[3],
+        "password": row[4],
+        "taller_id": row[5],
+        "activo": row[6],
+        "created_at": row[7],
+        "updated_at": row[8],
+    }
+
+
+@router.delete("/credenciales/{credencial_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_credencial(credencial_id: int):
+    """Elimina una credencial."""
+    with get_connection() as conn:
+        result = conn.execute("DELETE FROM aseguradora_credenciales WHERE id = %s", (credencial_id,))
+    if result.rowcount == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credencial no encontrada")
+    return None

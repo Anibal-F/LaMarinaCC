@@ -1,0 +1,48 @@
+APP_NAME=LaMarinaCC
+ENV=local
+DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/lamarinacc
+CORS_ORIGINS=http://localhost:3010
+
+# ============================================
+# CREDENCIALES CHUBB / AUDATEX
+# ============================================
+CHUBB_LOGIN_URL=https://acg-prod-mx.audatex.com.mx/Audanet/
+CHUBB_USER=mx41095c01
+CHUBB_PASSWORD=Temporal.02
+
+# ============================================
+# SELECTORES (basados en el sitio de Audatex/Solera)
+# ============================================
+# Selector del campo de usuario (pantalla inicial)
+CHUBB_USER_SELECTOR=input[name="UserName"], input[id="UserName"], input#UserName
+
+# Selector del checkbox de términos y condiciones
+CHUBB_TERMS_SELECTOR=input[type="checkbox"]
+
+# Selector del botón NEXT (para continuar a la pantalla de contraseña)
+CHUBB_NEXT_BUTTON_SELECTOR=button:has-text("NEXT"), input[value="NEXT"], button[type="submit"]
+
+# Selector del campo de contraseña (aparece después de clic en NEXT)
+CHUBB_PASSWORD_SELECTOR=input[type="password"], input[name="Password"], input#Password
+
+# Selector del botón ACEPTAR (login final)
+CHUBB_LOGIN_BUTTON_SELECTOR=button:has-text("ACEPTAR"), input[value="ACEPTAR"], button[type="submit"]
+
+# Selector para verificar login exitoso (elemento que aparece después del login)
+CHUBB_POST_LOGIN_SELECTOR=.dashboard, .home, .welcome
+
+# ============================================
+# OPCIONES DE NAVEGADOR
+# ============================================
+CHUBB_HEADLESS=false
+CHUBB_SLOWMO_MS=100
+CHUBB_NAVIGATION_TIMEOUT_MS=30000
+CHUBB_ELEMENT_TIMEOUT_MS=10000
+
+# ============================================
+# OPCIONES STEALTH
+# ============================================
+CHUBB_USE_STEALTH=true
+CHUBB_USE_CDP_EVASION=true
+CHUBB_ROTATE_UA=true
+CHUBB_RANDOM_VIEWPORT=true

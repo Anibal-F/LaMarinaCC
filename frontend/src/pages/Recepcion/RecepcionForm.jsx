@@ -1152,6 +1152,25 @@ export default function RecepcionForm() {
     });
   };
 
+  const fitModalSvgToZones = () => {
+    const container = modalSvgRef.current;
+    if (!container) return;
+    const svg = container.querySelector("svg");
+    if (!svg) return;
+    const zoneGroup = svg.querySelector("#ZONAS");
+    if (!zoneGroup || typeof zoneGroup.getBBox !== "function") return;
+    const bbox = zoneGroup.getBBox();
+    if (!bbox || !bbox.width || !bbox.height) return;
+
+    const padX = Math.max(8, bbox.width * 0.08);
+    const padY = Math.max(8, bbox.height * 0.16);
+    const viewBox = `${bbox.x - padX} ${bbox.y - padY} ${bbox.width + padX * 2} ${bbox.height + padY * 2}`;
+    svg.setAttribute("viewBox", viewBox);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+  };
+
   useEffect(() => {
     if (!damageSvgMarkup) return;
     applySvgSelection(siniestroSvgRef, damagePartsSiniestro, "siniestro");
@@ -1165,6 +1184,11 @@ export default function RecepcionForm() {
       damageMode === "siniestro" ? damagePartsSiniestro : damagePartsPreexist,
       damageMode
     );
+    const raf = window.requestAnimationFrame(() => {
+      fitModalSvgToZones();
+      resizeDamageDrawCanvas();
+    });
+    return () => window.cancelAnimationFrame(raf);
   }, [damageSvgMarkup, damageModalOpen, damageMode, damagePartsSiniestro, damagePartsPreexist]);
 
   const drawDamageSnapshot = (mode) => {
@@ -2310,7 +2334,10 @@ export default function RecepcionForm() {
                 className={`relative w-full overflow-hidden rounded-xl border border-border-dark bg-white ${
                   damageCanvasFullscreen ? "flex-1 min-h-0 p-2 sm:p-4" : "p-4"
                 }`}
-                style={{ touchAction: "none" }}
+                style={{
+                  touchAction:
+                    damageDrawEnabled || damageEraseEnabled ? "none" : "pan-x pan-y pinch-zoom",
+                }}
               >
                 <div
                   ref={modalSvgRef}

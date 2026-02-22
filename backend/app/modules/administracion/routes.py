@@ -18,6 +18,13 @@ router.include_router(qualitas_router)
 from app.modules.administracion.rpa_queue import router as rpa_queue_router
 router.include_router(rpa_queue_router)
 
+# Importar scheduler para iniciarlo automáticamente
+try:
+    from app.modules.administracion import rpa_scheduler
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error(f"Error cargando scheduler: {e}")
+
 
 @router.get("/health")
 def health_check():

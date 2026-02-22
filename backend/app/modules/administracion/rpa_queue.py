@@ -214,8 +214,71 @@ _worker_thread = None
 _worker_running = False
 
 
+def _execute_rpa_command(cmd: list, backend_dir: Path, logs: list, log_func, timeout: int = 600) -> tuple:
+    """
+    Ejecuta el comando RPA y retorna (returncode, stdout, stderr).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    log_func(f"Ejecutando: {' '.join(cmd)}")
+    logger.info(f"[RPA] Comando: {' '.join(cmd)}")
+    
+    result = subprocess.run(
+        cmd,
+        cwd=str(backend_dir),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding='utf-8',
+        errors='replace'
+    )
+    
+    # Capturar logs
+    if result.stdout:
+        logs.append(result.stdout)
+    if result.stderr:
+        logs.append(f"STDERR: {result.stderr}")
+    
+    return result.returncode, result.stdout, result.stderr
+
+
+def _is_session_expired(stdout: str, stderr: str) -> bool:
+    """
+    Determina si el error fue por sesión expirada.
+    Busca indicadores en el output del RPA.
+    """
+    expired_indicators = [
+        "session expired",
+        "sesión expirada",
+        "login required",
+        "authentication failed",
+        "unauthorized",
+        "401",
+        "redirected to login",
+        "no autorizado",
+        "sesión inválida",
+        "invalid session"
+    ]
+    
+    output = (stdout or "") + " " + (stderr or "")
+    output_lower = output.lower()
+    
+    for indicator in expired_indicators:
+        if indicator in output_lower:
+            return True
+    
+    # Si no se extrajeron datos pero tampoco hay error claro,
+    # podría ser sesión expirada
+    if "extrayendo datos" not in output_lower and "dashboard" not in output_lower:
+        if "total_ordenes" not in output_lower:
+            return True
+    
+    return False
+
+
 def run_qualitas_task(task_id: str, params: Dict[str, Any]):
-    """Ejecuta una tarea de Qualitas."""
+    """Ejecuta una tarea de Qualitas con reintento inteligente."""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -234,44 +297,48 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         session_path = backend_dir / "app" / "rpa" / "sessions" / "qualitas_session.json"
         has_session = session_path.exists()
         
-        if has_session:
-            log("Sesión existente encontrada, usando --skip-login")
-        else:
-            log("No hay sesión, se requerirá resolver CAPTCHA (puede tardar)")
-        
-        # Construir comando
-        cmd = [
+        # Comando base
+        base_cmd = [
             "python3", "-m", "app.rpa.qualitas_full_workflow",
             "--headless",
             "--use-db"
         ]
         
+        returncode = -1
+        stdout = ""
+        stderr = ""
+        
+        # Intento 1: Usar sesión existente si está disponible
         if has_session:
-            cmd.append("--skip-login")
+            log("Intentando con sesión existente...")
+            cmd = base_cmd + ["--skip-login"]
+            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log)
+            
+            # Verificar si falló por sesión expirada
+            if returncode != 0 and _is_session_expired(stdout, stderr):
+                log("⚠ Sesión expirada detectada, intentando login completo...")
+                # Eliminar sesión expirada
+                try:
+                    session_path.unlink()
+                    log("Sesión expirada eliminada")
+                except Exception as e:
+                    log(f"No se pudo eliminar sesión: {e}")
+                
+                # Intento 2: Login completo con CAPTCHA
+                log("Iniciando login completo (puede tardar 30-120s)...")
+                cmd = base_cmd  # Sin --skip-login
+                returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+            elif returncode != 0:
+                log(f"✗ Error no relacionado a sesión (código {returncode})")
+        else:
+            log("No hay sesión guardada, iniciando login completo...")
+            cmd = base_cmd
+            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
         
-        log(f"Ejecutando: {' '.join(cmd)}")
+        log(f"RPA terminó con código: {returncode}")
         
-        # Ejecutar RPA
-        result = subprocess.run(
-            cmd,
-            cwd=str(backend_dir),
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 minutos máximo
-            encoding='utf-8',
-            errors='replace'
-        )
-        
-        # Capturar logs
-        if result.stdout:
-            logs.append(result.stdout)
-        if result.stderr:
-            logs.append(f"STDERR: {result.stderr}")
-        
-        log(f"RPA terminó con código: {result.returncode}")
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"RPA falló con código {result.returncode}")
+        if returncode != 0:
+            raise RuntimeError(f"RPA falló con código {returncode}")
         
         # Buscar el archivo JSON más reciente generado por el RPA
         data_dir = backend_dir / "app" / "rpa" / "data"
@@ -513,4 +580,85 @@ async def queue_qualitas_update():
         "task_id": task_id,
         "status": "pending",
         "check_status_url": f"/admin/rpa-queue/tasks/{task_id}"
+    }
+
+
+# ============================================================================
+# SCHEDULER ENDPOINTS
+# ============================================================================
+
+@router.get("/scheduler/status")
+async def scheduler_status():
+    """
+    Obtiene el estado del scheduler automático.
+    """
+    from app.modules.administracion.rpa_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/scheduler/start")
+async def scheduler_start(interval_hours: int = 2):
+    """
+    Inicia el scheduler automático.
+    
+    Args:
+        interval_hours: Intervalo en horas entre ejecuciones (default: 2)
+    """
+    from app.modules.administracion.rpa_scheduler import start_scheduler
+    
+    scheduler = start_scheduler(interval_hours)
+    return {
+        "success": True,
+        "message": f"Scheduler iniciado con intervalo de {interval_hours} horas",
+        "interval_hours": interval_hours
+    }
+
+
+@router.post("/scheduler/stop")
+async def scheduler_stop():
+    """
+    Detiene el scheduler automático.
+    """
+    from app.modules.administracion.rpa_scheduler import stop_scheduler
+    
+    stop_scheduler()
+    return {
+        "success": True,
+        "message": "Scheduler detenido"
+    }
+
+
+@router.post("/scheduler/force-run")
+async def scheduler_force_run():
+    """
+    Fuerza una ejecución inmediata del RPA.
+    """
+    from app.modules.administracion.rpa_scheduler import force_run_scheduler
+    
+    task_id = force_run_scheduler()
+    return {
+        "success": True,
+        "message": "Ejecución forzada iniciada",
+        "task_id": task_id,
+        "check_status_url": f"/admin/rpa-queue/tasks/{task_id}"
+    }
+
+
+@router.post("/scheduler/restart")
+async def scheduler_restart(interval_hours: int = 2):
+    """
+    Reinicia el scheduler con un nuevo intervalo.
+    
+    Args:
+        interval_hours: Intervalo en horas entre ejecuciones (default: 2)
+    """
+    from app.modules.administracion.rpa_scheduler import stop_scheduler, start_scheduler
+    
+    stop_scheduler()
+    scheduler = start_scheduler(interval_hours)
+    
+    return {
+        "success": True,
+        "message": f"Scheduler reiniciado con intervalo de {interval_hours} horas",
+        "interval_hours": interval_hours
     }

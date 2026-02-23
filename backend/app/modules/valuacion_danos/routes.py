@@ -1,11 +1,15 @@
 import math
 import re
 import unicodedata
+from io import BytesIO
+from pathlib import Path
 from statistics import median
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from psycopg.rows import dict_row
+import xlsxwriter
 
 from app.core.db import get_connection
 
@@ -201,6 +205,24 @@ class ValuacionDetalle(BaseModel):
 class ValuacionPayload(BaseModel):
     aseguradora_activa: str | None = None
     autorizado_aseguradora: float | None = None
+    observaciones: str | None = None
+    detalle: list[ValuacionDetalle] = []
+
+
+class QualitasExportPayload(BaseModel):
+    nb_cliente: str | None = None
+    tel_cliente: str | None = None
+    fecha_adm: str | None = None
+    reporte_siniestro: str | None = None
+    marca_vehiculo: str | None = None
+    color_vehiculo: str | None = None
+    tipo_vehiculo: str | None = None
+    placas: str | None = None
+    transmision: str | None = None
+    poliza: str | None = None
+    modelo_anio: str | None = None
+    serie_auto: str | None = None
+    puertas: str | None = None
     observaciones: str | None = None
     detalle: list[ValuacionDetalle] = []
 
@@ -618,3 +640,182 @@ def upsert_valuacion_by_orden(orden_id: int, payload: ValuacionPayload):
         )
 
     return {"id": valuacion_id, "estatus": "Borrador"}
+
+
+@router.post("/ordenes/{orden_id}/export-qualitas")
+def export_qualitas_budget(orden_id: int, payload: QualitasExportPayload):
+    detalle = payload.detalle[:8]
+
+    mano_obra_total = round(sum(_safe_float(item.mano_obra) for item in detalle), 2)
+    pintura_total = round(sum(_safe_float(item.pintura) for item in detalle), 2)
+    refacciones_total = round(sum(_safe_float(item.refacciones) for item in detalle), 2)
+    total_general = round(sum(_safe_float(item.monto) for item in detalle), 2)
+
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output, {"in_memory": True})
+    sheet = workbook.add_worksheet("VALUACION")
+
+    # Estructura principal del formato Qualitas.
+    sheet.set_landscape()
+    sheet.set_paper(9)
+    sheet.fit_to_pages(1, 1)
+    sheet.set_margins(0.3, 0.3, 0.5, 0.5)
+    sheet.set_column("A:A", 14)
+    sheet.set_column("B:B", 20)
+    sheet.set_column("C:C", 13)
+    sheet.set_column("D:D", 16)
+    sheet.set_column("E:E", 16)
+    sheet.set_column("F:F", 10)
+    sheet.set_column("G:G", 10)
+    sheet.set_column("H:H", 10)
+    sheet.set_column("I:I", 10)
+
+    bold_center = workbook.add_format({"bold": True, "align": "center", "valign": "vcenter"})
+    header = workbook.add_format(
+        {"bold": True, "align": "center", "valign": "vcenter", "border": 1}
+    )
+    cell = workbook.add_format({"align": "left", "valign": "vcenter", "border": 1})
+    cell_center = workbook.add_format({"align": "center", "valign": "vcenter", "border": 1})
+    cell_num = workbook.add_format(
+        {"align": "right", "valign": "vcenter", "border": 1, "num_format": "#,##0.00"}
+    )
+    total_label = workbook.add_format(
+        {"bold": True, "align": "right", "valign": "vcenter", "border": 1}
+    )
+    total_value = workbook.add_format(
+        {"bold": True, "align": "right", "valign": "vcenter", "border": 1, "num_format": "#,##0.00"}
+    )
+    bold_left = workbook.add_format({"bold": True, "align": "left", "valign": "vcenter", "border": 1})
+    no_border = workbook.add_format({"align": "left", "valign": "vcenter"})
+
+    for row in range(1, 45):
+        sheet.set_row(row - 1, 22 if row in (3, 4) else 20)
+
+    # Logo (opcional): backend/app/static/qualitas_logo.png
+    logo_path = Path(__file__).resolve().parents[2] / "static" / "qualitas_logo.png"
+    if logo_path.exists():
+        sheet.insert_image("A2", str(logo_path), {"x_scale": 0.34, "y_scale": 0.34})
+
+    # Encabezado.
+    sheet.merge_range("B3:E4", "PRESUPUESTO DE VALUACION", bold_center)
+    sheet.merge_range("A5:E5", "ASEGURADO", header)
+    sheet.merge_range("F5:G5", "Tel contacto", header)
+    sheet.merge_range("H5:I5", "Fecha ingreso", header)
+    sheet.merge_range("A6:E6", payload.nb_cliente or "", cell_center)
+    sheet.merge_range("F6:G6", payload.tel_cliente or "", cell_center)
+    sheet.merge_range("H6:I6", payload.fecha_adm or "", cell_center)
+    sheet.merge_range("A7:E7", "TERCERO:", header)
+    sheet.merge_range("F7:G7", "Cel contacto", header)
+    sheet.merge_range("H7:I7", "No. orden taller", header)
+    sheet.merge_range("A8:E8", "", cell)
+    sheet.merge_range("F8:G8", "", cell)
+    sheet.merge_range("H8:I8", "", cell)
+
+    # Datos del vehiculo.
+    sheet.write("A9", "Reporte", bold_left)
+    sheet.merge_range("B9:C9", "Marca", header)
+    sheet.merge_range("D9:E9", "Kilometraje", header)
+    sheet.merge_range("F9:G9", "Color", header)
+    sheet.merge_range("H9:I9", "", header)
+    sheet.write("A10", payload.reporte_siniestro or "", cell_center)
+    sheet.merge_range("B10:C10", payload.marca_vehiculo or "", cell_center)
+    sheet.merge_range("D10:E10", "", cell_center)
+    sheet.merge_range("F10:G10", payload.color_vehiculo or "", cell_center)
+    sheet.merge_range("H10:I10", "", cell_center)
+
+    sheet.write("A11", "Siniestro", bold_left)
+    sheet.merge_range("B11:C11", "Tipo", header)
+    sheet.merge_range("D11:E11", "Placas", header)
+    sheet.merge_range("F11:G11", "Transmision", header)
+    sheet.merge_range("H11:I11", "", header)
+    sheet.write("A12", "", cell_center)
+    sheet.merge_range("B12:C12", payload.tipo_vehiculo or "", cell_center)
+    sheet.merge_range("D12:E12", payload.placas or "", cell_center)
+    sheet.merge_range("F12:G12", payload.transmision or "", cell_center)
+    sheet.merge_range("H12:I12", "", cell_center)
+
+    sheet.write("A13", "Poliza", bold_left)
+    sheet.merge_range("B13:C13", "Modelo", header)
+    sheet.merge_range("D13:E13", "Serie", header)
+    sheet.merge_range("F13:G13", "Puertas", header)
+    sheet.merge_range("H13:I13", "", header)
+    sheet.write("A14", payload.poliza or "", cell_center)
+    sheet.merge_range("B14:C14", payload.modelo_anio or "", cell_center)
+    sheet.merge_range("D14:E14", payload.serie_auto or "", cell_center)
+    sheet.merge_range("F14:G14", payload.puertas or "", cell_center)
+    sheet.merge_range("H14:I14", "", cell_center)
+
+    # Tabla de operaciones.
+    sheet.write("A15", "REF.:", header)
+    sheet.merge_range("B15:E15", "DESCRIPCION DE LA PIEZA", header)
+    sheet.write("F15", "M. DE OBRA", header)
+    sheet.write("G15", "PINTURA", header)
+    sheet.write("H15", "REFACC.", header)
+    sheet.write("I15", "T.O.T.", header)
+
+    for idx in range(8):
+        row = 16 + idx
+        item = detalle[idx] if idx < len(detalle) else None
+        tipo = (item.tipo if item else "") or ""
+        if str(tipo).strip().upper() == "SUST":
+            tipo = "SUSTITUCION"
+        descripcion = (item.descripcion if item else "") or ""
+        mano_obra = _safe_float(item.mano_obra if item else 0)
+        pintura = _safe_float(item.pintura if item else 0)
+        refacciones = _safe_float(item.refacciones if item else 0)
+        monto = _safe_float(item.monto if item else 0)
+
+        sheet.write(f"A{row}", tipo, cell)
+        sheet.merge_range(f"B{row}:E{row}", descripcion, cell)
+        sheet.write_number(f"F{row}", mano_obra, cell_num)
+        sheet.write_number(f"G{row}", pintura, cell_num)
+        sheet.write_number(f"H{row}", refacciones, cell_num)
+        sheet.write_number(f"I{row}", monto, cell_num)
+
+    sheet.merge_range("A24:E24", "TOTALES:", total_label)
+    sheet.write_number("F24", mano_obra_total, total_value)
+    sheet.write_number("G24", pintura_total, total_value)
+    sheet.write_number("H24", refacciones_total, total_value)
+    sheet.write_number("I24", total_general, total_value)
+
+    # Totales inferiores.
+    sheet.merge_range("A26:B26", "MANO DE OBRA:", cell)
+    sheet.merge_range("C26:E26", mano_obra_total, cell_num)
+    sheet.merge_range("A28:B28", "PINTURA", cell)
+    sheet.merge_range("C28:E28", pintura_total, cell_num)
+    sheet.merge_range("A30:B30", "REFACCIONES:", cell)
+    sheet.merge_range("C30:E30", refacciones_total, cell_num)
+    sheet.merge_range("A32:B32", "TOT", cell)
+    sheet.merge_range("C32:E32", total_general, cell_num)
+    sheet.merge_range("A34:E34", "", cell)
+
+    sheet.merge_range("F26:G26", "TOTAL HRS", cell)
+    sheet.write("H26", "$", cell_center)
+    sheet.write_number("I26", total_general, cell_num)
+    sheet.merge_range("F28:I28", "", cell)
+    sheet.merge_range("F30:G30", "DEDUCIBLE:", cell)
+    sheet.write("H30", "$", cell_center)
+    sheet.write("I30", "", cell_center)
+    sheet.merge_range("F32:G32", "OTROS", cell)
+    sheet.merge_range("H32:I32", "", cell)
+    sheet.merge_range("F34:G34", "TOTAL:", total_label)
+    sheet.merge_range("H34:I34", total_general, total_value)
+
+    # Observaciones.
+    sheet.merge_range("A37:I37", "OBSERVACIONES", no_border)
+    sheet.merge_range("A38:I38", payload.observaciones or "", no_border)
+    sheet.merge_range("A39:I39", "", no_border)
+    sheet.write("A40", "_" * 120, no_border)
+    sheet.write("A41", "_" * 120, no_border)
+
+    workbook.close()
+    output.seek(0)
+
+    reporte = re.sub(r"[^A-Za-z0-9_-]", "", str(payload.reporte_siniestro or "")) or f"orden_{orden_id}"
+    filename = f"{reporte}_presupuesto_qualitas.xlsx"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )

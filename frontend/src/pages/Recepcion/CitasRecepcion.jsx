@@ -16,6 +16,8 @@ const STATUS_OPTIONS = [
 ];
 
 const ACTIVE_STATES = ["Programada", "Confirmada", "Reprogramada", "En espera", "Demorada"];
+const OCCUPIED_STATES = ["Programada", "Confirmada"];
+const TENTATIVE_STATES = ["Reprogramada", "En espera", "Demorada"];
 
 const STATUS_STYLES = {
   Programada: "bg-alert-amber/20 text-alert-amber border-alert-amber/40",
@@ -112,6 +114,12 @@ function toMinutes(value) {
   return h * 60 + m;
 }
 
+function minutesToTime(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${pad(h)}:${pad(m)}`;
+}
+
 function humanDateLabel(value) {
   const date = parseYmd(value);
   if (Number.isNaN(date.getTime())) return String(value || "");
@@ -139,6 +147,8 @@ export default function CitasRecepcion() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [modalMonthCursor, setModalMonthCursor] = useState(() => new Date());
+  const [modalDayCitas, setModalDayCitas] = useState([]);
+  const [loadingModalDayCitas, setLoadingModalDayCitas] = useState(false);
   const [form, setForm] = useState({
     orden_admision_id: "",
     fecha_cita: toYmd(new Date()),
@@ -318,6 +328,27 @@ export default function CitasRecepcion() {
     });
   }, [isModalOpen, form.fecha_cita]);
 
+  useEffect(() => {
+    if (!isModalOpen || !form.fecha_cita) return;
+    const loadDayCitas = async () => {
+      try {
+        setLoadingModalDayCitas(true);
+        const ymd = String(form.fecha_cita).slice(0, 10);
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/recepcion/citas?from=${ymd}&to=${ymd}`
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        setModalDayCitas(payload || []);
+      } catch {
+        // ignore
+      } finally {
+        setLoadingModalDayCitas(false);
+      }
+    };
+    loadDayCitas();
+  }, [isModalOpen, form.fecha_cita]);
+
   const moveRange = (delta) => {
     setAnimDirection(delta < 0 ? "prev" : "next");
     setCursorDate((prev) => {
@@ -348,6 +379,10 @@ export default function CitasRecepcion() {
     event.preventDefault();
     if (!form.orden_admision_id || !form.fecha_cita || !form.hora_cita) {
       setError("Selecciona orden, fecha y hora para guardar la cita.");
+      return;
+    }
+    if (selectedTimeIsBlocked) {
+      setError("El horario seleccionado está ocupado. Elige otro horario disponible.");
       return;
     }
 
@@ -401,6 +436,52 @@ export default function CitasRecepcion() {
   };
 
   const weekHours = useMemo(() => Array.from({ length: 11 }).map((_, idx) => 8 + idx), []);
+  const modalTimeSlots = useMemo(() => {
+    const slots = [];
+    for (let minutes = 8 * 60; minutes <= 18 * 60; minutes += 30) {
+      slots.push(minutesToTime(minutes));
+    }
+    return slots;
+  }, []);
+  const modalSlotStatus = useMemo(() => {
+    const excludedId = editingId ? String(editingId) : "";
+    const byTime = {};
+    modalTimeSlots.forEach((slot) => {
+      byTime[slot] = "Disponible";
+    });
+    modalDayCitas.forEach((cita) => {
+      if (excludedId && String(cita.id) === excludedId) return;
+      const slot = String(cita.hora_cita || "").slice(0, 5);
+      if (!byTime[slot]) return;
+      const state = String(cita.estado || "");
+      if (OCCUPIED_STATES.includes(state)) {
+        byTime[slot] = "Ocupado";
+      } else if (byTime[slot] !== "Ocupado" && TENTATIVE_STATES.includes(state)) {
+        byTime[slot] = "Tentativo";
+      }
+    });
+    return byTime;
+  }, [modalDayCitas, modalTimeSlots, editingId]);
+  const modalAvailabilityCounts = useMemo(() => {
+    return modalTimeSlots.reduce(
+      (acc, slot) => {
+        const status = modalSlotStatus[slot] || "Disponible";
+        if (status === "Ocupado") acc.ocupado += 1;
+        else if (status === "Tentativo") acc.tentativo += 1;
+        else acc.disponible += 1;
+        return acc;
+      },
+      { disponible: 0, ocupado: 0, tentativo: 0 }
+    );
+  }, [modalTimeSlots, modalSlotStatus]);
+  const selectedTimeStatus = modalSlotStatus[String(form.hora_cita || "").slice(0, 5)] || "Disponible";
+  const selectedTimeIsBlocked = selectedTimeStatus === "Ocupado";
+  const selectedTimeStatusClass =
+    selectedTimeStatus === "Ocupado"
+      ? "border-alert-red/60"
+      : selectedTimeStatus === "Tentativo"
+        ? "border-alert-amber/60"
+        : "border-alert-green/60";
   const modalCalendarCells = useMemo(
     () => buildCalendarCells(new Date(modalMonthCursor.getFullYear(), modalMonthCursor.getMonth(), 1)),
     [modalMonthCursor]
@@ -420,6 +501,15 @@ export default function CitasRecepcion() {
     const top = ((minutes - min) / 60) * rowHeight;
     return { top, hhmm: `${pad(now.getHours())}:${pad(now.getMinutes())}` };
   }, [weekDays, rowHeight]);
+
+  useEffect(() => {
+    if (!isModalOpen || loadingModalDayCitas) return;
+    const currentSlot = String(form.hora_cita || "").slice(0, 5);
+    if (!currentSlot || (modalSlotStatus[currentSlot] || "Disponible") !== "Ocupado") return;
+    const firstAvailable = modalTimeSlots.find((slot) => (modalSlotStatus[slot] || "Disponible") !== "Ocupado");
+    if (!firstAvailable || firstAvailable === currentSlot) return;
+    setForm((prev) => ({ ...prev, hora_cita: firstAvailable }));
+  }, [isModalOpen, loadingModalDayCitas, form.hora_cita, modalSlotStatus, modalTimeSlots]);
 
   const StatCard = ({ label, value }) => (
     <article className="bg-surface-dark/90 border border-border-dark rounded-xl p-4 shadow-sm motion-safe:animate-[fadeUp_.35s_ease-out]">
@@ -799,24 +889,47 @@ export default function CitasRecepcion() {
                     </label>
                     <div className="space-y-3">
                       <div className="relative">
-                        <input
-                          type="time"
-                          className="w-full pl-4 pr-10 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white focus:ring-2 focus:ring-primary/30 transition-all"
+                        <select
+                          className={`w-full pl-4 pr-10 py-3.5 bg-background-dark/70 border ${selectedTimeStatusClass} rounded-lg text-white appearance-none focus:ring-2 focus:ring-primary/30 transition-all`}
                           value={form.hora_cita}
                           onChange={(event) => setForm((prev) => ({ ...prev, hora_cita: event.target.value }))}
                           required
-                        />
+                        >
+                          {!modalTimeSlots.includes(String(form.hora_cita || "").slice(0, 5)) &&
+                          form.hora_cita ? (
+                            <option value={form.hora_cita}>
+                              {form.hora_cita} - Personalizado
+                            </option>
+                          ) : null}
+                          {modalTimeSlots.map((slot) => (
+                            <option
+                              key={slot}
+                              value={slot}
+                              disabled={(modalSlotStatus[slot] || "Disponible") === "Ocupado"}
+                            >
+                              {slot} - {modalSlotStatus[slot] || "Disponible"}
+                            </option>
+                          ))}
+                        </select>
                         <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">schedule</span>
                       </div>
+                      {loadingModalDayCitas ? (
+                        <p className="text-[11px] text-slate-500">Calculando disponibilidad...</p>
+                      ) : null}
+                      {!loadingModalDayCitas && selectedTimeIsBlocked ? (
+                        <p className="text-[11px] text-alert-red font-semibold">
+                          Ese horario está ocupado. Selecciona uno disponible para continuar.
+                        </p>
+                      ) : null}
                       <div className="flex flex-wrap gap-2 pt-2">
                         <span className="px-3 py-1 bg-alert-green/10 border border-alert-green/30 text-alert-green text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-alert-green rounded-full"></span> Disponible
+                          <span className="w-1.5 h-1.5 bg-alert-green rounded-full"></span> Disponible ({modalAvailabilityCounts.disponible})
                         </span>
                         <span className="px-3 py-1 bg-alert-red/10 border border-alert-red/30 text-alert-red text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-alert-red rounded-full"></span> Ocupado
+                          <span className="w-1.5 h-1.5 bg-alert-red rounded-full"></span> Ocupado ({modalAvailabilityCounts.ocupado})
                         </span>
                         <span className="px-3 py-1 bg-alert-amber/10 border border-alert-amber/30 text-alert-amber text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-alert-amber rounded-full"></span> Tentativo
+                          <span className="w-1.5 h-1.5 bg-alert-amber rounded-full"></span> Tentativo ({modalAvailabilityCounts.tentativo})
                         </span>
                       </div>
                     </div>
@@ -862,7 +975,7 @@ export default function CitasRecepcion() {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || selectedTimeIsBlocked}
                   className="px-8 py-2.5 rounded-lg font-bold bg-primary text-white hover:shadow-[0_0_20px_rgba(37,110,116,0.35)] transition-all flex items-center gap-2 disabled:opacity-60"
                 >
                   <span className="material-symbols-outlined text-lg">check_circle</span>

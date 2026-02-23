@@ -138,6 +138,7 @@ export default function CitasRecepcion() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [modalMonthCursor, setModalMonthCursor] = useState(() => new Date());
   const [form, setForm] = useState({
     orden_admision_id: "",
     fecha_cita: toYmd(new Date()),
@@ -280,13 +281,23 @@ export default function CitasRecepcion() {
   }, [weekDays, weekCitasByDay]);
 
   const openNewModal = (dateYmd) => {
+    const targetDate = parseYmd(dateYmd || selectedDate || toYmd(new Date()));
     setEditingId(null);
-    setForm({ orden_admision_id: "", fecha_cita: dateYmd || selectedDate || toYmd(new Date()), hora_cita: "09:00", estado: "Programada", notas: "" });
+    setModalMonthCursor(new Date(targetDate.getFullYear(), targetDate.getMonth(), 1));
+    setForm({
+      orden_admision_id: "",
+      fecha_cita: toYmd(targetDate),
+      hora_cita: "09:00",
+      estado: "Programada",
+      notas: ""
+    });
     setIsModalOpen(true);
   };
 
   const openEditModal = (cita) => {
     setEditingId(cita.id);
+    const targetDate = parseYmd(String(cita.fecha_cita || "").slice(0, 10));
+    setModalMonthCursor(new Date(targetDate.getFullYear(), targetDate.getMonth(), 1));
     setForm({
       orden_admision_id: String(cita.orden_admision_id || ""),
       fecha_cita: String(cita.fecha_cita || "").slice(0, 10),
@@ -296,6 +307,16 @@ export default function CitasRecepcion() {
     });
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    if (!isModalOpen || !form.fecha_cita) return;
+    const d = parseYmd(form.fecha_cita);
+    if (Number.isNaN(d.getTime())) return;
+    setModalMonthCursor((prev) => {
+      if (prev.getFullYear() === d.getFullYear() && prev.getMonth() === d.getMonth()) return prev;
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    });
+  }, [isModalOpen, form.fecha_cita]);
 
   const moveRange = (delta) => {
     setAnimDirection(delta < 0 ? "prev" : "next");
@@ -380,6 +401,10 @@ export default function CitasRecepcion() {
   };
 
   const weekHours = useMemo(() => Array.from({ length: 11 }).map((_, idx) => 8 + idx), []);
+  const modalCalendarCells = useMemo(
+    () => buildCalendarCells(new Date(modalMonthCursor.getFullYear(), modalMonthCursor.getMonth(), 1)),
+    [modalMonthCursor]
+  );
   const rowHeight = 72;
   const weekBodyHeight = weekHours.length * rowHeight;
 
@@ -411,6 +436,11 @@ export default function CitasRecepcion() {
         @keyframes fadeInSoft { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideInFromRight { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes slideInFromLeft { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: translateX(0); } }
+        .glass-effect {
+          background: rgba(43, 49, 56, 0.72);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+        }
       `}</style>
 
       <div className="flex h-screen overflow-hidden">
@@ -656,50 +686,188 @@ export default function CitasRecepcion() {
 
       {isModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/60 motion-safe:animate-[fadeInSoft_.18s_ease-out]">
-          <div className="w-full max-w-2xl bg-surface-dark border border-border-dark rounded-2xl shadow-2xl overflow-hidden motion-safe:animate-[scaleIn_.2s_ease-out]">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border-dark">
-              <h3 className="text-lg font-bold text-white">{editingId ? "Editar cita" : "Nueva cita"}</h3>
-              <button type="button" onClick={() => !saving && setIsModalOpen(false)} className="text-slate-400 hover:text-white"><span className="material-symbols-outlined">close</span></button>
+          <div className="w-full max-w-3xl glass-effect border border-border-dark rounded-2xl shadow-2xl overflow-hidden motion-safe:animate-[scaleIn_.2s_ease-out]">
+            <div className="flex items-center justify-between px-8 py-6 border-b border-border-dark bg-background-dark/40">
+              <div>
+                <h3 className="text-2xl font-black text-white tracking-tight">
+                  {editingId ? "Editar cita" : "Nueva / Editar Cita"}
+                </h3>
+                <p className="text-slate-400 text-sm mt-1">
+                  Complete los detalles para la agenda de colisión.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !saving && setIsModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
             </div>
 
-            <form className="p-6 space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Orden de admisión</label>
-                <select className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={form.orden_admision_id} onChange={(event) => setForm((prev) => ({ ...prev, orden_admision_id: event.target.value }))} required>
-                  <option value="">Selecciona orden</option>
-                  {orders.map((order) => (
-                    <option key={order.id} value={order.id}>{order.reporte_siniestro} | {order.nb_cliente} | {order.placas || "-"}</option>
-                  ))}
-                </select>
+            <form className="max-h-[80vh] overflow-y-auto custom-scrollbar" onSubmit={handleSubmit}>
+              <div className="p-8 space-y-7">
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                    Orden de Admisión
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">search</span>
+                    <select
+                      className="w-full pl-12 pr-10 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white appearance-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                      value={form.orden_admision_id}
+                      onChange={(event) => setForm((prev) => ({ ...prev, orden_admision_id: event.target.value }))}
+                      required
+                    >
+                      <option value="">Buscar por ID o Nombre de Cliente...</option>
+                      {orders.map((order) => (
+                        <option key={order.id} value={order.id}>
+                          #{order.id} - {order.reporte_siniestro} - {order.nb_cliente}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">expand_more</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                      Fecha de Cita
+                    </label>
+                    <div className="bg-background-dark/50 p-4 rounded-xl border border-border-dark">
+                      <div className="flex items-center justify-between mb-4">
+                        <button
+                          type="button"
+                          className="p-1 hover:bg-surface-dark rounded-full transition-colors"
+                          onClick={() =>
+                            setModalMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+                          }
+                        >
+                          <span className="material-symbols-outlined text-sm">chevron_left</span>
+                        </button>
+                        <span className="text-sm font-bold text-white capitalize">{monthLabel(modalMonthCursor)}</span>
+                        <button
+                          type="button"
+                          className="p-1 hover:bg-surface-dark rounded-full transition-colors"
+                          onClick={() =>
+                            setModalMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+                          }
+                        >
+                          <span className="material-symbols-outlined text-sm">chevron_right</span>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-500 mb-2">
+                        {["D", "L", "M", "X", "J", "V", "S"].map((day) => (
+                          <span key={day}>{day}</span>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {modalCalendarCells.slice(0, 35).map((cell) => {
+                          const isSelected = cell.ymd === form.fecha_cita;
+                          return (
+                            <button
+                              key={`modal-${cell.ymd}`}
+                              type="button"
+                              onClick={() => setForm((prev) => ({ ...prev, fecha_cita: cell.ymd }))}
+                              className={`h-8 flex items-center justify-center text-xs rounded-full transition-colors ${
+                                isSelected
+                                  ? "bg-primary text-white font-black"
+                                  : cell.inMonth
+                                    ? "text-white hover:bg-surface-dark"
+                                    : "text-slate-600"
+                              }`}
+                            >
+                              {cell.date.getDate()}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input
+                        type="date"
+                        className="mt-3 w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                        value={form.fecha_cita}
+                        onChange={(event) => setForm((prev) => ({ ...prev, fecha_cita: event.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                      Horario Disponible
+                    </label>
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <input
+                          type="time"
+                          className="w-full pl-4 pr-10 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white focus:ring-2 focus:ring-primary/30 transition-all"
+                          value={form.hora_cita}
+                          onChange={(event) => setForm((prev) => ({ ...prev, hora_cita: event.target.value }))}
+                          required
+                        />
+                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">schedule</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <span className="px-3 py-1 bg-alert-green/10 border border-alert-green/30 text-alert-green text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-alert-green rounded-full"></span> Disponible
+                        </span>
+                        <span className="px-3 py-1 bg-alert-red/10 border border-alert-red/30 text-alert-red text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-alert-red rounded-full"></span> Ocupado
+                        </span>
+                        <span className="px-3 py-1 bg-alert-amber/10 border border-alert-amber/30 text-alert-amber text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-alert-amber rounded-full"></span> Tentativo
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <div className="md:col-span-1 space-y-3">
+                    <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">Estado</label>
+                    <div className="relative">
+                      <select
+                        className="w-full pl-4 pr-10 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white appearance-none focus:ring-2 focus:ring-primary/30 transition-all"
+                        value={form.estado}
+                        onChange={(event) => setForm((prev) => ({ ...prev, estado: event.target.value }))}
+                      >
+                        {STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                      <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">label</span>
+                    </div>
+                  </div>
+                  <div className="md:col-span-2 space-y-3">
+                    <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">Notas adicionales</label>
+                    <textarea
+                      rows={3}
+                      className="w-full px-4 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all resize-none"
+                      value={form.notas}
+                      onChange={(event) => setForm((prev) => ({ ...prev, notas: event.target.value }))}
+                      placeholder="Detalles específicos del daño o requerimientos del cliente..."
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Fecha</label>
-                  <input type="date" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={form.fecha_cita} onChange={(event) => setForm((prev) => ({ ...prev, fecha_cita: event.target.value }))} required />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Hora</label>
-                  <input type="time" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={form.hora_cita} onChange={(event) => setForm((prev) => ({ ...prev, hora_cita: event.target.value }))} required />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Estado</label>
-                  <select className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={form.estado} onChange={(event) => setForm((prev) => ({ ...prev, estado: event.target.value }))}>
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status}>{status}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Notas</label>
-                <textarea rows={4} className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={form.notas} onChange={(event) => setForm((prev) => ({ ...prev, notas: event.target.value }))} placeholder="Demoras, estatus de piezas, observaciones para recepción..." />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" className="px-4 py-2 rounded border border-border-dark text-slate-300 hover:text-white" onClick={() => !saving && setIsModalOpen(false)}>Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 rounded bg-primary text-white font-bold hover:bg-primary/90 disabled:opacity-60">{saving ? "Guardando..." : editingId ? "Guardar cambios" : "Crear cita"}</button>
+              <div className="px-8 py-6 border-t border-border-dark bg-background-dark/40 flex justify-end gap-4">
+                <button
+                  type="button"
+                  className="px-6 py-2.5 rounded-lg font-semibold text-slate-300 hover:bg-slate-700/50 transition-all border border-transparent"
+                  onClick={() => !saving && setIsModalOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-8 py-2.5 rounded-lg font-bold bg-primary text-white hover:shadow-[0_0_20px_rgba(37,110,116,0.35)] transition-all flex items-center gap-2 disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-lg">check_circle</span>
+                  {saving ? "Guardando..." : editingId ? "Guardar cita" : "Guardar cita"}
+                </button>
               </div>
             </form>
           </div>

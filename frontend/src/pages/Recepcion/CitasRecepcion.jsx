@@ -82,6 +82,10 @@ function weekRange(date) {
   const end = addDays(start, 5);
   return { start: toYmd(start), end: toYmd(end) };
 }
+function dayRange(date) {
+  const day = toYmd(date);
+  return { start: day, end: day };
+}
 
 function buildCalendarCells(activeMonthDate) {
   const firstOfMonth = new Date(activeMonthDate.getFullYear(), activeMonthDate.getMonth(), 1);
@@ -157,10 +161,11 @@ export default function CitasRecepcion() {
     notas: ""
   });
 
-  const activeRange = useMemo(
-    () => (viewMode === "Semana" ? weekRange(cursorDate) : monthRange(cursorDate)),
-    [cursorDate, viewMode]
-  );
+  const activeRange = useMemo(() => {
+    if (viewMode === "Semana") return weekRange(cursorDate);
+    if (viewMode === "Día") return dayRange(cursorDate);
+    return monthRange(cursorDate);
+  }, [cursorDate, viewMode]);
 
   const weekDays = useMemo(() => {
     const start = startOfWeekMonday(cursorDate);
@@ -224,6 +229,12 @@ export default function CitasRecepcion() {
     });
   }, [preselectedOrderId, orders, selectedDate, setSearchParams]);
 
+  useEffect(() => {
+    if (viewMode !== "Día") return;
+    const ymd = toYmd(cursorDate);
+    setSelectedDate((prev) => (prev === ymd ? prev : ymd));
+  }, [viewMode, cursorDate]);
+
   const filteredCitas = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return citas;
@@ -269,7 +280,7 @@ export default function CitasRecepcion() {
     });
 
     const totalActivas = filteredCitas.length - canceladas;
-    const capacidad = viewMode === "Semana" ? 6 * 8 : 26 * 6;
+    const capacidad = viewMode === "Semana" ? 6 * 8 : viewMode === "Día" ? 8 : 26 * 6;
     const ocupacion = capacidad ? Math.min(100, Math.round((totalActivas / capacidad) * 100)) : 0;
 
     return { citasHoy, pendientes, completadas, canceladas, ocupacion };
@@ -352,6 +363,7 @@ export default function CitasRecepcion() {
   const moveRange = (delta) => {
     setAnimDirection(delta < 0 ? "prev" : "next");
     setCursorDate((prev) => {
+      if (viewMode === "Día") return addDays(prev, delta);
       if (viewMode === "Semana") return addDays(prev, delta * 7);
       return new Date(prev.getFullYear(), prev.getMonth() + delta, 1);
     });
@@ -361,7 +373,11 @@ export default function CitasRecepcion() {
     const today = new Date();
     setSelectedDate(toYmd(today));
     setAnimDirection("next");
-    setCursorDate(viewMode === "Semana" ? today : new Date(today.getFullYear(), today.getMonth(), 1));
+    if (viewMode === "Semana" || viewMode === "Día") {
+      setCursorDate(today);
+      return;
+    }
+    setCursorDate(new Date(today.getFullYear(), today.getMonth(), 1));
   };
 
   const refreshData = async () => {
@@ -488,6 +504,44 @@ export default function CitasRecepcion() {
   );
   const rowHeight = 72;
   const weekBodyHeight = weekHours.length * rowHeight;
+  const dayHours = useMemo(() => Array.from({ length: 12 }).map((_, idx) => 8 + idx), []);
+  const dayRowHeight = 96;
+  const dayBodyHeight = dayHours.length * dayRowHeight;
+  const selectedDateObj = useMemo(() => parseYmd(selectedDate), [selectedDate]);
+  const dayHeaderLabel = useMemo(
+    () => selectedDateObj.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }),
+    [selectedDateObj]
+  );
+  const dayStats = useMemo(() => {
+    let confirmadas = 0;
+    let demoras = 0;
+    let canceladas = 0;
+    citasDelDia.forEach((item) => {
+      const status = String(item.estado || "");
+      if (status === "Confirmada") confirmadas += 1;
+      if (status === "Demorada" || status === "En espera" || status === "Reprogramada") demoras += 1;
+      if (status === "Cancelada") canceladas += 1;
+    });
+    return { total: citasDelDia.length, confirmadas, demoras, canceladas };
+  }, [citasDelDia]);
+  const dayConflicts = useMemo(() => {
+    const active = citasDelDia.filter((item) => String(item.estado || "") !== "Cancelada");
+    const bySlot = active.reduce((acc, item) => {
+      const key = String(item.hora_cita || "").slice(0, 5);
+      acc[key] = acc[key] || [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+    return Object.values(bySlot).filter((list) => list.length > 1).flat();
+  }, [citasDelDia]);
+  const upcomingDayCitas = useMemo(() => {
+    const now = new Date();
+    const isToday = selectedDate === toYmd(now);
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return citasDelDia
+      .filter((item) => !isToday || toMinutes(item.hora_cita) >= nowMinutes)
+      .slice(0, 5);
+  }, [citasDelDia, selectedDate]);
 
   const currentTimeLine = useMemo(() => {
     const now = new Date();
@@ -501,6 +555,16 @@ export default function CitasRecepcion() {
     const top = ((minutes - min) / 60) * rowHeight;
     return { top, hhmm: `${pad(now.getHours())}:${pad(now.getMinutes())}` };
   }, [weekDays, rowHeight]);
+  const dayCurrentTimeLine = useMemo(() => {
+    const now = new Date();
+    if (selectedDate !== toYmd(now)) return null;
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const min = 8 * 60;
+    const max = 20 * 60;
+    if (minutes < min || minutes > max) return null;
+    const top = ((minutes - min) / 60) * dayRowHeight;
+    return { top, hhmm: `${pad(now.getHours())}:${pad(now.getMinutes())}` };
+  }, [selectedDate, dayRowHeight]);
 
   useEffect(() => {
     if (!isModalOpen || loadingModalDayCitas) return;
@@ -544,18 +608,18 @@ export default function CitasRecepcion() {
                 <button
                   key={mode}
                   type="button"
-                  disabled={mode === "Día"}
                   onClick={() => {
-                    if (mode === "Día") return;
                     setViewMode(mode);
-                    setCursorDate(mode === "Semana" ? parseYmd(selectedDate) : new Date(parseYmd(selectedDate).getFullYear(), parseYmd(selectedDate).getMonth(), 1));
+                    if (mode === "Semana" || mode === "Día") {
+                      setCursorDate(parseYmd(selectedDate));
+                      return;
+                    }
+                    setCursorDate(new Date(parseYmd(selectedDate).getFullYear(), parseYmd(selectedDate).getMonth(), 1));
                   }}
                   className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition-colors ${
                     viewMode === mode
                       ? "bg-primary text-white"
-                      : mode === "Día"
-                        ? "text-slate-500 cursor-not-allowed"
-                        : "text-slate-300 hover:bg-background-dark"
+                      : "text-slate-300 hover:bg-background-dark"
                   }`}
                 >
                   {mode}
@@ -653,7 +717,7 @@ export default function CitasRecepcion() {
                 </div>
               </aside>
             </div>
-          ) : (
+          ) : viewMode === "Semana" ? (
             <div className="flex-1 min-h-0 grid grid-cols-12">
               <section className="col-span-12 xl:col-span-9 flex flex-col min-h-0">
                 <div className="px-6 py-4 border-b border-border-dark flex items-center justify-between">
@@ -766,6 +830,168 @@ export default function CitasRecepcion() {
                   <div className="grid grid-cols-2 gap-2">
                     <button className="p-3 rounded border border-border-dark text-slate-300 hover:text-white hover:border-primary"><span className="material-symbols-outlined text-base">print</span></button>
                     <button className="p-3 rounded border border-border-dark text-slate-300 hover:text-white hover:border-primary"><span className="material-symbols-outlined text-base">mail</span></button>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 grid grid-cols-12">
+              <section className="col-span-12 xl:col-span-9 flex flex-col min-h-0 border-r border-border-dark">
+                <div className="px-6 py-3 border-b border-border-dark bg-background-dark/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => moveRange(-1)} className="size-8 rounded-lg border border-border-dark text-slate-400 hover:text-white">
+                      <span className="material-symbols-outlined text-base">chevron_left</span>
+                    </button>
+                    <div>
+                      <h3 className="text-lg font-black text-white capitalize leading-tight">{dayHeaderLabel}</h3>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-primary">{selectedDate === toYmd(new Date()) ? "Hoy" : "Agenda diaria"}</p>
+                    </div>
+                    <button type="button" onClick={() => moveRange(1)} className="size-8 rounded-lg border border-border-dark text-slate-400 hover:text-white">
+                      <span className="material-symbols-outlined text-base">chevron_right</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-5 text-xs">
+                    <div><p className="text-slate-500 uppercase tracking-widest font-bold text-[10px]">Total Citas</p><p className="text-white text-xl font-black">{dayStats.total}</p></div>
+                    <div><p className="text-primary uppercase tracking-widest font-bold text-[10px]">Confirmadas</p><p className="text-primary text-xl font-black">{dayStats.confirmadas}</p></div>
+                    <div><p className="text-alert-amber uppercase tracking-widest font-bold text-[10px]">Demoras</p><p className="text-alert-amber text-xl font-black">{dayStats.demoras}</p></div>
+                    <div><p className="text-alert-red uppercase tracking-widest font-bold text-[10px]">Canceladas</p><p className="text-alert-red text-xl font-black">{dayStats.canceladas}</p></div>
+                  </div>
+                </div>
+
+                <div key={rangeAnimKey} className={`flex-1 min-h-0 overflow-auto custom-scrollbar ${animDirection === "prev" ? "motion-safe:animate-[slideInFromLeft_.24s_ease-out]" : "motion-safe:animate-[slideInFromRight_.24s_ease-out]"}`}>
+                  <div className="grid grid-cols-[92px_minmax(0,1fr)]">
+                    <div className="border-r border-border-dark bg-background-dark/70">
+                      {dayHours.map((hour) => (
+                        <div key={`day-hour-${hour}`} className="border-b border-border-dark/70 pt-3 text-center text-[11px] font-bold text-slate-500" style={{ height: `${dayRowHeight}px` }}>
+                          {`${pad(hour)}:00`}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="relative bg-[radial-gradient(circle_at_1px_1px,rgba(71,85,105,0.22)_1px,transparent_0)] [background-size:10px_10px]">
+                      {dayHours.map((hour) => (
+                        <button
+                          key={`day-slot-${hour}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedDate(toYmd(cursorDate));
+                            openNewModal(toYmd(cursorDate));
+                            setForm((prev) => ({ ...prev, hora_cita: `${pad(hour)}:00` }));
+                          }}
+                          className="w-full border-b border-border-dark/60 hover:bg-white/5 transition-colors"
+                          style={{ height: `${dayRowHeight}px` }}
+                          title={`Agendar ${pad(hour)}:00`}
+                        />
+                      ))}
+
+                      {dayCurrentTimeLine ? (
+                        <div className="absolute left-0 right-0 z-20 flex items-center pointer-events-none" style={{ top: `${dayCurrentTimeLine.top}px` }}>
+                          <div className="flex-1 h-[2px] bg-alert-red shadow-[0_0_10px_rgba(239,68,68,0.75)]" />
+                          <span className="ml-2 px-2 py-0.5 rounded bg-alert-red text-white text-[10px] font-black">{dayCurrentTimeLine.hhmm}</span>
+                        </div>
+                      ) : null}
+
+                      {citasDelDia.map((cita, index) => {
+                        const status = String(cita.estado || "");
+                        const accentClass =
+                          status === "Confirmada"
+                            ? "border-primary/60"
+                            : status === "Demorada" || status === "Reprogramada" || status === "En espera"
+                              ? "border-alert-amber/60"
+                              : status === "Cancelada"
+                                ? "border-alert-red/60"
+                                : status === "Completada"
+                                  ? "border-alert-green/60"
+                                  : "border-slate-500/50";
+                        const stripeClass =
+                          status === "Confirmada"
+                            ? "bg-primary"
+                            : status === "Demorada" || status === "Reprogramada" || status === "En espera"
+                              ? "bg-alert-amber"
+                              : status === "Cancelada"
+                                ? "bg-alert-red"
+                                : status === "Completada"
+                                  ? "bg-alert-green"
+                                  : "bg-slate-500";
+                        const top = ((toMinutes(cita.hora_cita) - 8 * 60) / 60) * dayRowHeight + 8;
+                        const cardHeight = 84;
+                        const safeTop = Math.max(6, Math.min(dayBodyHeight - cardHeight - 8, top));
+                        return (
+                          <article
+                            key={cita.id}
+                            className={`absolute left-4 right-4 rounded-xl border ${accentClass} bg-surface-dark/90 shadow-lg overflow-hidden motion-safe:animate-[fadeUp_.25s_ease-out]`}
+                            style={{ top: `${safeTop}px`, minHeight: `${cardHeight}px`, animationDelay: `${index * 35}ms` }}
+                          >
+                            <div className="flex">
+                              <div className={`w-1.5 ${stripeClass}`} />
+                              <div className="flex-1 px-4 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-white">{String(cita.hora_cita || "").slice(0, 5)}</span>
+                                    <span className={`text-[10px] uppercase tracking-widest font-black px-2 py-0.5 rounded border ${STATUS_STYLES[cita.estado] || "bg-slate-600/20 text-slate-300 border-slate-500/40"}`}>{cita.estado}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button type="button" onClick={() => openEditModal(cita)} className="size-8 rounded border border-border-dark text-slate-300 hover:text-white hover:border-primary"><span className="material-symbols-outlined text-sm">edit</span></button>
+                                    <button type="button" onClick={() => handleDelete(cita.id)} className="size-8 rounded border border-border-dark text-slate-300 hover:text-alert-red hover:border-alert-red"><span className="material-symbols-outlined text-sm">delete</span></button>
+                                  </div>
+                                </div>
+                                <p className="mt-1 text-lg font-black text-white truncate">{cita.nb_cliente || "Sin cliente"}</p>
+                                <p className="text-xs text-slate-400 truncate">
+                                  {cita.marca_vehiculo} {cita.tipo_vehiculo} {cita.placas ? `- ${cita.placas}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <footer className="px-4 py-2 border-t border-border-dark bg-background-dark/85 text-[10px] text-slate-400 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="uppercase tracking-widest font-bold">Leyenda</span>
+                    <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-slate-500" />Programada</span>
+                    <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-primary" />Confirmada</span>
+                    <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-alert-amber" />Demora</span>
+                    <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-alert-red" />Cancelada</span>
+                    <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-alert-green" />Completada</span>
+                  </div>
+                  <span>Actualizado: {new Date().toLocaleTimeString("es-MX")}</span>
+                </footer>
+              </section>
+
+              <aside className="col-span-12 xl:col-span-3 bg-background-dark p-5 space-y-5 overflow-y-auto custom-scrollbar">
+                <div className={`rounded-xl border p-4 ${dayConflicts.length ? "border-alert-red/40 bg-alert-red/10" : "border-border-dark bg-surface-dark/60"}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`material-symbols-outlined text-base ${dayConflicts.length ? "text-alert-red" : "text-slate-400"}`}>warning</span>
+                    <h4 className="text-sm font-black text-white">Conflictos de horario</h4>
+                  </div>
+                  {dayConflicts.length ? (
+                    <p className="text-xs text-slate-300">
+                      Se detectaron {dayConflicts.length} citas encimadas en {selectedDate}.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-400">Sin traslapes detectados para esta fecha.</p>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-black text-white mb-3">Próximas recepciones</h4>
+                  <div className="space-y-2">
+                    {!upcomingDayCitas.length ? (
+                      <p className="text-xs text-slate-500">No hay próximas recepciones para esta fecha.</p>
+                    ) : null}
+                    {upcomingDayCitas.map((cita) => (
+                      <button key={`up-${cita.id}`} type="button" onClick={() => openEditModal(cita)} className="w-full text-left p-3 rounded-lg border border-border-dark bg-surface-dark hover:border-primary/40 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-primary">{String(cita.hora_cita || "").slice(0, 5)}</span>
+                          <span className="text-[10px] text-slate-500">ADM-{cita.orden_admision_id}</span>
+                        </div>
+                        <p className="text-sm font-bold text-white truncate">{cita.nb_cliente || "Sin cliente"}</p>
+                        <p className="text-[11px] text-slate-500 truncate">{cita.marca_vehiculo} {cita.tipo_vehiculo}</p>
+                      </button>
+                    ))}
                   </div>
                 </div>
               </aside>

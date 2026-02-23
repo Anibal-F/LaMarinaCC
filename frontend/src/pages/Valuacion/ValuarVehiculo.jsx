@@ -87,6 +87,30 @@ function parseMoneyInput(raw) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatDateForQualitas(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("es-MX");
+}
+
+function sanitizeForCell(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function setExcelCellValue(sheet, address, value) {
+  const cell = sheet[address] || {};
+  if (typeof value === "number" && Number.isFinite(value)) {
+    cell.t = "n";
+    cell.v = value;
+  } else {
+    cell.t = "s";
+    cell.v = sanitizeForCell(value);
+  }
+  sheet[address] = cell;
+}
+
 function filePreviewUrl(item) {
   const relativePath = item?.archivo_path || item?.path || "";
   if (!relativePath) return "";
@@ -150,6 +174,8 @@ export default function ValuarVehiculo() {
   const [operations, setOperations] = useState([]);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
+  const [exportingQualitas, setExportingQualitas] = useState(false);
+  const [exportQualitasError, setExportQualitasError] = useState("");
 
   useEffect(() => {
     if (record || !id) return;
@@ -524,6 +550,101 @@ export default function ValuarVehiculo() {
       setSuggestionError(err.message || "No se pudieron generar sugerencias.");
     } finally {
       setSuggesting(false);
+    }
+  };
+
+  const handleExportQualitasBudget = async () => {
+    setExportQualitasError("");
+    setExportingQualitas(true);
+    try {
+      const XLSX = await import("xlsx");
+      const response = await fetch("/templates/qualitas-presupuesto-template.xls");
+      if (!response.ok) {
+        throw new Error("No se encontro la plantilla de Qualitas.");
+      }
+
+      const templateBytes = await response.arrayBuffer();
+      const workbook = XLSX.read(templateBytes, {
+        type: "array",
+        cellStyles: true,
+        cellNF: true
+      });
+      const worksheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[worksheetName];
+      if (!sheet) {
+        throw new Error("La plantilla XLS no tiene una hoja valida.");
+      }
+
+      const subtotalLocal = operations.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
+      const manoObraTotal = operations.reduce((acc, item) => acc + (Number(item.mano_obra) || 0), 0);
+      const pinturaTotal = operations.reduce((acc, item) => acc + (Number(item.pintura) || 0), 0);
+      const refaccionesTotal = operations.reduce((acc, item) => acc + (Number(item.refacciones) || 0), 0);
+      const vehiculoParts = String(record?.vehiculo || "").split(" ").filter(Boolean);
+      const normalizedOps = operations.slice(0, 8);
+
+      setExcelCellValue(sheet, "A6", record?.nb_cliente || "");
+      setExcelCellValue(sheet, "F6", record?.tel_cliente || "");
+      setExcelCellValue(sheet, "H6", formatDateForQualitas(record?.fecha_adm));
+      setExcelCellValue(sheet, "A10", record?.reporte_siniestro || "");
+      setExcelCellValue(sheet, "B10", record?.marca_vehiculo || vehiculoParts[0] || "");
+      setExcelCellValue(sheet, "F10", record?.color_vehiculo || "");
+      setExcelCellValue(sheet, "B12", record?.tipo_vehiculo || record?.vehiculo || "");
+      setExcelCellValue(sheet, "D12", record?.placas || "");
+      setExcelCellValue(sheet, "F12", record?.transmision || "");
+      setExcelCellValue(sheet, "A14", record?.poliza || "");
+      setExcelCellValue(sheet, "B14", record?.modelo_anio || "");
+      setExcelCellValue(sheet, "D14", record?.serie_auto || "");
+      setExcelCellValue(sheet, "F14", record?.puertas || "");
+
+      for (let index = 0; index < 8; index += 1) {
+        const row = 16 + index;
+        const item = normalizedOps[index];
+        const tipo =
+          String(item?.tipo || "")
+            .trim()
+            .toUpperCase() === "SUST"
+            ? "SUSTITUCION"
+            : item?.tipo || "";
+        setExcelCellValue(sheet, `A${row}`, tipo);
+        setExcelCellValue(sheet, `B${row}`, item?.descripcion || "");
+        setExcelCellValue(sheet, `F${row}`, Number(item?.mano_obra || 0));
+        setExcelCellValue(sheet, `G${row}`, Number(item?.pintura || 0));
+        setExcelCellValue(sheet, `H${row}`, Number(item?.refacciones || 0));
+        setExcelCellValue(sheet, `I${row}`, Number(item?.monto || 0));
+      }
+
+      setExcelCellValue(sheet, "F24", manoObraTotal);
+      setExcelCellValue(sheet, "G24", pinturaTotal);
+      setExcelCellValue(sheet, "H24", refaccionesTotal);
+      setExcelCellValue(sheet, "I24", subtotalLocal);
+      setExcelCellValue(sheet, "C26", manoObraTotal);
+      setExcelCellValue(sheet, "H26", subtotalLocal);
+      setExcelCellValue(sheet, "C28", pinturaTotal);
+      setExcelCellValue(sheet, "C30", refaccionesTotal);
+      setExcelCellValue(sheet, "C32", subtotalLocal);
+      setExcelCellValue(sheet, "H34", subtotalLocal);
+      setExcelCellValue(sheet, "A38", observacionesValuacion || "");
+
+      const workbookBytes = XLSX.write(workbook, {
+        bookType: "biff8",
+        type: "array",
+        cellStyles: true
+      });
+      const blob = new Blob([workbookBytes], { type: "application/vnd.ms-excel" });
+      const reporte = sanitizeForCell(record?.reporte_siniestro) || `orden-${record?.id || "valuacion"}`;
+      const filename = `${reporte}_presupuesto_qualitas.xls`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportQualitasError(err.message || "No se pudo generar el XLS de Qualitas.");
+    } finally {
+      setExportingQualitas(false);
     }
   };
 
@@ -1312,6 +1433,18 @@ export default function ValuarVehiculo() {
                           <button
                             className="flex items-center gap-1 bg-surface-dark border border-border-dark px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider hover:border-primary/60"
                             type="button"
+                            onClick={handleExportQualitasBudget}
+                            disabled={exportingQualitas}
+                            title="Descargar presupuesto formato Qualitas"
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              {exportingQualitas ? "hourglass_bottom" : "download"}
+                            </span>
+                            {exportingQualitas ? "Exportando..." : "Descargar XLS"}
+                          </button>
+                          <button
+                            className="flex items-center gap-1 bg-surface-dark border border-border-dark px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider hover:border-primary/60"
+                            type="button"
                             onClick={handleGenerateSuggestions}
                             disabled={suggesting}
                           >
@@ -1345,6 +1478,9 @@ export default function ValuarVehiculo() {
                       </div>
                       {suggestionError ? (
                         <p className="text-[11px] text-alert-red">{suggestionError}</p>
+                      ) : null}
+                      {exportQualitasError ? (
+                        <p className="text-[11px] text-alert-red">{exportQualitasError}</p>
                       ) : null}
 
                       <div className="overflow-x-auto border border-border-dark rounded-lg bg-background-dark/50">

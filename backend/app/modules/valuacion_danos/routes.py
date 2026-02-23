@@ -660,6 +660,9 @@ def export_qualitas_budget(orden_id: int, payload: QualitasExportPayload):
     sheet.set_paper(9)
     sheet.fit_to_pages(1, 1)
     sheet.set_margins(0.3, 0.3, 0.5, 0.5)
+    # Oculta cuadricula de Excel para que solo se vean los bordes del formato.
+    sheet.hide_gridlines(2)
+    sheet.set_zoom(100)
     sheet.set_column("A:A", 14)
     sheet.set_column("B:B", 20)
     sheet.set_column("C:C", 13)
@@ -686,14 +689,22 @@ def export_qualitas_budget(orden_id: int, payload: QualitasExportPayload):
         {"bold": True, "align": "right", "valign": "vcenter", "border": 1, "num_format": "#,##0.00"}
     )
     bold_left = workbook.add_format({"bold": True, "align": "left", "valign": "vcenter", "border": 1})
+    blue_bold_center = workbook.add_format(
+        {"bold": True, "align": "center", "valign": "vcenter", "border": 1, "font_color": "#0000FF"}
+    )
     no_border = workbook.add_format({"align": "left", "valign": "vcenter"})
 
     for row in range(1, 45):
         sheet.set_row(row - 1, 22 if row in (3, 4) else 20)
 
-    # Logo (opcional): backend/app/static/qualitas_logo.png
-    logo_path = Path(__file__).resolve().parents[2] / "static" / "qualitas_logo.png"
-    if logo_path.exists():
+    # Logo (opcional): primero frontend/public/assets y luego backend/app/static.
+    workspace_root = Path(__file__).resolve().parents[4]
+    logo_candidates = [
+        workspace_root / "frontend" / "public" / "assets" / "Logo_Presupusto_qualitas.png",
+        Path(__file__).resolve().parents[2] / "static" / "qualitas_logo.png",
+    ]
+    logo_path = next((candidate for candidate in logo_candidates if candidate.exists()), None)
+    if logo_path:
         sheet.insert_image("A2", str(logo_path), {"x_scale": 0.34, "y_scale": 0.34})
 
     # Encabezado.
@@ -717,7 +728,7 @@ def export_qualitas_budget(orden_id: int, payload: QualitasExportPayload):
     sheet.merge_range("D9:E9", "Kilometraje", header)
     sheet.merge_range("F9:G9", "Color", header)
     sheet.merge_range("H9:I9", "", header)
-    sheet.write("A10", payload.reporte_siniestro or "", cell_center)
+    sheet.write("A10", payload.reporte_siniestro or "", blue_bold_center)
     sheet.merge_range("B10:C10", payload.marca_vehiculo or "", cell_center)
     sheet.merge_range("D10:E10", "", cell_center)
     sheet.merge_range("F10:G10", payload.color_vehiculo or "", cell_center)
@@ -731,7 +742,7 @@ def export_qualitas_budget(orden_id: int, payload: QualitasExportPayload):
     sheet.write("A12", "", cell_center)
     sheet.merge_range("B12:C12", payload.tipo_vehiculo or "", cell_center)
     sheet.merge_range("D12:E12", payload.placas or "", cell_center)
-    sheet.merge_range("F12:G12", payload.transmision or "", cell_center)
+    sheet.merge_range("F12:G12", payload.transmision or "", blue_bold_center)
     sheet.merge_range("H12:I12", "", cell_center)
 
     sheet.write("A13", "Poliza", bold_left)

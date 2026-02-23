@@ -41,6 +41,22 @@ def _normalize_text(value: str | None) -> str:
     return text
 
 
+def _normalize_part_text(value: str | None) -> str:
+    text = _normalize_text(value)
+    aliases = {
+        "facia": "fascia",
+        "tolva interior": "tolva",
+        "tolva ext": "tolva",
+        "salpicadera der": "salpicadera derecha",
+        "salpicadera izq": "salpicadera izquierda",
+        "puerta delantera der": "puerta delantera derecha",
+        "puerta delantera izq": "puerta delantera izquierda",
+    }
+    for source, target in aliases.items():
+        text = re.sub(rf"\b{re.escape(source)}\b", target, text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _safe_float(value, default: float = 0.0) -> float:
     try:
         return float(value or 0)
@@ -60,6 +76,47 @@ def _match_catalog_part(description_norm: str, catalog: list[dict]) -> str:
             best = part_raw
             best_len = len(part_norm)
     return best
+
+
+def _percentile(sorted_values: list[float], p: float) -> float:
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    idx = (len(sorted_values) - 1) * p
+    lo = int(math.floor(idx))
+    hi = int(math.ceil(idx))
+    if lo == hi:
+        return sorted_values[lo]
+    frac = idx - lo
+    return sorted_values[lo] * (1 - frac) + sorted_values[hi] * frac
+
+
+def _iqr_trim(values: list[float]) -> list[float]:
+    if len(values) < 6:
+        return values
+    clean = sorted(values)
+    q1 = _percentile(clean, 0.25)
+    q3 = _percentile(clean, 0.75)
+    iqr = q3 - q1
+    if iqr <= 0:
+        return values
+    low = q1 - 1.5 * iqr
+    high = q3 + 1.5 * iqr
+    trimmed = [v for v in values if low <= v <= high]
+    return trimmed or values
+
+
+STOPWORDS = {
+    "de", "la", "el", "los", "las", "del", "y", "con", "sin", "para", "por", "en",
+    "izquierda", "derecha", "delantera", "trasera", "completo", "completa",
+}
+
+
+def _keyword_tokens(value: str | None) -> set[str]:
+    text = _normalize_part_text(value)
+    tokens = [t for t in text.split(" ") if len(t) >= 4 and t not in STOPWORDS]
+    return set(tokens)
 
 
 @router.get("/health")
@@ -151,7 +208,10 @@ class ValuacionPayload(BaseModel):
 @router.get("/ordenes/{orden_id}/sugerencias")
 def suggest_valuacion_by_orden(
     orden_id: int,
-    limit: int = Query(default=20, ge=1, le=80),
+    limit: int = Query(default=12, ge=1, le=80),
+    min_confidence: float = Query(default=0.62, ge=0.0, le=1.0),
+    min_samples: int = Query(default=2, ge=1, le=50),
+    context: str = Query(default="", max_length=1200),
 ):
     with get_connection() as conn:
         conn.row_factory = dict_row
@@ -162,7 +222,9 @@ def suggest_valuacion_by_orden(
               seguro_comp,
               marca_vehiculo,
               tipo_vehiculo,
-              modelo_anio
+              modelo_anio,
+              danos_siniestro,
+              descripcion_siniestro
             FROM orden_admision
             WHERE id = %s
             """,
@@ -227,44 +289,113 @@ def suggest_valuacion_by_orden(
     target_aseguradora = _normalize_text(orden.get("seguro_comp"))
     target_anio_raw = str(orden.get("modelo_anio") or "").strip()
     target_anio = int(target_anio_raw) if target_anio_raw.isdigit() else None
+    context_text = " ".join(
+        part
+        for part in [
+            context,
+            orden.get("danos_siniestro"),
+            orden.get("descripcion_siniestro"),
+        ]
+        if part
+    )
+    context_tokens = _keyword_tokens(context_text)
 
-    grouped: dict[str, dict] = {}
-    candidate_rows = 0
+    enriched = []
     for row in hist_rows:
         desc = (row.get("descripcion_pieza") or "").strip()
         if not desc:
             continue
-        desc_norm = _normalize_text(desc)
+        desc_norm = _normalize_part_text(desc)
         if not desc_norm:
             continue
-
-        hist_marca = _normalize_text(row.get("marca"))
-        hist_tipo = _normalize_text(row.get("tipo_vehiculo"))
-        hist_aseguradora = _normalize_text(row.get("aseguradora"))
         hist_anio_raw = str(row.get("anio") or "").strip()
         hist_anio = int(hist_anio_raw) if hist_anio_raw.isdigit() else None
+        enriched.append(
+            {
+                **row,
+                "_desc_norm": desc_norm,
+                "_marca": _normalize_text(row.get("marca")),
+                "_tipo": _normalize_text(row.get("tipo_vehiculo")),
+                "_aseguradora": _normalize_text(row.get("aseguradora")),
+                "_anio": hist_anio,
+            }
+        )
 
-        score = 0.0
-        if target_aseguradora and hist_aseguradora == target_aseguradora:
-            score += 2.0
-        if target_marca and hist_marca == target_marca:
-            score += 4.0
-        if target_tipo and (target_tipo == hist_tipo or target_tipo in hist_tipo or hist_tipo in target_tipo):
-            score += 3.0
-        if target_anio and hist_anio:
-            if target_anio == hist_anio:
-                score += 2.0
-            elif abs(target_anio - hist_anio) <= 1:
-                score += 1.0
-        if score <= 0:
-            continue
+    def _filter_level(level: str, rows: list[dict]) -> list[dict]:
+        if level == "strict":
+            return [
+                r
+                for r in rows
+                if r["_marca"] == target_marca
+                and (not target_tipo or r["_tipo"] == target_tipo)
+                and (not target_anio or (r["_anio"] and abs(r["_anio"] - target_anio) <= 1))
+                and (not target_aseguradora or r["_aseguradora"] == target_aseguradora)
+            ]
+        if level == "brand_type_year":
+            return [
+                r
+                for r in rows
+                if r["_marca"] == target_marca
+                and (not target_tipo or r["_tipo"] == target_tipo)
+                and (not target_anio or (r["_anio"] and abs(r["_anio"] - target_anio) <= 1))
+            ]
+        if level == "brand_type":
+            return [
+                r
+                for r in rows
+                if r["_marca"] == target_marca and (not target_tipo or r["_tipo"] == target_tipo)
+            ]
+        if level == "brand":
+            return [r for r in rows if r["_marca"] == target_marca]
+        return rows
 
-        candidate_rows += 1
+    levels = [
+        ("strict", 18),
+        ("brand_type_year", 18),
+        ("brand_type", 24),
+        ("brand", 32),
+        ("all", 1),
+    ]
+    selected_level = "all"
+    selected_rows: list[dict] = enriched
+    for level_name, min_rows_needed in levels:
+        rows_for_level = _filter_level(level_name, enriched)
+        if len(rows_for_level) >= min_rows_needed:
+            selected_level = level_name
+            selected_rows = rows_for_level
+            break
+
+    grouped: dict[str, dict] = {}
+    candidate_rows = 0
+    for row in selected_rows:
+        desc_norm = row["_desc_norm"]
         matched_part = _match_catalog_part(desc_norm, catalog)
-        canonical = matched_part.strip() if matched_part else desc.strip()
-        key = _normalize_text(canonical)
+        canonical = matched_part.strip() if matched_part else (row.get("descripcion_pieza") or "").strip()
+        key = _normalize_part_text(canonical)
         if not key:
             continue
+
+        score = 0.0
+        if target_marca and row["_marca"] == target_marca:
+            score += 4.0
+        if target_tipo and row["_tipo"] == target_tipo:
+            score += 3.0
+        if target_aseguradora and row["_aseguradora"] == target_aseguradora:
+            score += 2.0
+        if target_anio and row["_anio"]:
+            if row["_anio"] == target_anio:
+                score += 2.0
+            elif abs(row["_anio"] - target_anio) <= 1:
+                score += 1.0
+
+        overlap = 0
+        if context_tokens:
+            desc_tokens = _keyword_tokens(key)
+            overlap = len(context_tokens.intersection(desc_tokens))
+            if overlap == 0 and score < 7:
+                continue
+            score += min(3.0, overlap * 0.8)
+        candidate_rows += 1
 
         bucket = grouped.setdefault(
             key,
@@ -276,14 +407,16 @@ def suggest_valuacion_by_orden(
                 "refacciones": [],
                 "total": [],
                 "score_sum": 0.0,
+                "context_hits": 0,
                 "count": 0,
             },
         )
+
         mo = max(0.0, _safe_float(row.get("mano_obra"), 0.0))
         pintura = max(0.0, _safe_float(row.get("pintura"), 0.0))
         refacciones = max(0.0, _safe_float(row.get("refacciones"), 0.0))
         total = max(0.0, _safe_float(row.get("total"), mo + pintura + refacciones))
-        if total == 0 and (mo > 0 or pintura > 0 or refacciones > 0):
+        if total <= 0 and (mo > 0 or pintura > 0 or refacciones > 0):
             total = mo + pintura + refacciones
 
         bucket["mano_obra"].append(mo)
@@ -291,20 +424,38 @@ def suggest_valuacion_by_orden(
         bucket["refacciones"].append(refacciones)
         bucket["total"].append(total)
         bucket["score_sum"] += score
+        bucket["context_hits"] += overlap
         bucket["count"] += 1
 
     ranked = []
     for bucket in grouped.values():
         count = int(bucket["count"])
-        if count < 2:
+        if count < min_samples:
             continue
-        mo_m = round(float(median(bucket["mano_obra"])), 2)
-        pi_m = round(float(median(bucket["pintura"])), 2)
-        re_m = round(float(median(bucket["refacciones"])), 2)
-        to_m = round(float(median(bucket["total"])), 2)
+
+        mo_vals = _iqr_trim(bucket["mano_obra"])
+        pi_vals = _iqr_trim(bucket["pintura"])
+        re_vals = _iqr_trim(bucket["refacciones"])
+        to_vals = _iqr_trim(bucket["total"])
+        mo_m = round(float(median(mo_vals)), 2)
+        pi_m = round(float(median(pi_vals)), 2)
+        re_m = round(float(median(re_vals)), 2)
+        to_m = round(float(median(to_vals)), 2)
         if to_m <= 0:
             to_m = round(mo_m + pi_m + re_m, 2)
-        confidence = min(0.97, 0.35 + min(0.5, math.log10(count + 1) / 2) + min(0.12, bucket["score_sum"] / 500))
+
+        avg_score = bucket["score_sum"] / max(1, count)
+        confidence = (
+            0.30
+            + min(0.40, math.log10(count + 1) / 2.5)
+            + min(0.20, avg_score / 12)
+            + min(0.07, bucket["context_hits"] * 0.01)
+        )
+        level_penalty = {"strict": 0.0, "brand_type_year": 0.03, "brand_type": 0.06, "brand": 0.10, "all": 0.15}
+        confidence = max(0.0, min(0.97, confidence - level_penalty.get(selected_level, 0.1)))
+
+        if confidence < min_confidence:
+            continue
         ranked.append(
             {
                 "tipo": bucket["tipo"],
@@ -313,13 +464,13 @@ def suggest_valuacion_by_orden(
                 "pintura": pi_m,
                 "refacciones": re_m,
                 "monto": to_m,
-                "confianza": round(confidence, 3),
+                "confianza": round(float(confidence), 3),
                 "muestras": count,
                 "score": round(bucket["score_sum"], 2),
             }
         )
 
-    ranked.sort(key=lambda x: (x["score"], x["muestras"], x["monto"]), reverse=True)
+    ranked.sort(key=lambda x: (x["confianza"], x["muestras"], x["score"]), reverse=True)
     items = ranked[:limit]
     return {
         "orden_id": orden_id,
@@ -335,6 +486,8 @@ def suggest_valuacion_by_orden(
             "candidatos": candidate_rows,
             "grupos": len(grouped),
             "devueltos": len(items),
+            "nivel": selected_level,
+            "contexto_tokens": len(context_tokens),
         },
     }
 

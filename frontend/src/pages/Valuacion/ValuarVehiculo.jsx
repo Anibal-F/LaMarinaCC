@@ -384,10 +384,10 @@ export default function ValuarVehiculo() {
       (acc, item) => {
         acc.mo += Number(item.mano_obra) || 0;
         acc.sust += Number(item.refacciones) || 0;
-        acc.bym += Number(item.pintura) || 0;
+        acc.byd += Number(item.pintura) || 0;
         return acc;
       },
-      { mo: 0, sust: 0, bym: 0 }
+      { mo: 0, sust: 0, byd: 0 }
     );
   }, [operations]);
 
@@ -479,8 +479,25 @@ export default function ValuarVehiculo() {
     setSuggesting(true);
     setSuggestionError("");
     try {
+      const annotationLabels = Object.values(annotationsByEvidence)
+        .flatMap((list) => (Array.isArray(list) ? list : []))
+        .map((annotation) => String(annotation?.label || "").trim())
+        .filter(Boolean);
+      const contextParts = [
+        record?.danos_siniestro,
+        record?.descripcion_siniestro,
+        ...annotationLabels
+      ].filter(Boolean);
+      const params = new URLSearchParams({
+        limit: "12",
+        min_confidence: "0.62",
+        min_samples: "2"
+      });
+      if (contextParts.length) {
+        params.set("context", contextParts.join(" | ").slice(0, 1100));
+      }
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/valuacion/ordenes/${record.id}/sugerencias?limit=30`
+        `${import.meta.env.VITE_API_URL}/valuacion/ordenes/${record.id}/sugerencias?${params.toString()}`
       );
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -1488,7 +1505,7 @@ export default function ValuarVehiculo() {
                         </div>
                         <div className="flex justify-between items-center pb-2 border-b border-border-dark">
                           <span className="text-slate-400">Pintura</span>
-                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.bym)}</span>
+                          <span className="font-bold text-white">{formatCurrency(montoPorTipo.byd)}</span>
                         </div>
 
                         <div className="pt-3">

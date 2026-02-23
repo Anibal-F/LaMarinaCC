@@ -15,12 +15,33 @@ const STATUS_OPTIONS = [
   "No show"
 ];
 
+const STATUS_STYLES = {
+  Programada: "bg-alert-amber/20 text-alert-amber border-alert-amber/40",
+  Confirmada: "bg-primary/20 text-primary border-primary/40",
+  Reprogramada: "bg-sky-500/20 text-sky-300 border-sky-400/40",
+  "En espera": "bg-amber-500/20 text-amber-300 border-amber-400/40",
+  Demorada: "bg-orange-500/20 text-orange-300 border-orange-400/40",
+  Cancelada: "bg-alert-red/20 text-alert-red border-alert-red/40",
+  Completada: "bg-alert-green/20 text-alert-green border-alert-green/40",
+  "No show": "bg-slate-500/20 text-slate-300 border-slate-400/40"
+};
+
 function pad(value) {
   return String(value).padStart(2, "0");
 }
 
 function toYmd(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function humanDateLabel(value) {
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return String(value || "");
+  return date.toLocaleDateString("es-MX", {
+    weekday: "long",
+    day: "numeric",
+    month: "long"
+  });
 }
 
 function monthLabel(date) {
@@ -51,11 +72,12 @@ function buildCalendarCells(activeMonthDate) {
     cells.push({ date: d, inMonth: true, ymd: toYmd(d) });
   }
 
-  while (cells.length % 7 !== 0) {
+  while (cells.length < 42) {
     const d = new Date(lastOfMonth);
-    d.setDate(d.getDate() + (cells.length % 7));
+    d.setDate(d.getDate() + (cells.length - (startOffset + totalDays) + 1));
     cells.push({ date: d, inMonth: false, ymd: toYmd(d) });
   }
+
   return cells;
 }
 
@@ -74,6 +96,9 @@ export default function CitasRecepcion() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
   const [selectedDate, setSelectedDate] = useState(() => toYmd(new Date()));
+  const [viewMode, setViewMode] = useState("Mes");
+  const [search, setSearch] = useState("");
+  const [monthAnimKey, setMonthAnimKey] = useState(0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -125,6 +150,7 @@ export default function CitasRecepcion() {
       }
     };
     loadCitas();
+    setMonthAnimKey((value) => value + 1);
   }, [monthCursor]);
 
   useEffect(() => {
@@ -151,9 +177,45 @@ export default function CitasRecepcion() {
     () =>
       citas
         .filter((item) => String(item.fecha_cita).slice(0, 10) === selectedDate)
+        .filter((item) => {
+          const q = search.trim().toLowerCase();
+          if (!q) return true;
+          return [item.nb_cliente, item.reporte_siniestro, item.placas, item.marca_vehiculo, item.tipo_vehiculo]
+            .map((val) => String(val || "").toLowerCase())
+            .some((val) => val.includes(q));
+        })
         .sort((a, b) => String(a.hora_cita).localeCompare(String(b.hora_cita))),
-    [citas, selectedDate]
+    [citas, selectedDate, search]
   );
+
+  const monthTotals = useMemo(() => {
+    const today = toYmd(new Date());
+    let pendientes = 0;
+    let completadas = 0;
+    let canceladas = 0;
+    let citasHoy = 0;
+
+    citas.forEach((item) => {
+      const estado = String(item.estado || "");
+      const fecha = String(item.fecha_cita || "").slice(0, 10);
+      if (["Programada", "Confirmada", "Reprogramada", "En espera", "Demorada"].includes(estado)) pendientes += 1;
+      if (estado === "Completada") completadas += 1;
+      if (estado === "Cancelada") canceladas += 1;
+      if (fecha === today) citasHoy += 1;
+    });
+
+    const totalActivas = citas.length - canceladas;
+    const capacidadMes = 26 * 6;
+    const ocupacion = capacidadMes ? Math.round((totalActivas / capacidadMes) * 100) : 0;
+
+    return {
+      citasHoy,
+      pendientes,
+      completadas,
+      canceladas,
+      ocupacion
+    };
+  }, [citas]);
 
   const openNewModal = (dateYmd) => {
     setEditingId(null);
@@ -249,98 +311,196 @@ export default function CitasRecepcion() {
     }
   };
 
+  const StatCard = ({ label, value, trend, trendPositive = true }) => (
+    <article className="bg-surface-dark/90 border border-border-dark rounded-xl p-4 shadow-sm motion-safe:animate-[fadeUp_.35s_ease-out]">
+      <p className="text-xs text-slate-400 font-medium mb-1">{label}</p>
+      <div className="flex items-end justify-between">
+        <span className="text-2xl font-black text-white">{value}</span>
+        <span className={`text-[10px] font-bold ${trendPositive ? "text-alert-green" : "text-alert-red"}`}>
+          {trend}
+        </span>
+      </div>
+    </article>
+  );
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
+      <style>{`
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInSoft {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
           <AppHeader
             title="Agenda de recepciones"
-            subtitle="Programa citas de ingreso una vez autorizado y con piezas disponibles."
+            subtitle="Control de citas para ingreso de unidades autorizadas."
             showSearch={false}
-            actions={
+          />
+
+          <div className="px-6 py-3 border-b border-border-dark bg-background-dark/70 backdrop-blur-sm flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2 bg-surface-dark border border-border-dark p-1 rounded-lg w-fit">
+              {[
+                { id: "Mes", enabled: true },
+                { id: "Semana", enabled: false },
+                { id: "Día", enabled: false }
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={!item.enabled}
+                  onClick={() => setViewMode(item.id)}
+                  className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition-colors ${
+                    viewMode === item.id
+                      ? "bg-primary text-white"
+                      : item.enabled
+                        ? "text-slate-300 hover:bg-background-dark"
+                        : "text-slate-500 cursor-not-allowed"
+                  }`}
+                >
+                  {item.id}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                  search
+                </span>
+                <input
+                  className="w-64 bg-surface-dark border border-border-dark rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:ring-primary focus:border-primary"
+                  placeholder="Buscar cita..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
               <button
-                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-primary/10"
+                type="button"
+                onClick={() => {
+                  const today = new Date();
+                  setMonthCursor(new Date(today.getFullYear(), today.getMonth(), 1));
+                  setSelectedDate(toYmd(today));
+                }}
+                className="px-3 py-2 rounded-lg border border-border-dark text-xs font-bold text-slate-300 hover:text-white"
+              >
+                Hoy
+              </button>
+              <button
+                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold"
                 type="button"
                 onClick={() => openNewModal(selectedDate)}
               >
-                <span className="material-symbols-outlined text-sm">event_available</span>
+                <span className="material-symbols-outlined text-sm">add</span>
                 Nueva cita
               </button>
-            }
-          />
+            </div>
+          </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
-            {error ? <p className="text-sm text-alert-red">{error}</p> : null}
-            <section className="grid grid-cols-12 gap-4">
-              <div className="col-span-12 xl:col-span-8 border border-border-dark rounded-xl bg-surface-dark p-4">
-                <div className="flex items-center justify-between mb-4">
+          <section className="grid grid-cols-2 md:grid-cols-5 gap-3 p-6 border-b border-border-dark bg-background-dark/40">
+            <div className="motion-safe:animate-[fadeUp_.35s_ease-out]" style={{ animationDelay: "0ms" }}><StatCard label="Citas Hoy" value={monthTotals.citasHoy} trend="+0%" /></div>
+            <div className="motion-safe:animate-[fadeUp_.35s_ease-out]" style={{ animationDelay: "40ms" }}><StatCard label="Pendientes" value={monthTotals.pendientes} trend="-0%" trendPositive={false} /></div>
+            <div className="motion-safe:animate-[fadeUp_.35s_ease-out]" style={{ animationDelay: "80ms" }}><StatCard label="Completadas" value={monthTotals.completadas} trend="+0%" /></div>
+            <div className="motion-safe:animate-[fadeUp_.35s_ease-out]" style={{ animationDelay: "120ms" }}><StatCard label="Canceladas" value={monthTotals.canceladas} trend="-0%" trendPositive={false} /></div>
+            <div className="motion-safe:animate-[fadeUp_.35s_ease-out]" style={{ animationDelay: "160ms" }}><StatCard label="% Ocupación" value={`${monthTotals.ocupacion}%`} trend="+0%" /></div>
+          </section>
+
+          <div className="flex-1 min-h-0 grid grid-cols-12">
+            <section className="col-span-12 xl:col-span-9 p-6 overflow-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-black text-white capitalize">{monthLabel(monthCursor)}</h3>
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() =>
-                      setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-                    }
-                    className="px-3 py-2 rounded border border-border-dark text-slate-300 hover:text-white hover:border-primary/60 text-xs font-bold uppercase"
+                    onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                    className="size-9 rounded-lg border border-border-dark text-slate-300 hover:text-white"
                   >
-                    Mes anterior
+                    <span className="material-symbols-outlined">chevron_left</span>
                   </button>
-                  <h3 className="text-lg font-black text-white uppercase tracking-wide">
-                    {monthLabel(monthCursor)}
-                  </h3>
                   <button
                     type="button"
-                    onClick={() =>
-                      setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
-                    }
-                    className="px-3 py-2 rounded border border-border-dark text-slate-300 hover:text-white hover:border-primary/60 text-xs font-bold uppercase"
+                    onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                    className="size-9 rounded-lg border border-border-dark text-slate-300 hover:text-white"
                   >
-                    Mes siguiente
+                    <span className="material-symbols-outlined">chevron_right</span>
                   </button>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-7 gap-2 text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2">
-                  {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((label) => (
-                    <div key={label} className="px-2 py-1">{label}</div>
+              <div
+                key={monthAnimKey}
+                className="border border-border-dark rounded-xl overflow-hidden motion-safe:animate-[fadeInSoft_.22s_ease-out]"
+              >
+                <div className="grid grid-cols-7 bg-surface-dark/60 border-b border-border-dark">
+                  {[
+                    "DOM",
+                    "LUN",
+                    "MAR",
+                    "MIÉ",
+                    "JUE",
+                    "VIE",
+                    "SÁB"
+                  ].map((label) => (
+                    <div key={label} className="px-3 py-2 text-[10px] font-black tracking-widest text-slate-400 border-r border-border-dark last:border-r-0 text-center">
+                      {label}
+                    </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-2">
-                  {calendarCells.map((cell) => {
+                <div className="grid grid-cols-7">
+                  {calendarCells.map((cell, index) => {
                     const daySummary = resumenByDate[cell.ymd] || null;
                     const selected = selectedDate === cell.ymd;
                     const isToday = cell.ymd === toYmd(new Date());
+                    const lines = [
+                      { key: "pendientes", value: daySummary?.pendientes || 0, cls: "bg-primary" },
+                      { key: "completadas", value: daySummary?.completadas || 0, cls: "bg-alert-green" },
+                      { key: "canceladas", value: daySummary?.canceladas || 0, cls: "bg-alert-red" }
+                    ].filter((line) => line.value > 0);
+
                     return (
                       <button
-                        key={cell.ymd}
+                        key={`${cell.ymd}-${index}`}
                         type="button"
                         onClick={() => setSelectedDate(cell.ymd)}
-                        className={`min-h-[92px] rounded-lg border p-2 text-left transition-colors ${
+                        className={`h-28 p-2 border-r border-b border-border-dark last:border-r-0 text-left transition-all duration-200 hover:-translate-y-[1px] ${
                           selected
-                            ? "border-primary bg-primary/20"
+                            ? "bg-primary/10"
                             : cell.inMonth
-                              ? "border-border-dark bg-background-dark/50 hover:border-primary/60"
-                              : "border-border-dark/40 bg-background-dark/20 text-slate-500"
+                              ? "bg-background-dark hover:bg-surface-dark/40"
+                              : "bg-background-dark/40 text-slate-500"
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs font-bold ${isToday ? "text-primary" : "text-white"}`}>
-                            {cell.date.getDate()}
-                          </span>
-                          {daySummary?.total_citas ? (
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary text-white">
-                              {daySummary.total_citas}
+                        <div className="flex items-center justify-between mb-2">
+                          {isToday ? (
+                            <span className="size-6 rounded-full bg-primary text-white text-xs font-black flex items-center justify-center">
+                              {cell.date.getDate()}
                             </span>
+                          ) : (
+                            <span className={`text-xs font-bold ${cell.inMonth ? "text-white" : "text-slate-500"}`}>
+                              {cell.date.getDate()}
+                            </span>
+                          )}
+                          {daySummary?.total_citas ? (
+                            <span className="text-[10px] font-black text-primary">{daySummary.total_citas}</span>
                           ) : null}
                         </div>
-                        <div className="mt-2 space-y-1 text-[10px]">
-                          {daySummary?.pendientes ? (
-                            <div className="text-amber-300">Pendientes: {daySummary.pendientes}</div>
-                          ) : null}
-                          {daySummary?.completadas ? (
-                            <div className="text-emerald-300">Completadas: {daySummary.completadas}</div>
-                          ) : null}
-                          {daySummary?.canceladas ? (
-                            <div className="text-rose-300">Canceladas: {daySummary.canceladas}</div>
+                        <div className="space-y-1">
+                          {lines.slice(0, 3).map((line) => (
+                            <div key={line.key} className={`h-1 rounded-full ${line.cls}`} />
+                          ))}
+                          {daySummary?.total_citas > 3 ? (
+                            <p className="text-[9px] text-primary font-bold">+{daySummary.total_citas - 3} más</p>
                           ) : null}
                         </div>
                       </button>
@@ -348,47 +508,42 @@ export default function CitasRecepcion() {
                   })}
                 </div>
               </div>
+            </section>
 
-              <aside className="col-span-12 xl:col-span-4 border border-border-dark rounded-xl bg-surface-dark p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                    Citas del {selectedDate}
-                  </h3>
-                  <button
-                    type="button"
-                    className="text-xs font-bold uppercase px-2 py-1 rounded border border-border-dark text-slate-300 hover:text-white hover:border-primary/60"
-                    onClick={() => openNewModal(selectedDate)}
-                  >
-                    Agendar
-                  </button>
-                </div>
+            <aside className="col-span-12 xl:col-span-3 border-l border-border-dark bg-background-dark/70 flex flex-col min-h-0">
+              <div className="px-5 py-4 border-b border-border-dark">
+                <h4 className="text-base font-black text-white">Citas del día</h4>
+                <p className="text-xs text-slate-400 capitalize">{humanDateLabel(selectedDate)}</p>
+              </div>
+              <div className="p-4 space-y-3 overflow-y-auto custom-scrollbar">
                 {loading ? <p className="text-sm text-slate-400">Cargando agenda...</p> : null}
                 {!loading && !citasDelDia.length ? (
-                  <p className="text-sm text-slate-500">No hay citas para esta fecha.</p>
+                  <p className="text-sm text-slate-500">No hay citas para la fecha seleccionada.</p>
                 ) : null}
-                <div className="space-y-3">
-                  {citasDelDia.map((cita) => (
+                {citasDelDia.map((cita, index) => {
+                  const chipClass = STATUS_STYLES[cita.estado] || "bg-slate-600/20 text-slate-300 border-slate-500/40";
+                  return (
                     <article
                       key={cita.id}
-                      className="border border-border-dark rounded-lg p-3 bg-background-dark/50"
+                      className="bg-surface-dark border border-border-dark rounded-xl p-3 motion-safe:animate-[fadeUp_.28s_ease-out]"
+                      style={{ animationDelay: `${index * 35}ms` }}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-black text-white">{String(cita.hora_cita).slice(0, 5)}</p>
-                          <p className="text-sm text-primary font-bold">
-                            {cita.reporte_siniestro || `Orden ${cita.orden_admision_id}`}
-                          </p>
-                        </div>
-                        <span className="text-[10px] uppercase font-bold text-slate-300 bg-slate-700/70 px-2 py-0.5 rounded-full">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <span className={`text-[10px] uppercase tracking-widest font-black px-2 py-0.5 rounded border ${chipClass}`}>
                           {cita.estado}
                         </span>
+                        <span className="text-xs font-black text-white">{String(cita.hora_cita).slice(0, 5)}</span>
                       </div>
-                      <p className="text-xs text-slate-200 mt-2">{cita.nb_cliente || "Sin cliente"}</p>
-                      <p className="text-[11px] text-slate-400">
-                        {[cita.marca_vehiculo, cita.tipo_vehiculo, cita.modelo_anio].filter(Boolean).join(" ")}
+                      <p className="text-sm font-black text-white truncate">{cita.nb_cliente || "Sin cliente"}</p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {cita.marca_vehiculo} {cita.tipo_vehiculo} {cita.placas ? `- ${cita.placas}` : ""}
                       </p>
-                      {cita.notas ? <p className="text-[11px] text-slate-400 mt-2">{cita.notas}</p> : null}
-                      <div className="mt-3 flex justify-end gap-2">
+                      {cita.notas ? (
+                        <div className="mt-2 p-2 bg-background-dark/60 rounded text-[10px] text-slate-400 italic">
+                          {cita.notas}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex items-center justify-end gap-3">
                         <button
                           type="button"
                           onClick={() => openEditModal(cita)}
@@ -399,27 +554,25 @@ export default function CitasRecepcion() {
                         <button
                           type="button"
                           onClick={() => handleDelete(cita.id)}
-                          className="text-xs text-rose-300 hover:text-rose-200"
+                          className="text-xs text-alert-red hover:text-red-300"
                         >
                           Eliminar
                         </button>
                       </div>
                     </article>
-                  ))}
-                </div>
-              </aside>
-            </section>
+                  );
+                })}
+              </div>
+            </aside>
           </div>
         </main>
       </div>
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/60">
-          <div className="w-full max-w-2xl bg-surface-dark border border-border-dark rounded-2xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/60 motion-safe:animate-[fadeInSoft_.18s_ease-out]">
+          <div className="w-full max-w-2xl bg-surface-dark border border-border-dark rounded-2xl shadow-2xl overflow-hidden motion-safe:animate-[scaleIn_.2s_ease-out]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border-dark">
-              <h3 className="text-lg font-bold text-white">
-                {editingId ? "Editar cita" : "Nueva cita"}
-              </h3>
+              <h3 className="text-lg font-bold text-white">{editingId ? "Editar cita" : "Nueva cita"}</h3>
               <button
                 type="button"
                 onClick={() => !saving && setIsModalOpen(false)}
@@ -435,9 +588,7 @@ export default function CitasRecepcion() {
                 <select
                   className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
                   value={form.orden_admision_id}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, orden_admision_id: event.target.value }))
-                  }
+                  onChange={(event) => setForm((prev) => ({ ...prev, orden_admision_id: event.target.value }))}
                   required
                 >
                   <option value="">Selecciona orden</option>
@@ -478,7 +629,9 @@ export default function CitasRecepcion() {
                     onChange={(event) => setForm((prev) => ({ ...prev, estado: event.target.value }))}
                   >
                     {STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status}>{status}</option>
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
                     ))}
                   </select>
                 </div>

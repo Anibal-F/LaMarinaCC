@@ -130,6 +130,11 @@ function humanDateLabel(value) {
   return date.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
 }
 
+function formatOrderLabel(order) {
+  if (!order) return "";
+  return `#${order.id} - ${order.reporte_siniestro || "SIN REPORTE"} - ${order.nb_cliente || "SIN CLIENTE"}`;
+}
+
 export default function CitasRecepcion() {
   const [searchParams, setSearchParams] = useSearchParams();
   const preselectedOrderId = searchParams.get("orderId");
@@ -153,6 +158,8 @@ export default function CitasRecepcion() {
   const [modalMonthCursor, setModalMonthCursor] = useState(() => new Date());
   const [modalDayCitas, setModalDayCitas] = useState([]);
   const [loadingModalDayCitas, setLoadingModalDayCitas] = useState(false);
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderDropdownOpen, setOrderDropdownOpen] = useState(false);
   const [form, setForm] = useState({
     orden_admision_id: "",
     fecha_cita: toYmd(new Date()),
@@ -244,6 +251,31 @@ export default function CitasRecepcion() {
         .some((val) => val.includes(q))
     );
   }, [citas, search]);
+
+  const selectedOrder = useMemo(
+    () => orders.find((order) => String(order.id) === String(form.orden_admision_id || "")) || null,
+    [orders, form.orden_admision_id]
+  );
+  const filteredOrders = useMemo(() => {
+    const q = orderQuery.trim().toLowerCase();
+    if (!q) return orders.slice(0, 50);
+    return orders
+      .filter((order) =>
+        [order.id, order.reporte_siniestro, order.nb_cliente, order.placas, order.marca_vehiculo, order.tipo_vehiculo]
+          .map((value) => String(value || "").toLowerCase())
+          .some((value) => value.includes(q))
+      )
+      .slice(0, 50);
+  }, [orders, orderQuery]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (!form.orden_admision_id) {
+      setOrderQuery("");
+      return;
+    }
+    setOrderQuery(formatOrderLabel(selectedOrder));
+  }, [isModalOpen, form.orden_admision_id, selectedOrder]);
 
   const citasDelDia = useMemo(
     () =>
@@ -1028,22 +1060,59 @@ export default function CitasRecepcion() {
                     Orden de Admisión
                   </label>
                   <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">search</span>
-                    <select
-                      className="w-full pl-12 pr-10 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white appearance-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-                      value={form.orden_admision_id}
-                      onChange={(event) => setForm((prev) => ({ ...prev, orden_admision_id: event.target.value }))}
-                      required
-                    >
-                      <option value="">Buscar por ID o Nombre de Cliente...</option>
-                      {orders.map((order) => (
-                        <option key={order.id} value={order.id}>
-                          #{order.id} - {order.reporte_siniestro} - {order.nb_cliente}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">expand_more</span>
+                    <span className="material-symbols-outlined absolute left-4 top-3.5 text-slate-500">search</span>
+                    <input
+                      type="text"
+                      className="w-full pl-12 pr-10 py-3.5 bg-background-dark/70 border border-border-dark rounded-lg text-white placeholder:text-slate-500 focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                      placeholder="Buscar por ID o Nombre de Cliente..."
+                      value={orderQuery}
+                      onFocus={() => setOrderDropdownOpen(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => {
+                          setOrderDropdownOpen(false);
+                          if (form.orden_admision_id) {
+                            setOrderQuery(formatOrderLabel(selectedOrder));
+                          }
+                        }, 120);
+                      }}
+                      onChange={(event) => {
+                        setOrderQuery(event.target.value);
+                        setOrderDropdownOpen(true);
+                        if (form.orden_admision_id) {
+                          setForm((prev) => ({ ...prev, orden_admision_id: "" }));
+                        }
+                      }}
+                    />
+                    <span className="material-symbols-outlined absolute right-4 top-3.5 text-slate-500 pointer-events-none">expand_more</span>
+                    {orderDropdownOpen ? (
+                      <div className="absolute z-40 mt-2 w-full max-h-56 overflow-auto rounded-lg border border-border-dark bg-background-dark shadow-2xl custom-scrollbar">
+                        {!filteredOrders.length ? (
+                          <p className="px-4 py-3 text-sm text-slate-400">Sin resultados.</p>
+                        ) : (
+                          filteredOrders.map((order) => {
+                            const isSelected = String(order.id) === String(form.orden_admision_id || "");
+                            return (
+                              <button
+                                key={order.id}
+                                type="button"
+                                className={`w-full text-left px-4 py-2.5 text-sm border-b border-border-dark last:border-b-0 transition-colors ${
+                                  isSelected ? "bg-primary/15 text-white" : "text-slate-200 hover:bg-surface-dark"
+                                }`}
+                                onMouseDown={() => {
+                                  setForm((prev) => ({ ...prev, orden_admision_id: String(order.id) }));
+                                  setOrderQuery(formatOrderLabel(order));
+                                  setOrderDropdownOpen(false);
+                                }}
+                              >
+                                {formatOrderLabel(order)}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    ) : null}
                   </div>
+                  {!form.orden_admision_id ? <p className="text-[11px] text-slate-500">Selecciona una orden para continuar.</p> : null}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

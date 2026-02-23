@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar.jsx";
 import SearchableSelect from "../../components/SearchableSelect.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import { getSession } from "../../utils/auth.js";
 
 const STOPWORDS = new Set([
   "DE",
@@ -39,6 +40,33 @@ const tokenize = (value) =>
     .split(" ")
     .map((token) => token.trim())
     .filter((token) => token.length > 1 && !STOPWORDS.has(token));
+
+const COLUMN_DEFS = [
+  { key: "aseguradora_1", label: "Aseguradora", cellClass: "text-slate-300", getValue: (r) => r.seguro_comp || "-" },
+  { key: "reporte", label: "Reporte/Siniestro", cellClass: "text-primary font-bold", getValue: (r) => r.reporte_siniestro || "-" },
+  { key: "fecha", label: "Fecha admision", cellClass: "text-slate-300", getValue: (r) => r.fecha_adm || "-" },
+  { key: "hora", label: "Hora admision", cellClass: "text-slate-300", getValue: (r) => r.hr_adm || "-" },
+  { key: "cliente", label: "Cliente", cellClass: "text-white font-semibold", getValue: (r) => r.nb_cliente || "-" },
+  { key: "aseguradora_2", label: "Aseguradora", cellClass: "text-slate-300", getValue: (r) => r.seguro_comp || "-" },
+  { key: "telefono", label: "Telefono", cellClass: "text-slate-300", getValue: (r) => r.tel_cliente || "-" },
+  { key: "email", label: "Email", cellClass: "text-slate-300", getValue: (r) => r.email_cliente || "-" },
+  {
+    key: "vehiculo",
+    label: "Vehiculo",
+    cellClass: "text-slate-300",
+    getValue: (r) => [r.marca_vehiculo, r.tipo_vehiculo, r.modelo_anio].filter(Boolean).join(" ")
+  },
+  { key: "placas", label: "Placas", cellClass: "text-slate-300 font-mono uppercase text-xs", getValue: (r) => r.placas || "-" },
+  { key: "kilometraje", label: "Kilometraje", cellClass: "text-slate-300", getValue: (r) => r.kilometraje || "-" },
+  { key: "transmision", label: "Transmisión", cellClass: "text-slate-300", getValue: (r) => r.transmision || "-" },
+  { key: "danos_siniestro", label: "Danos siniestro", cellClass: "text-slate-300", getValue: (r) => r.danos_siniestro || "-" },
+  { key: "descripcion_siniestro", label: "Descripcion siniestro", cellClass: "text-slate-300", getValue: (r) => r.descripcion_siniestro || "-" },
+  { key: "danos_preexistentes", label: "Danos preexistentes", cellClass: "text-slate-300", getValue: (r) => r.danos_preexistentes || "-" },
+  { key: "descripcion_preexistentes", label: "Descripcion danos preexistentes", cellClass: "text-slate-300", getValue: (r) => r.descripcion_danospreex || "-" },
+  { key: "registro", label: "Registro", cellClass: "text-slate-300", getValue: (r) => r.created_at || "-" }
+];
+
+const DEFAULT_COLUMN_ORDER = COLUMN_DEFS.map((column) => column.key);
 
 function matchCatalogPartsFromDescription(description, catalogParts = []) {
   if (!description || !catalogParts.length) return [];
@@ -95,6 +123,11 @@ function matchCatalogPartsFromDescription(description, catalogParts = []) {
 
 export default function OrdenAdmision() {
   const navigate = useNavigate();
+  const session = getSession();
+  const userKey = String(session?.id || session?.user_name || session?.email || "anon").toLowerCase();
+  const sessionKey = String(session?.session_started_at || "no-session");
+  const storageKey = `lmcc:ordenes:columns:${userKey}`;
+  const sessionStorageKey = `lmcc:ordenes:columns:${userKey}:${sessionKey}`;
   const [records, setRecords] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [grupos, setGrupos] = useState([]);
@@ -104,6 +137,10 @@ export default function OrdenAdmision() {
   const [grupoSeleccionado, setGrupoSeleccionado] = useState("");
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [showColumnManager, setShowColumnManager] = useState(false);
+  const [draggingColumnKey, setDraggingColumnKey] = useState(null);
+  const [columnOrder, setColumnOrder] = useState(DEFAULT_COLUMN_ORDER);
+  const [hiddenColumns, setHiddenColumns] = useState([]);
   const [filters, setFilters] = useState({
     fechaInicio: "",
     fechaFin: "",
@@ -209,6 +246,35 @@ export default function OrdenAdmision() {
 
     loadCatalogos();
   }, []);
+
+  useEffect(() => {
+    const parsePrefs = (raw) => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return null;
+        const orderCandidate = Array.isArray(parsed.order) ? parsed.order.filter((key) => DEFAULT_COLUMN_ORDER.includes(key)) : [];
+        const hiddenCandidate = Array.isArray(parsed.hidden) ? parsed.hidden.filter((key) => DEFAULT_COLUMN_ORDER.includes(key)) : [];
+        const fullOrder = [...orderCandidate, ...DEFAULT_COLUMN_ORDER.filter((key) => !orderCandidate.includes(key))];
+        return { order: fullOrder, hidden: hiddenCandidate };
+      } catch {
+        return null;
+      }
+    };
+
+    const sessionPrefs = parsePrefs(sessionStorage.getItem(sessionStorageKey));
+    const localPrefs = parsePrefs(localStorage.getItem(storageKey));
+    const prefs = sessionPrefs || localPrefs;
+    if (!prefs) return;
+    setColumnOrder(prefs.order);
+    setHiddenColumns(prefs.hidden);
+  }, [sessionStorageKey, storageKey]);
+
+  useEffect(() => {
+    const payload = JSON.stringify({ order: columnOrder, hidden: hiddenColumns });
+    sessionStorage.setItem(sessionStorageKey, payload);
+    localStorage.setItem(storageKey, payload);
+  }, [columnOrder, hiddenColumns, sessionStorageKey, storageKey]);
 
   useEffect(() => {
     if (!form.descripcion_siniestro || danosSiniestroParts.length || !partesAuto.length) return;
@@ -694,6 +760,37 @@ export default function OrdenAdmision() {
     [filters]
   );
 
+  const columnDefMap = useMemo(
+    () => Object.fromEntries(COLUMN_DEFS.map((column) => [column.key, column])),
+    []
+  );
+  const visibleColumns = useMemo(
+    () => columnOrder.filter((key) => !hiddenColumns.includes(key)).map((key) => columnDefMap[key]).filter(Boolean),
+    [columnOrder, hiddenColumns, columnDefMap]
+  );
+
+  const moveColumn = (dragKey, targetKey) => {
+    if (!dragKey || !targetKey || dragKey === targetKey) return;
+    setColumnOrder((prev) => {
+      const next = [...prev];
+      const fromIndex = next.indexOf(dragKey);
+      const toIndex = next.indexOf(targetKey);
+      if (fromIndex < 0 || toIndex < 0) return prev;
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const toggleColumnVisibility = (key) => {
+    setHiddenColumns((prev) => {
+      if (prev.includes(key)) return prev.filter((item) => item !== key);
+      const currentlyVisible = DEFAULT_COLUMN_ORDER.filter((columnKey) => !prev.includes(columnKey));
+      if (currentlyVisible.length <= 1) return prev;
+      return [...prev, key];
+    });
+  };
+
   const marcasFiltradas = useMemo(() => {
     if (!grupoSeleccionado) return marcas;
     return marcas.filter((marca) => marca.gpo_marca === grupoSeleccionado);
@@ -856,14 +953,26 @@ export default function OrdenAdmision() {
             searchValue={query}
             onSearchChange={setQuery}
             actions={
-              <button
-                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-primary/10"
-                type="button"
-                onClick={openModal}
-              >
-                <span className="material-symbols-outlined text-sm">add</span>
-                Nueva orden
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="flex items-center gap-2 bg-surface-dark border border-border-dark hover:border-primary/50 text-slate-200 px-3 py-2 rounded-lg text-sm font-bold transition-all"
+                  type="button"
+                  onClick={() => setShowColumnManager((prev) => !prev)}
+                  aria-expanded={showColumnManager}
+                  aria-controls="column-manager-panel"
+                >
+                  <span className="material-symbols-outlined text-sm">view_column</span>
+                  Columnas
+                </button>
+                <button
+                  className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-primary/10"
+                  type="button"
+                  onClick={openModal}
+                >
+                  <span className="material-symbols-outlined text-sm">add</span>
+                  Nueva orden
+                </button>
+              </div>
             }
           />
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
@@ -1000,6 +1109,66 @@ export default function OrdenAdmision() {
               ) : null}
             </section>
 
+            {showColumnManager ? (
+              <section
+                id="column-manager-panel"
+                className="bg-surface-dark border border-border-dark rounded-xl p-4"
+                role="region"
+                aria-label="Configuración de columnas"
+              >
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="text-sm font-bold text-white">Configurar columnas</h3>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 text-xs rounded-lg border border-border-dark text-slate-300 hover:text-white"
+                    onClick={() => {
+                      setColumnOrder(DEFAULT_COLUMN_ORDER);
+                      setHiddenColumns([]);
+                    }}
+                  >
+                    Restaurar por defecto
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400 mb-3">
+                  Arrastra para cambiar orden. Marca/desmarca para ocultar o mostrar.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {columnOrder.map((columnKey) => {
+                    const column = columnDefMap[columnKey];
+                    if (!column) return null;
+                    const visible = !hiddenColumns.includes(columnKey);
+                    return (
+                      <div
+                        key={`col-config-${columnKey}`}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border-dark bg-background-dark px-3 py-2"
+                        draggable
+                        onDragStart={() => setDraggingColumnKey(columnKey)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => {
+                          moveColumn(draggingColumnKey, columnKey);
+                          setDraggingColumnKey(null);
+                        }}
+                        onDragEnd={() => setDraggingColumnKey(null)}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="material-symbols-outlined text-slate-500 text-base">drag_indicator</span>
+                          <span className="text-sm text-slate-200 truncate">{column.label}</span>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={visible}
+                            onChange={() => toggleColumnVisibility(columnKey)}
+                          />
+                          Visible
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             <div className="overflow-x-auto custom-scrollbar bg-surface-dark border border-border-dark rounded-xl">
               <table className="min-w-[1200px] w-full text-left border-collapse">
                 <caption className="sr-only">
@@ -1007,57 +1176,26 @@ export default function OrdenAdmision() {
                 </caption>
                 <thead>
                   <tr className="bg-background-dark/50">
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Aseguradora
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Reporte/Siniestro
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Fecha admision
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Hora admision
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Cliente
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Aseguradora
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Telefono
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Email
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Vehiculo
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Placas
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Kilometraje
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Transmisión
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Danos siniestro
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Descripcion siniestro
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Danos preexistentes
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Descripcion danos preexistentes
-                    </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Registro
-                    </th>
+                    {visibleColumns.map((column) => (
+                      <th
+                        key={`th-${column.key}`}
+                        className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark cursor-move select-none"
+                        draggable
+                        onDragStart={() => setDraggingColumnKey(column.key)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => {
+                          moveColumn(draggingColumnKey, column.key);
+                          setDraggingColumnKey(null);
+                        }}
+                        onDragEnd={() => setDraggingColumnKey(null)}
+                        title="Arrastra para reordenar columna"
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm text-slate-600">drag_indicator</span>
+                          {column.label}
+                        </span>
+                      </th>
+                    ))}
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-right">
                       Acciones
                     </th>
@@ -1066,53 +1204,30 @@ export default function OrdenAdmision() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-500" colSpan={17}>
+                      <td className="px-4 py-6 text-sm text-slate-500" colSpan={visibleColumns.length + 1}>
                         No hay ordenes de admision para mostrar.
                       </td>
                     </tr>
                   ) : (
                     filtered.map((record) => (
                       <tr key={record.id} className="border-b border-border-dark/50 hover:bg-white/5">
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.seguro_comp}</td>
-                        <td className="px-4 py-3 text-sm text-primary font-bold">
-                          {record.reporte_siniestro}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.fecha_adm}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.hr_adm}</td>
-                        <td className="px-4 py-3 text-sm text-white font-semibold">
-                          {record.nb_cliente}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.seguro_comp}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.tel_cliente}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.email_cliente}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
-                          {[record.marca_vehiculo, record.tipo_vehiculo, record.modelo_anio]
-                            .filter(Boolean)
-                            .join(" ")}
-                          {record.color_vehiculo ? (
-                            <span className="text-[10px] text-slate-500 block">
-                              {record.color_vehiculo}
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-300 font-mono uppercase">
-                          {record.placas}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.kilometraje}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.transmision || "-"}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
-                          {record.danos_siniestro}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
-                          {record.descripcion_siniestro}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
-                          {record.danos_preexistentes}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
-                          {record.descripcion_danospreex}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{record.created_at}</td>
+                        {visibleColumns.map((column) => {
+                          const value = column.getValue(record);
+                          return (
+                            <td key={`td-${record.id}-${column.key}`} className={`px-4 py-3 text-sm ${column.cellClass || "text-slate-300"}`}>
+                              {column.key === "vehiculo" ? (
+                                <>
+                                  {value || "-"}
+                                  {record.color_vehiculo ? (
+                                    <span className="text-[10px] text-slate-500 block">{record.color_vehiculo}</span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                value
+                              )}
+                            </td>
+                          );
+                        })}
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-2">
                             <button

@@ -10,6 +10,21 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 from app.modules.administracion.rpa_routes import router as rpa_router
 router.include_router(rpa_router)
 
+# Importar y registrar rutas de Qualitas (indicadores)
+from app.modules.administracion.qualitas_indicadores import router as qualitas_router
+router.include_router(qualitas_router)
+
+# Importar y registrar rutas de cola de RPA
+from app.modules.administracion.rpa_queue import router as rpa_queue_router
+router.include_router(rpa_queue_router)
+
+# Importar scheduler para iniciarlo automáticamente
+try:
+    from app.modules.administracion import rpa_scheduler
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error(f"Error cargando scheduler: {e}")
+
 
 @router.get("/health")
 def health_check():

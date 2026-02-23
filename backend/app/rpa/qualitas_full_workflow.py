@@ -125,7 +125,7 @@ async def solve_recaptcha_2captcha(site_key: str, page_url: str) -> str:
         
         # Poll por resultado con manejo de errores
         result_url = "https://2captcha.com/res.php"
-        max_wait = 180
+        max_wait = 300  # 5 minutos
         consecutive_errors = 0
         
         for attempt in range(max_wait // 5):
@@ -291,6 +291,24 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 dashboard_url = get_credential("QUALITAS_LOGIN_URL", use_db) or "https://proordersistem.com.mx/"
                 await page.goto(f"{dashboard_url.rstrip('/')}/dashboard", wait_until="networkidle")
                 await asyncio.sleep(2)
+                
+                # Verificar si la sesión sigue válida
+                current_url = page.url.lower()
+                if "login" in current_url or "log-in" in current_url or "signin" in current_url:
+                    print("[Session] ⚠ Sesión expirada - Redirigido a login")
+                    raise RuntimeError("SESSION_EXPIRED: La sesión ha expirado, se requiere login completo")
+                
+                # Verificar que estamos en el dashboard
+                if "dashboard" not in current_url:
+                    print(f"[Session] ⚠ URL inesperada: {current_url}")
+                    # Intentar navegar al dashboard nuevamente
+                    await page.goto(f"{dashboard_url.rstrip('/')}/dashboard", wait_until="networkidle")
+                    await asyncio.sleep(2)
+                    
+                    # Verificar nuevamente
+                    current_url = page.url.lower()
+                    if "dashboard" not in current_url:
+                        raise RuntimeError("SESSION_EXPIRED: No se pudo acceder al dashboard, sesión posiblemente expirada")
             
             # Manejar modal de aviso (si aparece)
             print("\n[2/4] VERIFICANDO MODAL DE AVISO")
@@ -321,6 +339,11 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
             if save_json:
                 filepath = extractor.save_to_file(data)
                 print(f"\n[JSON] Guardado en: {filepath}")
+            
+            # Nota: El guardado en DB se hace desde el worker, no desde el RPA
+            # porque el subprocess no tiene acceso a la red del contenedor
+            print("\n[DB] Los datos se guardarán en la base de datos por el worker")
+            print("[DB] Archivo JSON generado para el worker")
             
             # Click en estatus específico si se solicitó
             if click_status:

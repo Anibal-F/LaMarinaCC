@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 import json
 import os
@@ -13,7 +13,7 @@ from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.etree import ElementTree as ET
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from reportlab.graphics import renderPDF
@@ -955,6 +955,35 @@ def ensure_orden_admision_transmision_column(conn):
     )
 
 
+def ensure_recepcion_citas_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recepcion_citas (
+            id BIGSERIAL PRIMARY KEY,
+            orden_admision_id BIGINT NOT NULL REFERENCES orden_admision(id) ON DELETE CASCADE,
+            fecha_cita DATE NOT NULL,
+            hora_cita TIME NOT NULL,
+            estado VARCHAR(30) NOT NULL DEFAULT 'Programada',
+            notas TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_recepcion_citas_fecha_hora
+        ON recepcion_citas(fecha_cita, hora_cita)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_recepcion_citas_orden
+        ON recepcion_citas(orden_admision_id)
+        """
+    )
+
+
 def _draw_wrapped_text(
     pdf: canvas.Canvas,
     text: str,
@@ -1485,6 +1514,202 @@ def list_ordenes_admision():
         ).fetchall()
 
     return rows
+
+
+class CitaCreate(BaseModel):
+    orden_admision_id: int
+    fecha_cita: date
+    hora_cita: str
+    estado: Optional[str] = "Programada"
+    notas: Optional[str] = None
+
+
+class CitaUpdate(BaseModel):
+    orden_admision_id: Optional[int] = None
+    fecha_cita: Optional[date] = None
+    hora_cita: Optional[str] = None
+    estado: Optional[str] = None
+    notas: Optional[str] = None
+
+
+def _normalize_cita_estado(raw_estado: Optional[str]) -> str:
+    estado = str(raw_estado or "Programada").strip().lower()
+    mapping = {
+        "programada": "Programada",
+        "confirmada": "Confirmada",
+        "reprogramada": "Reprogramada",
+        "en espera": "En espera",
+        "demorada": "Demorada",
+        "cancelada": "Cancelada",
+        "completada": "Completada",
+        "no show": "No show",
+        "no-show": "No show",
+    }
+    return mapping.get(estado, "Programada")
+
+
+@router.get("/citas")
+def list_citas(
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+):
+    with get_connection() as conn:
+        ensure_recepcion_citas_table(conn)
+        conn.row_factory = dict_row
+        filters = []
+        params: list[object] = []
+        if from_date:
+            filters.append("c.fecha_cita >= %s")
+            params.append(from_date)
+        if to_date:
+            filters.append("c.fecha_cita <= %s")
+            params.append(to_date)
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        rows = conn.execute(
+            f"""
+            SELECT
+                c.id,
+                c.orden_admision_id,
+                c.fecha_cita,
+                c.hora_cita,
+                c.estado,
+                c.notas,
+                c.created_at,
+                c.updated_at,
+                o.reporte_siniestro,
+                o.nb_cliente,
+                o.tel_cliente,
+                o.seguro_comp,
+                o.placas,
+                o.marca_vehiculo,
+                o.tipo_vehiculo,
+                o.modelo_anio,
+                o.color_vehiculo
+            FROM recepcion_citas c
+            JOIN orden_admision o ON o.id = c.orden_admision_id
+            {where}
+            ORDER BY c.fecha_cita ASC, c.hora_cita ASC, c.id ASC
+            """,
+            params,
+        ).fetchall()
+    return rows
+
+
+@router.get("/citas/resumen")
+def resumen_citas(
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+):
+    with get_connection() as conn:
+        ensure_recepcion_citas_table(conn)
+        conn.row_factory = dict_row
+        filters = []
+        params: list[object] = []
+        if from_date:
+            filters.append("fecha_cita >= %s")
+            params.append(from_date)
+        if to_date:
+            filters.append("fecha_cita <= %s")
+            params.append(to_date)
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        rows = conn.execute(
+            f"""
+            SELECT
+                fecha_cita,
+                COUNT(*)::int AS total_citas,
+                COUNT(*) FILTER (WHERE estado IN ('Programada', 'Confirmada', 'Reprogramada', 'En espera', 'Demorada'))::int AS pendientes,
+                COUNT(*) FILTER (WHERE estado = 'Cancelada')::int AS canceladas,
+                COUNT(*) FILTER (WHERE estado = 'Completada')::int AS completadas
+            FROM recepcion_citas
+            {where}
+            GROUP BY fecha_cita
+            ORDER BY fecha_cita ASC
+            """,
+            params,
+        ).fetchall()
+    return rows
+
+
+@router.post("/citas", status_code=status.HTTP_201_CREATED)
+def create_cita(payload: CitaCreate):
+    estado = _normalize_cita_estado(payload.estado)
+    with get_connection() as conn:
+        ensure_recepcion_citas_table(conn)
+        conn.row_factory = dict_row
+        orden = conn.execute(
+            "SELECT id FROM orden_admision WHERE id = %s",
+            (payload.orden_admision_id,),
+        ).fetchone()
+        if not orden:
+            raise HTTPException(status_code=404, detail="Orden de admision no encontrada")
+
+        row = conn.execute(
+            """
+            INSERT INTO recepcion_citas (
+                orden_admision_id,
+                fecha_cita,
+                hora_cita,
+                estado,
+                notas
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, orden_admision_id, fecha_cita, hora_cita, estado, notas, created_at, updated_at
+            """,
+            (
+                payload.orden_admision_id,
+                payload.fecha_cita,
+                payload.hora_cita,
+                estado,
+                payload.notas,
+            ),
+        ).fetchone()
+    return row
+
+
+@router.put("/citas/{cita_id}")
+def update_cita(cita_id: int, payload: CitaUpdate):
+    updates = {key: value for key, value in payload.model_dump().items() if value is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="Sin cambios para actualizar")
+
+    if "estado" in updates:
+        updates["estado"] = _normalize_cita_estado(updates["estado"])
+
+    with get_connection() as conn:
+        ensure_recepcion_citas_table(conn)
+        if "orden_admision_id" in updates:
+            exists = conn.execute(
+                "SELECT id FROM orden_admision WHERE id = %s",
+                (updates["orden_admision_id"],),
+            ).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Orden de admision no encontrada")
+
+        fields = ", ".join([f"{key} = %s" for key in updates.keys()] + ["updated_at = NOW()"])
+        values = list(updates.values()) + [cita_id]
+        row = conn.execute(
+            f"""
+            UPDATE recepcion_citas
+            SET {fields}
+            WHERE id = %s
+            RETURNING id, orden_admision_id, fecha_cita, hora_cita, estado, notas, created_at, updated_at
+            """,
+            values,
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+    return row
+
+
+@router.delete("/citas/{cita_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_cita(cita_id: int):
+    with get_connection() as conn:
+        ensure_recepcion_citas_table(conn)
+        result = conn.execute("DELETE FROM recepcion_citas WHERE id = %s", (cita_id,))
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+    return None
 
 
 class OrdenAdmisionCreate(BaseModel):

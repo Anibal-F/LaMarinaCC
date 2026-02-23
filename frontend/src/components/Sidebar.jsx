@@ -226,6 +226,19 @@ export default function Sidebar() {
                 directions_car
               </span>
             </NavLink>
+            <NavLink
+              to="/recepcion/citas"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Agenda de citas</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">
+                calendar_month
+              </span>
+            </NavLink>
           </>
         ) : null}
         <button

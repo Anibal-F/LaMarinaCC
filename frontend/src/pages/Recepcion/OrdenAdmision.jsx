@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import SearchableSelect from "../../components/SearchableSelect.jsx";
@@ -93,6 +94,7 @@ function matchCatalogPartsFromDescription(description, catalogParts = []) {
 }
 
 export default function OrdenAdmision() {
+  const navigate = useNavigate();
   const [records, setRecords] = useState([]);
   const [grupos, setGrupos] = useState([]);
   const [marcas, setMarcas] = useState([]);
@@ -882,6 +884,16 @@ export default function OrdenAdmision() {
                               disabled={!record.archivo_path}
                             >
                               <span className="material-symbols-outlined text-lg">visibility</span>
+                            </button>
+                            <button
+                              className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-slate-400 transition-colors"
+                              title="Agendar cita"
+                              type="button"
+                              onClick={() =>
+                                navigate(`/recepcion/citas?orderId=${encodeURIComponent(record.id)}`)
+                              }
+                            >
+                              <span className="material-symbols-outlined text-lg">event</span>
                             </button>
                             <button
                               className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-slate-400 transition-colors"

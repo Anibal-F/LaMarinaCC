@@ -10,6 +10,7 @@ import AdminCredenciales from "./pages/Admin/Credenciales.jsx";
 import Recepcion from "./pages/Recepcion/Recepcion.jsx";
 import RecepcionForm from "./pages/Recepcion/RecepcionForm.jsx";
 import OrdenAdmision from "./pages/Recepcion/OrdenAdmision.jsx";
+import CitasRecepcion from "./pages/Recepcion/CitasRecepcion.jsx";
 import CatalogoClientes from "./pages/Catalogos/Clientes.jsx";
 import CatalogoGruposAutos from "./pages/Catalogos/GruposAutos.jsx";
 import CatalogoMarcasAutos from "./pages/Catalogos/MarcasAutos.jsx";
@@ -62,6 +63,10 @@ export default function App() {
       <Route
         path="/recepcion/ordenes"
         element={authenticated ? <OrdenAdmision /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/recepcion/citas"
+        element={authenticated ? <CitasRecepcion /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/recepcion/nuevo"

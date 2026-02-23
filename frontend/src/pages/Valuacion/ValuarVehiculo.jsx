@@ -148,6 +148,8 @@ export default function ValuarVehiculo() {
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
   const [operations, setOperations] = useState([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
 
   useEffect(() => {
     if (record || !id) return;
@@ -469,6 +471,42 @@ export default function ValuarVehiculo() {
       setUploadError(err.message || "No se pudo subir la evidencia.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleGenerateSuggestions = async () => {
+    if (!record?.id) return;
+    setSuggesting(true);
+    setSuggestionError("");
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/valuacion/ordenes/${record.id}/sugerencias?limit=30`
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudieron generar sugerencias.");
+      }
+      const payload = await response.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      if (!items.length) {
+        setSuggestionError("No se encontraron sugerencias para esta unidad.");
+        return;
+      }
+      setOperations(
+        items.map((item) => ({
+          id: crypto.randomUUID(),
+          tipo: item?.tipo || "SUST",
+          descripcion: item?.descripcion || "",
+          mano_obra: Number(item?.mano_obra || 0),
+          pintura: Number(item?.pintura || 0),
+          refacciones: Number(item?.refacciones || 0),
+          monto: Number(item?.monto || 0)
+        }))
+      );
+    } catch (err) {
+      setSuggestionError(err.message || "No se pudieron generar sugerencias.");
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -1253,28 +1291,44 @@ export default function ValuarVehiculo() {
                         <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
                           Lista de operaciones
                         </h3>
-                        <button
-                          className="flex items-center gap-1 bg-primary px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider"
-                          type="button"
-                          onClick={() =>
-                            setOperations((prev) => [
-                              ...prev,
-                              {
-                                id: crypto.randomUUID(),
-                                tipo: "MO",
-                                descripcion: "",
-                                mano_obra: 0,
-                                pintura: 0,
-                                refacciones: 0,
-                                monto: 0
-                              }
-                            ])
-                          }
-                        >
-                          <span className="material-symbols-outlined text-sm">add</span>
-                          Anadir operacion
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="flex items-center gap-1 bg-surface-dark border border-border-dark px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider hover:border-primary/60"
+                            type="button"
+                            onClick={handleGenerateSuggestions}
+                            disabled={suggesting}
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              {suggesting ? "autorenew" : "auto_fix_high"}
+                            </span>
+                            {suggesting ? "Generando..." : "Generar sugerencia"}
+                          </button>
+                          <button
+                            className="flex items-center gap-1 bg-primary px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider"
+                            type="button"
+                            onClick={() =>
+                              setOperations((prev) => [
+                                ...prev,
+                                {
+                                  id: crypto.randomUUID(),
+                                  tipo: "MO",
+                                  descripcion: "",
+                                  mano_obra: 0,
+                                  pintura: 0,
+                                  refacciones: 0,
+                                  monto: 0
+                                }
+                              ])
+                            }
+                          >
+                            <span className="material-symbols-outlined text-sm">add</span>
+                            Anadir operacion
+                          </button>
+                        </div>
                       </div>
+                      {suggestionError ? (
+                        <p className="text-[11px] text-alert-red">{suggestionError}</p>
+                      ) : null}
 
                       <div className="overflow-x-auto border border-border-dark rounded-lg bg-background-dark/50">
                         <table className="w-full min-w-[860px] table-fixed text-left">

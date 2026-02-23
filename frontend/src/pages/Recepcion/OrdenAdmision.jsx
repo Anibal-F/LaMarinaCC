@@ -96,12 +96,27 @@ function matchCatalogPartsFromDescription(description, catalogParts = []) {
 export default function OrdenAdmision() {
   const navigate = useNavigate();
   const [records, setRecords] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [grupos, setGrupos] = useState([]);
   const [marcas, setMarcas] = useState([]);
   const [aseguradoras, setAseguradoras] = useState([]);
   const [partesAuto, setPartesAuto] = useState([]);
   const [grupoSeleccionado, setGrupoSeleccionado] = useState("");
   const [query, setQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    fechaInicio: "",
+    fechaFin: "",
+    reporte: "",
+    aseguradora: "",
+    cliente: "",
+    marca: "",
+    tipo: "",
+    modelo: "",
+    anio: "",
+    placas: "",
+    serie: ""
+  });
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -165,11 +180,12 @@ export default function OrdenAdmision() {
   useEffect(() => {
     const loadCatalogos = async () => {
       try {
-        const [gruposRes, marcasRes, aseguradorasRes, partesRes] = await Promise.all([
+        const [gruposRes, marcasRes, aseguradorasRes, partesRes, clientesRes] = await Promise.all([
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/grupos-autos`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/marcas-autos`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/aseguradoras`),
-          fetch(`${import.meta.env.VITE_API_URL}/catalogos/partes-auto`)
+          fetch(`${import.meta.env.VITE_API_URL}/catalogos/partes-auto`),
+          fetch(`${import.meta.env.VITE_API_URL}/clientes`)
         ]);
         if (gruposRes.ok) {
           setGrupos(await gruposRes.json());
@@ -182,6 +198,9 @@ export default function OrdenAdmision() {
         }
         if (partesRes.ok) {
           setPartesAuto(await partesRes.json());
+        }
+        if (clientesRes.ok) {
+          setClientes(await clientesRes.json());
         }
       } catch {
         // ignore catalog load errors
@@ -590,19 +609,90 @@ export default function OrdenAdmision() {
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return records;
-    }
-
     return records.filter((record) => {
-      return (
-        String(record.reporte_siniestro || "").toLowerCase().includes(normalizedQuery) ||
-        (record.nb_cliente || "").toLowerCase().includes(normalizedQuery) ||
-        (record.tel_cliente || "").toLowerCase().includes(normalizedQuery) ||
-        (record.placas || "").toLowerCase().includes(normalizedQuery)
-      );
+      const report = String(record.reporte_siniestro || "").toLowerCase();
+      const cliente = String(record.nb_cliente || "").toLowerCase();
+      const telefono = String(record.tel_cliente || "").toLowerCase();
+      const placas = String(record.placas || "").toLowerCase();
+      const seguro = String(record.seguro_comp || "").toLowerCase();
+      const marca = String(record.marca_vehiculo || "").toLowerCase();
+      const tipo = String(record.tipo_vehiculo || "").toLowerCase();
+      const modelo = String(record.modelo_anio || "").toLowerCase();
+      const serie = String(record.serie_auto || "").toLowerCase();
+      const fechaAdm = String(record.fecha_adm || "").slice(0, 10);
+
+      const matchesGlobal =
+        !normalizedQuery ||
+        report.includes(normalizedQuery) ||
+        cliente.includes(normalizedQuery) ||
+        telefono.includes(normalizedQuery) ||
+        placas.includes(normalizedQuery);
+      if (!matchesGlobal) return false;
+
+      const filterReporte = String(filters.reporte || "").trim().toLowerCase();
+      if (filterReporte && !report.includes(filterReporte)) return false;
+
+      if (filters.aseguradora && seguro !== String(filters.aseguradora).toLowerCase()) return false;
+
+      if (filters.cliente && cliente !== String(filters.cliente).toLowerCase()) return false;
+
+      if (filters.fechaInicio && fechaAdm < filters.fechaInicio) return false;
+      if (filters.fechaFin && fechaAdm > filters.fechaFin) return false;
+
+      const filterMarca = String(filters.marca || "").trim().toLowerCase();
+      if (filterMarca && !marca.includes(filterMarca)) return false;
+
+      const filterTipo = String(filters.tipo || "").trim().toLowerCase();
+      if (filterTipo && !tipo.includes(filterTipo)) return false;
+
+      const filterModelo = String(filters.modelo || "").trim().toLowerCase();
+      if (filterModelo && !modelo.includes(filterModelo)) return false;
+
+      const filterAnio = String(filters.anio || "").trim();
+      if (filterAnio && !modelo.includes(filterAnio)) return false;
+
+      const filterPlacas = String(filters.placas || "").trim().toLowerCase();
+      if (filterPlacas && !placas.includes(filterPlacas)) return false;
+
+      const filterSerie = String(filters.serie || "").trim().toLowerCase();
+      if (filterSerie && !serie.includes(filterSerie)) return false;
+
+      return true;
     });
-  }, [records, query]);
+  }, [records, query, filters]);
+
+  const aseguradoraOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          aseguradoras
+            .map((item) => String(item.nb_aseguradora || "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "es-MX")),
+    [aseguradoras]
+  );
+
+  const clienteOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          clientes
+            .map((item) => String(item.nb_cliente || "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "es-MX")),
+    [clientes]
+  );
+
+  const activeFilterCount = useMemo(
+    () =>
+      Object.values(filters).reduce(
+        (count, value) => (String(value || "").trim() ? count + 1 : count),
+        0
+      ),
+    [filters]
+  );
 
   const marcasFiltradas = useMemo(() => {
     if (!grupoSeleccionado) return marcas;
@@ -734,6 +824,26 @@ export default function OrdenAdmision() {
     }
   };
 
+  const handleFilterChange = (field) => (event) => {
+    setFilters((prev) => ({ ...prev, [field]: event.target.value }));
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      fechaInicio: "",
+      fechaFin: "",
+      reporte: "",
+      aseguradora: "",
+      cliente: "",
+      marca: "",
+      tipo: "",
+      modelo: "",
+      anio: "",
+      placas: "",
+      serie: ""
+    });
+  };
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
@@ -759,8 +869,142 @@ export default function OrdenAdmision() {
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
             {error ? <p className="text-sm text-alert-red">{error}</p> : null}
 
+            <section className="bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-border-dark flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Filtros avanzados</h3>
+                  <p className="text-xs text-slate-400">
+                    Refina por fecha, aseguradora, cliente y datos del vehiculo.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-xs text-slate-300"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  >
+                    {filtered.length} resultado(s)
+                  </span>
+                  {activeFilterCount > 0 ? (
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 text-xs rounded-lg border border-border-dark text-slate-300 hover:text-white"
+                      onClick={clearFilters}
+                    >
+                      Limpiar filtros
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 text-xs rounded-lg border border-border-dark text-slate-300 hover:text-white flex items-center gap-1"
+                    aria-expanded={showFilters}
+                    aria-controls="ordenes-filtros-panel"
+                    onClick={() => setShowFilters((prev) => !prev)}
+                  >
+                    <span className="material-symbols-outlined text-base">
+                      {showFilters ? "expand_less" : "expand_more"}
+                    </span>
+                    {showFilters ? "Ocultar" : "Mostrar"}
+                  </button>
+                </div>
+              </div>
+              {showFilters ? (
+                <div id="ordenes-filtros-panel" className="p-4 space-y-5" role="region" aria-label="Panel de filtros de ordenes">
+                  <fieldset className="space-y-3">
+                    <legend className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+                      Filtros generales
+                    </legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-fecha-inicio" className="text-[10px] text-slate-400 uppercase">Fecha inicio</label>
+                        <input
+                          id="filtro-fecha-inicio"
+                          type="date"
+                          className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                          value={filters.fechaInicio}
+                          onChange={handleFilterChange("fechaInicio")}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-fecha-fin" className="text-[10px] text-slate-400 uppercase">Fecha fin</label>
+                        <input
+                          id="filtro-fecha-fin"
+                          type="date"
+                          className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                          value={filters.fechaFin}
+                          onChange={handleFilterChange("fechaFin")}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-reporte" className="text-[10px] text-slate-400 uppercase">No. Reporte/Siniestro</label>
+                        <input
+                          id="filtro-reporte"
+                          type="text"
+                          className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500"
+                          placeholder="Ej. 0425..."
+                          value={filters.reporte}
+                          onChange={handleFilterChange("reporte")}
+                        />
+                      </div>
+                      <SearchableSelect
+                        label="Aseguradora"
+                        value={filters.aseguradora}
+                        onChange={(value) => setFilters((prev) => ({ ...prev, aseguradora: value }))}
+                        options={aseguradoraOptions}
+                        placeholder="Seleccionar aseguradora"
+                        emptyLabel="Sin aseguradoras"
+                      />
+                      <SearchableSelect
+                        label="Cliente"
+                        value={filters.cliente}
+                        onChange={(value) => setFilters((prev) => ({ ...prev, cliente: value }))}
+                        options={clienteOptions}
+                        placeholder="Seleccionar cliente"
+                        emptyLabel="Sin clientes"
+                      />
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="space-y-3">
+                    <legend className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+                      Filtros de vehiculo
+                    </legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-marca" className="text-[10px] text-slate-400 uppercase">Marca</label>
+                        <input id="filtro-marca" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.marca} onChange={handleFilterChange("marca")} />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-tipo" className="text-[10px] text-slate-400 uppercase">Tipo</label>
+                        <input id="filtro-tipo" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.tipo} onChange={handleFilterChange("tipo")} />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-modelo" className="text-[10px] text-slate-400 uppercase">Modelo</label>
+                        <input id="filtro-modelo" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.modelo} onChange={handleFilterChange("modelo")} />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-anio" className="text-[10px] text-slate-400 uppercase">Año</label>
+                        <input id="filtro-anio" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.anio} onChange={handleFilterChange("anio")} />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-placas" className="text-[10px] text-slate-400 uppercase">Placas</label>
+                        <input id="filtro-placas" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white uppercase" value={filters.placas} onChange={handleFilterChange("placas")} />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="filtro-serie" className="text-[10px] text-slate-400 uppercase">No. Serie</label>
+                        <input id="filtro-serie" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white uppercase" value={filters.serie} onChange={handleFilterChange("serie")} />
+                      </div>
+                    </div>
+                  </fieldset>
+                </div>
+              ) : null}
+            </section>
+
             <div className="overflow-x-auto custom-scrollbar bg-surface-dark border border-border-dark rounded-xl">
               <table className="min-w-[1200px] w-full text-left border-collapse">
+                <caption className="sr-only">
+                  Tabla de ordenes de admision filtrada por criterios de busqueda y filtros avanzados
+                </caption>
                 <thead>
                   <tr className="bg-background-dark/50">
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">

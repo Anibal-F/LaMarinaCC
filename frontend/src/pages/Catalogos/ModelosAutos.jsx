@@ -8,6 +8,7 @@ export default function CatalogoModelosAutos() {
   const [marcas, setMarcas] = useState([]);
   const [query, setQuery] = useState("");
   const [marcaFilter, setMarcaFilter] = useState("");
+  const [modeloFilter, setModeloFilter] = useState("");
   const [sortBy, setSortBy] = useState("nb_modelo");
   const [sortDir, setSortDir] = useState("asc");
   const [error, setError] = useState("");
@@ -49,7 +50,7 @@ export default function CatalogoModelosAutos() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, marcaFilter, sortBy, sortDir]);
+  }, [query, marcaFilter, modeloFilter, sortBy, sortDir]);
 
   useEffect(() => {
     if (!toast) return;
@@ -67,12 +68,14 @@ export default function CatalogoModelosAutos() {
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
+    const modeloText = modeloFilter.trim().toLowerCase();
     const list = modelos.filter((modelo) => {
       const marca = String(modelo.nb_marca || "").toLowerCase();
       const nombre = String(modelo.nb_modelo || "").toLowerCase();
       const matchesQuery = !normalized || [marca, nombre].some((value) => value.includes(normalized));
       if (!matchesQuery) return false;
       if (marcaFilter && String(modelo.nb_marca || "") !== marcaFilter) return false;
+      if (modeloText && !nombre.includes(modeloText)) return false;
       return true;
     });
     const dir = sortDir === "desc" ? -1 : 1;
@@ -81,7 +84,7 @@ export default function CatalogoModelosAutos() {
       const right = String(b?.[sortBy] || "");
       return left.localeCompare(right, "es-MX", { sensitivity: "base" }) * dir;
     });
-  }, [modelos, query, marcaFilter, sortBy, sortDir]);
+  }, [modelos, query, marcaFilter, modeloFilter, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -159,6 +162,20 @@ export default function CatalogoModelosAutos() {
     }
   };
 
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(column);
+    setSortDir("asc");
+  };
+
+  const sortIndicator = (column) => {
+    if (sortBy !== column) return "unfold_more";
+    return sortDir === "asc" ? "arrow_upward" : "arrow_downward";
+  };
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
@@ -197,7 +214,7 @@ export default function CatalogoModelosAutos() {
           </header>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-            <section className="bg-surface-dark border border-border-dark rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <section className="bg-surface-dark border border-border-dark rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Filtro marca</label>
                 <select
@@ -214,27 +231,13 @@ export default function CatalogoModelosAutos() {
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Ordenar por</label>
-                <select
-                  className="w-full rounded-lg border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                  value={sortBy}
-                  onChange={(event) => setSortBy(event.target.value)}
-                >
-                  <option value="nb_modelo">Modelo</option>
-                  <option value="nb_marca">Marca</option>
-                  <option value="created_at">Registro</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Orden</label>
-                <select
-                  className="w-full rounded-lg border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                  value={sortDir}
-                  onChange={(event) => setSortDir(event.target.value)}
-                >
-                  <option value="asc">A → Z</option>
-                  <option value="desc">Z → A</option>
-                </select>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Filtro modelo</label>
+                <input
+                  className="w-full rounded-lg border-border-dark bg-background-dark px-3 py-2 text-sm text-white placeholder-slate-500"
+                  placeholder="Buscar texto en modelo..."
+                  value={modeloFilter}
+                  onChange={(event) => setModeloFilter(event.target.value)}
+                />
               </div>
             </section>
 
@@ -293,14 +296,23 @@ export default function CatalogoModelosAutos() {
               <table className="min-w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-background-dark/50">
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Marca
+                    <th className="px-4 py-3 border-b border-border-dark">
+                      <button type="button" onClick={() => handleSort("nb_marca")} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-white transition-colors">
+                        Marca
+                        <span className="material-symbols-outlined text-sm">{sortIndicator("nb_marca")}</span>
+                      </button>
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Modelo
+                    <th className="px-4 py-3 border-b border-border-dark">
+                      <button type="button" onClick={() => handleSort("nb_modelo")} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-white transition-colors">
+                        Modelo
+                        <span className="material-symbols-outlined text-sm">{sortIndicator("nb_modelo")}</span>
+                      </button>
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Registro
+                    <th className="px-4 py-3 border-b border-border-dark">
+                      <button type="button" onClick={() => handleSort("created_at")} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-white transition-colors">
+                        Registro
+                        <span className="material-symbols-outlined text-sm">{sortIndicator("created_at")}</span>
+                      </button>
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-right">
                       Acciones

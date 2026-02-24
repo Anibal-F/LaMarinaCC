@@ -14,6 +14,7 @@ import CitasRecepcion from "./pages/Recepcion/CitasRecepcion.jsx";
 import CatalogoClientes from "./pages/Catalogos/Clientes.jsx";
 import CatalogoGruposAutos from "./pages/Catalogos/GruposAutos.jsx";
 import CatalogoMarcasAutos from "./pages/Catalogos/MarcasAutos.jsx";
+import CatalogoModelosAutos from "./pages/Catalogos/ModelosAutos.jsx";
 import CatalogoAseguradoras from "./pages/Catalogos/Aseguradoras.jsx";
 import CatalogoPartesAuto from "./pages/Catalogos/PartesAuto.jsx";
 import CatalogoEstatusValuacion from "./pages/Catalogos/EstatusValuacion.jsx";
@@ -95,6 +96,10 @@ export default function App() {
       <Route
         path="/catalogos/marcas-autos"
         element={authenticated ? <CatalogoMarcasAutos /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/catalogos/modelos-autos"
+        element={authenticated ? <CatalogoModelosAutos /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/catalogos/aseguradoras"

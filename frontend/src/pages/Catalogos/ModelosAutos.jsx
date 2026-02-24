@@ -3,42 +3,43 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar.jsx";
 import Toast from "../../components/Toast.jsx";
 
-export default function CatalogoMarcasAutos() {
+export default function CatalogoModelosAutos() {
+  const [modelos, setModelos] = useState([]);
   const [marcas, setMarcas] = useState([]);
-  const [grupos, setGrupos] = useState([]);
   const [query, setQuery] = useState("");
-  const [grupoFilter, setGrupoFilter] = useState("");
-  const [sortBy, setSortBy] = useState("nb_marca");
+  const [marcaFilter, setMarcaFilter] = useState("");
+  const [sortBy, setSortBy] = useState("nb_modelo");
   const [sortDir, setSortDir] = useState("asc");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
-  const [form, setForm] = useState({ gpo_marca: "", nb_marca: "" });
+  const [form, setForm] = useState({ marca_id: "", nb_modelo: "" });
   const [page, setPage] = useState(1);
   const pageSize = 8;
   const [toast, setToast] = useState(null);
 
   const load = async () => {
     try {
-      const [marcasRes, gruposRes] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_URL}/catalogos/marcas-autos`),
-        fetch(`${import.meta.env.VITE_API_URL}/catalogos/grupos-autos`)
+      const [modelosRes, marcasRes] = await Promise.all([
+        fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`),
+        fetch(`${import.meta.env.VITE_API_URL}/catalogos/marcas-autos`)
       ]);
 
+      if (!modelosRes.ok) {
+        throw new Error("No se pudieron cargar los modelos");
+      }
       if (!marcasRes.ok) {
         throw new Error("No se pudieron cargar las marcas");
       }
-      if (!gruposRes.ok) {
-        throw new Error("No se pudieron cargar los grupos");
-      }
+
+      const modelosPayload = await modelosRes.json();
       const marcasPayload = await marcasRes.json();
-      const gruposPayload = await gruposRes.json();
-      setMarcas(marcasPayload);
-      setGrupos(gruposPayload);
+      setModelos(modelosPayload || []);
+      setMarcas(marcasPayload || []);
     } catch (err) {
-      setError(err.message || "No se pudieron cargar las marcas");
+      setError(err.message || "No se pudieron cargar los modelos");
     }
   };
 
@@ -48,7 +49,7 @@ export default function CatalogoMarcasAutos() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, grupoFilter, sortBy, sortDir]);
+  }, [query, marcaFilter, sortBy, sortDir]);
 
   useEffect(() => {
     if (!toast) return;
@@ -56,22 +57,22 @@ export default function CatalogoMarcasAutos() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const grupoOptions = useMemo(
+  const marcaOptions = useMemo(
     () =>
-      Array.from(new Set(marcas.map((item) => String(item.gpo_marca || "").trim()).filter(Boolean))).sort((a, b) =>
+      Array.from(new Set(modelos.map((item) => String(item.nb_marca || "").trim()).filter(Boolean))).sort((a, b) =>
         a.localeCompare(b, "es-MX")
       ),
-    [marcas]
+    [modelos]
   );
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const list = marcas.filter((marca) => {
-      const grupo = String(marca.gpo_marca || "").toLowerCase();
-      const nombre = String(marca.nb_marca || "").toLowerCase();
-      const matchesQuery = !normalized || [grupo, nombre].some((value) => value.includes(normalized));
+    const list = modelos.filter((modelo) => {
+      const marca = String(modelo.nb_marca || "").toLowerCase();
+      const nombre = String(modelo.nb_modelo || "").toLowerCase();
+      const matchesQuery = !normalized || [marca, nombre].some((value) => value.includes(normalized));
       if (!matchesQuery) return false;
-      if (grupoFilter && String(marca.gpo_marca || "") !== grupoFilter) return false;
+      if (marcaFilter && String(modelo.nb_marca || "") !== marcaFilter) return false;
       return true;
     });
     const dir = sortDir === "desc" ? -1 : 1;
@@ -80,7 +81,7 @@ export default function CatalogoMarcasAutos() {
       const right = String(b?.[sortBy] || "");
       return left.localeCompare(right, "es-MX", { sensitivity: "base" }) * dir;
     });
-  }, [marcas, query, grupoFilter, sortBy, sortDir]);
+  }, [modelos, query, marcaFilter, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -91,45 +92,47 @@ export default function CatalogoMarcasAutos() {
     setFieldErrors({});
 
     const errors = {};
-    if (!form.gpo_marca) {
-      errors.gpo_marca = "Selecciona un grupo";
-    }
-    if (!form.nb_marca.trim()) {
-      errors.nb_marca = "Nombre de marca requerido";
-    }
+    if (!form.marca_id) errors.marca_id = "Selecciona una marca";
+    if (!form.nb_modelo.trim()) errors.nb_modelo = "Nombre de modelo requerido";
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
     }
 
     try {
+      const payload = {
+        marca_id: Number(form.marca_id),
+        nb_modelo: form.nb_modelo.trim()
+      };
+
       const response = await fetch(
         editingId
-          ? `${import.meta.env.VITE_API_URL}/catalogos/marcas-autos/${editingId}`
-          : `${import.meta.env.VITE_API_URL}/catalogos/marcas-autos`,
+          ? `${import.meta.env.VITE_API_URL}/catalogos/modelos-autos/${editingId}`
+          : `${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`,
         {
           method: editingId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form)
+          body: JSON.stringify(payload)
         }
       );
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.detail || "No se pudo guardar la marca");
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.detail || "No se pudo guardar el modelo");
       }
 
-      setForm({ gpo_marca: "", nb_marca: "" });
+      setForm({ marca_id: "", nb_modelo: "" });
       setEditingId(null);
       setShowForm(false);
-      load();
+      await load();
       setToast({
         type: "success",
-        message: editingId ? "Marca actualizada." : "Marca guardada."
+        message: editingId ? "Modelo actualizado." : "Modelo guardado."
       });
     } catch (err) {
-      setError(err.message || "No se pudo guardar la marca");
-      setToast({ type: "error", message: err.message || "No se pudo guardar la marca." });
+      setError(err.message || "No se pudo guardar el modelo");
+      setToast({ type: "error", message: err.message || "No se pudo guardar el modelo." });
     }
   };
 
@@ -138,19 +141,21 @@ export default function CatalogoMarcasAutos() {
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/catalogos/marcas-autos/${deleteTarget.id}`,
+        `${import.meta.env.VITE_API_URL}/catalogos/modelos-autos/${deleteTarget.id}`,
         { method: "DELETE" }
       );
+
       if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.detail || "No se pudo eliminar la marca");
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.detail || "No se pudo eliminar el modelo");
       }
+
       setDeleteTarget(null);
-      load();
-      setToast({ type: "success", message: "Marca eliminada." });
+      await load();
+      setToast({ type: "success", message: "Modelo eliminado." });
     } catch (err) {
-      setError(err.message || "No se pudo eliminar la marca");
-      setToast({ type: "error", message: err.message || "No se pudo eliminar la marca." });
+      setError(err.message || "No se pudo eliminar el modelo");
+      setToast({ type: "error", message: err.message || "No se pudo eliminar el modelo." });
     }
   };
 
@@ -161,16 +166,14 @@ export default function CatalogoMarcasAutos() {
         <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
           <header className="h-16 border-b border-border-dark flex items-center justify-between px-6 shrink-0 bg-background-dark/80 backdrop-blur-md z-10">
             <div className="flex items-center flex-1 max-w-xl">
-              <h2 className="text-xl font-bold text-white whitespace-nowrap mr-8">
-                Marcas Automotrices
-              </h2>
+              <h2 className="text-xl font-bold text-white whitespace-nowrap mr-8">Modelos Automotrices</h2>
               <div className="relative w-full group">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xl group-focus-within:text-primary transition-colors">
                   search
                 </span>
                 <input
                   className="w-full bg-surface-dark border-border-dark rounded-lg pl-10 pr-4 py-2 text-sm text-white focus:ring-1 focus:ring-primary focus:border-primary placeholder-slate-500 transition-all"
-                  placeholder="Buscar marca o grupo..."
+                  placeholder="Buscar modelo o marca..."
                   type="text"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -184,25 +187,26 @@ export default function CatalogoMarcasAutos() {
                 onClick={() => {
                   setShowForm((value) => !value);
                   setEditingId(null);
-                  setForm({ gpo_marca: "", nb_marca: "" });
+                  setForm({ marca_id: "", nb_modelo: "" });
                 }}
               >
                 <span className="material-symbols-outlined text-sm">add</span>
-                {showForm ? "Cerrar formulario" : "Nueva Marca"}
+                {showForm ? "Cerrar formulario" : "Nuevo Modelo"}
               </button>
             </div>
           </header>
+
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
             <section className="bg-surface-dark border border-border-dark rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Filtro grupo</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Filtro marca</label>
                 <select
                   className="w-full rounded-lg border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                  value={grupoFilter}
-                  onChange={(event) => setGrupoFilter(event.target.value)}
+                  value={marcaFilter}
+                  onChange={(event) => setMarcaFilter(event.target.value)}
                 >
-                  <option value="">Todos</option>
-                  {grupoOptions.map((option) => (
+                  <option value="">Todas</option>
+                  {marcaOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -216,8 +220,8 @@ export default function CatalogoMarcasAutos() {
                   value={sortBy}
                   onChange={(event) => setSortBy(event.target.value)}
                 >
+                  <option value="nb_modelo">Modelo</option>
                   <option value="nb_marca">Marca</option>
-                  <option value="gpo_marca">Grupo</option>
                   <option value="created_at">Registro</option>
                 </select>
               </div>
@@ -241,28 +245,30 @@ export default function CatalogoMarcasAutos() {
               >
                 <select
                   className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
-                  value={form.gpo_marca}
-                  onChange={(event) => setForm({ ...form, gpo_marca: event.target.value })}
+                  value={form.marca_id}
+                  onChange={(event) => setForm({ ...form, marca_id: event.target.value })}
                 >
-                  <option value="">Selecciona grupo</option>
-                  {grupos.map((grupo) => (
-                    <option key={grupo.id} value={grupo.nb_grupo}>
-                      {grupo.nb_grupo}
+                  <option value="">Selecciona marca</option>
+                  {marcas.map((marca) => (
+                    <option key={marca.id} value={marca.id}>
+                      {marca.nb_marca}
                     </option>
                   ))}
                 </select>
-                {fieldErrors.gpo_marca ? (
-                  <p className="text-xs text-alert-red md:col-span-3">{fieldErrors.gpo_marca}</p>
+                {fieldErrors.marca_id ? (
+                  <p className="text-xs text-alert-red md:col-span-3">{fieldErrors.marca_id}</p>
                 ) : null}
+
                 <input
                   className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
-                  placeholder="Dodge"
-                  value={form.nb_marca}
-                  onChange={(event) => setForm({ ...form, nb_marca: event.target.value })}
+                  placeholder="Ej. MINI DOLPHIN"
+                  value={form.nb_modelo}
+                  onChange={(event) => setForm({ ...form, nb_modelo: event.target.value })}
                 />
-                {fieldErrors.nb_marca ? (
-                  <p className="text-xs text-alert-red md:col-span-3">{fieldErrors.nb_marca}</p>
+                {fieldErrors.nb_modelo ? (
+                  <p className="text-xs text-alert-red md:col-span-3">{fieldErrors.nb_modelo}</p>
                 ) : null}
+
                 <div className="md:col-span-3 flex justify-end gap-3">
                   <button
                     type="button"
@@ -288,10 +294,10 @@ export default function CatalogoMarcasAutos() {
                 <thead>
                   <tr className="bg-background-dark/50">
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Grupo
+                      Marca
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
-                      Marca
+                      Modelo
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
                       Registro
@@ -302,11 +308,11 @@ export default function CatalogoMarcasAutos() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.map((marca) => (
-                    <tr key={marca.id} className="border-b border-border-dark/50 hover:bg-white/5">
-                      <td className="px-4 py-3 text-sm text-slate-300">{marca.gpo_marca}</td>
-                      <td className="px-4 py-3 text-sm text-white font-semibold">{marca.nb_marca}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">{marca.created_at || "-"}</td>
+                  {paged.map((modelo) => (
+                    <tr key={modelo.id} className="border-b border-border-dark/50 hover:bg-white/5">
+                      <td className="px-4 py-3 text-sm text-slate-300">{modelo.nb_marca || "-"}</td>
+                      <td className="px-4 py-3 text-sm text-white font-semibold">{modelo.nb_modelo}</td>
+                      <td className="px-4 py-3 text-sm text-slate-300">{modelo.created_at || "-"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
@@ -315,10 +321,10 @@ export default function CatalogoMarcasAutos() {
                             type="button"
                             onClick={() => {
                               setShowForm(true);
-                              setEditingId(marca.id);
+                              setEditingId(modelo.id);
                               setForm({
-                                gpo_marca: marca.gpo_marca || "",
-                                nb_marca: marca.nb_marca || ""
+                                marca_id: String(modelo.marca_id || ""),
+                                nb_modelo: modelo.nb_modelo || ""
                               });
                             }}
                           >
@@ -328,7 +334,7 @@ export default function CatalogoMarcasAutos() {
                             className="p-1.5 hover:bg-alert-red/20 hover:text-alert-red rounded text-slate-400 transition-colors"
                             title="Eliminar"
                             type="button"
-                            onClick={() => setDeleteTarget(marca)}
+                            onClick={() => setDeleteTarget(modelo)}
                           >
                             <span className="material-symbols-outlined text-lg">delete</span>
                           </button>
@@ -336,69 +342,65 @@ export default function CatalogoMarcasAutos() {
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 ? (
+                  {paged.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={4}>
-                        No hay marcas para mostrar.
+                      <td colSpan={4} className="px-4 py-6 text-center text-sm text-slate-500">
+                        No hay modelos para mostrar.
                       </td>
                     </tr>
                   ) : null}
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest px-2">
-              <p>Mostrando {paged.length} de {filtered.length} registros</p>
-              <div className="flex items-center gap-3">
+
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <p>
+                Mostrando {paged.length} de {filtered.length} registros
+              </p>
+              <div className="flex items-center gap-2">
                 <button
-                  className="flex items-center gap-1 hover:text-white transition-colors"
-                  type="button"
-                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  className="px-3 py-1 rounded border border-border-dark disabled:opacity-40"
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
                   disabled={page === 1}
+                  type="button"
                 >
-                  <span className="material-symbols-outlined text-sm">chevron_left</span>
                   Anterior
                 </button>
-                <span className="text-white bg-primary size-5 flex items-center justify-center rounded">
-                  {page}
+                <span>
+                  {page} / {totalPages}
                 </span>
                 <button
-                  className="flex items-center gap-1 hover:text-white transition-colors"
-                  type="button"
-                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                  className="px-3 py-1 rounded border border-border-dark disabled:opacity-40"
+                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                   disabled={page === totalPages}
+                  type="button"
                 >
                   Siguiente
-                  <span className="material-symbols-outlined text-sm">chevron_right</span>
                 </button>
               </div>
             </div>
           </div>
         </main>
       </div>
-      {toast ? (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
-      ) : null}
+
       {deleteTarget ? (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-50">
-          <div className="w-full max-w-md bg-surface-dark border border-border-dark rounded-xl p-6 shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="material-symbols-outlined text-alert-red">warning</span>
-              <h3 className="text-lg font-bold text-white">Eliminar marca</h3>
-            </div>
-            <p className="text-sm text-slate-300">
-              ¿Deseas eliminar la marca <span className="text-white font-semibold">{deleteTarget.nb_marca}</span>?
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md bg-surface-dark border border-border-dark rounded-xl p-6">
+            <h3 className="text-lg font-bold text-white">Eliminar modelo</h3>
+            <p className="text-sm text-slate-300 mt-2">
+              ¿Deseas eliminar <span className="font-semibold">{deleteTarget.nb_modelo}</span>?
             </p>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-5 flex justify-end gap-3">
               <button
+                className="px-4 py-2 rounded border border-border-dark text-slate-300"
                 type="button"
-                className="px-4 py-2 rounded-lg border border-border-dark text-slate-300"
                 onClick={() => setDeleteTarget(null)}
               >
                 Cancelar
               </button>
               <button
+                className="px-4 py-2 rounded bg-alert-red text-white"
                 type="button"
-                className="px-4 py-2 rounded-lg bg-alert-red text-white"
                 onClick={handleDelete}
               >
                 Eliminar
@@ -407,6 +409,8 @@ export default function CatalogoMarcasAutos() {
           </div>
         </div>
       ) : null}
+
+      {toast ? <Toast type={toast.type} message={toast.message} /> : null}
     </div>
   );
 }

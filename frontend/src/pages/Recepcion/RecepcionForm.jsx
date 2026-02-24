@@ -41,10 +41,12 @@ export default function RecepcionForm() {
   const [saving, setSaving] = useState(false);
   const [gruposAutos, setGruposAutos] = useState([]);
   const [marcasAutos, setMarcasAutos] = useState([]);
+  const [modelosAutos, setModelosAutos] = useState([]);
   const [grupoSeleccionado, setGrupoSeleccionado] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [marcaSaving, setMarcaSaving] = useState(false);
   const [marcaError, setMarcaError] = useState("");
+  const [modeloError, setModeloError] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [aseguradoras, setAseguradoras] = useState([]);
   const [fuelLevelIndex, setFuelLevelIndex] = useState(2);
@@ -667,9 +669,10 @@ export default function RecepcionForm() {
   useEffect(() => {
     const loadCatalogos = async () => {
       try {
-        const [gruposRes, marcasRes, aseguradorasRes, partesRes] = await Promise.all([
+        const [gruposRes, marcasRes, modelosRes, aseguradorasRes, partesRes] = await Promise.all([
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/grupos-autos`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/marcas-autos`),
+          fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/aseguradoras`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/partes-auto`)
         ]);
@@ -678,6 +681,9 @@ export default function RecepcionForm() {
         }
         if (marcasRes.ok) {
           setMarcasAutos(await marcasRes.json());
+        }
+        if (modelosRes.ok) {
+          setModelosAutos(await modelosRes.json());
         }
         if (aseguradorasRes.ok) {
           setAseguradoras(await aseguradorasRes.json());
@@ -738,6 +744,13 @@ export default function RecepcionForm() {
     return marcasAutos.filter((marca) => marca.gpo_marca === grupoSeleccionado);
   }, [marcasAutos, grupoSeleccionado]);
 
+  const modelosFiltrados = useMemo(() => {
+    if (!form.vehiculo_marca) return modelosAutos;
+    return modelosAutos.filter(
+      (modelo) => String(modelo.nb_marca || "").trim() === String(form.vehiculo_marca || "").trim()
+    );
+  }, [modelosAutos, form.vehiculo_marca]);
+
   const handleCreateMarca = async (nombreMarca) => {
     setMarcaError("");
     if (!nombreMarca.trim()) {
@@ -761,12 +774,53 @@ export default function RecepcionForm() {
       }
       const created = await response.json();
       setMarcasAutos((prev) => [...prev, created]);
-      setForm((prev) => ({ ...prev, vehiculo_marca: created.nb_marca }));
+      setForm((prev) => ({ ...prev, vehiculo_marca: created.nb_marca, vehiculo_modelo: "" }));
       setGrupoSeleccionado(created.gpo_marca || "Otros");
     } catch (err) {
       setMarcaError(err.message || "No se pudo crear la marca");
     } finally {
       setMarcaSaving(false);
+    }
+  };
+
+  const handleCreateModelo = async (nombreModelo) => {
+    setModeloError("");
+    const nbModelo = String(nombreModelo || "").trim();
+    if (!nbModelo) {
+      setModeloError("Escribe el modelo.");
+      return;
+    }
+    if (!form.vehiculo_marca) {
+      setModeloError("Selecciona primero una marca.");
+      return;
+    }
+
+    const marca = marcasAutos.find(
+      (item) => String(item.nb_marca || "").trim() === String(form.vehiculo_marca || "").trim()
+    );
+    if (!marca?.id) {
+      setModeloError("No se encontró la marca seleccionada.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marca_id: Number(marca.id), nb_modelo: nbModelo })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo crear el modelo");
+      }
+      const created = await response.json();
+      setModelosAutos((prev) => {
+        if (prev.some((item) => Number(item.id) === Number(created.id))) return prev;
+        return [...prev, created];
+      });
+      setForm((prev) => ({ ...prev, vehiculo_modelo: created.nb_modelo || nbModelo }));
+    } catch (err) {
+      setModeloError(err.message || "No se pudo crear el modelo");
     }
   };
 
@@ -1532,8 +1586,9 @@ export default function RecepcionForm() {
                       label="Grupo"
                       value={grupoSeleccionado}
                       onChange={(value) => {
+                        setModeloError("");
                         setGrupoSeleccionado(value);
-                        setForm((prev) => ({ ...prev, vehiculo_marca: "" }));
+                        setForm((prev) => ({ ...prev, vehiculo_marca: "", vehiculo_modelo: "" }));
                       }}
                       options={gruposAutos.map((grupo) => grupo.nb_grupo)}
                       placeholder="Selecciona grupo"
@@ -1544,28 +1599,32 @@ export default function RecepcionForm() {
                       label="Marca"
                       value={form.vehiculo_marca}
                       onChange={(value) => {
-                        setForm((prev) => ({ ...prev, vehiculo_marca: value }));
+                        setModeloError("");
+                        setForm((prev) => ({ ...prev, vehiculo_marca: value, vehiculo_modelo: "" }));
                         const selected = marcasAutos.find((marca) => marca.nb_marca === value);
                         if (selected?.gpo_marca) {
                           setGrupoSeleccionado(selected.gpo_marca);
                         }
                       }}
-                      options={marcasAutos.map((marca) => marca.nb_marca)}
+                      options={marcasFiltradas.map((marca) => marca.nb_marca)}
                       placeholder="Selecciona marca"
                       error={fieldErrors.marca || marcaError}
                       onAdd={handleCreateMarca}
                       addLabel="Agregar marca"
                     />
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Modelo</label>
-                      <input
-                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
-                        placeholder="Hilux 2023"
-                        type="text"
-                        value={form.vehiculo_modelo}
-                        onChange={(event) => setForm({ ...form, vehiculo_modelo: event.target.value })}
-                      />
-                    </div>
+                    <SearchableSelect
+                      label="Modelo"
+                      value={form.vehiculo_modelo}
+                      onChange={(value) => {
+                        setModeloError("");
+                        setForm((prev) => ({ ...prev, vehiculo_modelo: value }));
+                      }}
+                      options={Array.from(new Set(modelosFiltrados.map((modelo) => modelo.nb_modelo))).sort((a, b) => a.localeCompare(b, "es-MX"))}
+                      placeholder={form.vehiculo_marca ? "Selecciona modelo" : "Selecciona primero una marca"}
+                      error={modeloError}
+                      onAdd={handleCreateModelo}
+                      addLabel="Agregar modelo"
+                    />
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo / Carrocería</label>
                       <input

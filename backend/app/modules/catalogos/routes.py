@@ -423,6 +423,143 @@ def delete_estatus_valuacion(estatus_id: int):
     return None
 
 
+@router.get("/modelos-autos")
+def list_modelos_autos():
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        rows = conn.execute(
+            """
+            SELECT
+                mo.id,
+                mo.marca_id,
+                ma.nb_marca,
+                mo.nb_modelo,
+                mo.created_at
+            FROM modelos_autos mo
+            JOIN marcas_autos ma ON ma.id = mo.marca_id
+            ORDER BY ma.nb_marca ASC, mo.nb_modelo ASC, mo.id ASC
+            """
+        ).fetchall()
+    return rows
+
+
+@router.post("/modelos-autos", status_code=status.HTTP_201_CREATED)
+def create_modelo_auto(payload: dict):
+    marca_id = payload.get("marca_id")
+    nb_modelo = (payload.get("nb_modelo") or "").strip()
+
+    if not marca_id:
+        raise HTTPException(status_code=400, detail="marca_id requerido")
+    if not nb_modelo:
+        raise HTTPException(status_code=400, detail="nb_modelo requerido")
+
+    with get_connection() as conn:
+        marca = conn.execute(
+            "SELECT id, nb_marca FROM marcas_autos WHERE id = %s",
+            (marca_id,),
+        ).fetchone()
+        if not marca:
+            raise HTTPException(status_code=404, detail="Marca no encontrada")
+
+        exists = conn.execute(
+            """
+            SELECT 1
+            FROM modelos_autos
+            WHERE marca_id = %s AND LOWER(nb_modelo) = LOWER(%s)
+            LIMIT 1
+            """,
+            (marca_id, nb_modelo),
+        ).fetchone()
+        if exists:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Modelo ya existe para la marca seleccionada",
+            )
+
+        row = conn.execute(
+            """
+            INSERT INTO modelos_autos (marca_id, nb_modelo)
+            VALUES (%s, %s)
+            RETURNING id, marca_id, nb_modelo, created_at
+            """,
+            (marca_id, nb_modelo),
+        ).fetchone()
+
+    return {
+        "id": row[0],
+        "marca_id": row[1],
+        "nb_marca": marca[1],
+        "nb_modelo": row[2],
+        "created_at": row[3],
+    }
+
+
+@router.put("/modelos-autos/{modelo_id}")
+def update_modelo_auto(modelo_id: int, payload: dict):
+    marca_id = payload.get("marca_id")
+    nb_modelo = (payload.get("nb_modelo") or "").strip()
+
+    if not marca_id:
+        raise HTTPException(status_code=400, detail="marca_id requerido")
+    if not nb_modelo:
+        raise HTTPException(status_code=400, detail="nb_modelo requerido")
+
+    with get_connection() as conn:
+        marca = conn.execute(
+            "SELECT id, nb_marca FROM marcas_autos WHERE id = %s",
+            (marca_id,),
+        ).fetchone()
+        if not marca:
+            raise HTTPException(status_code=404, detail="Marca no encontrada")
+
+        duplicate = conn.execute(
+            """
+            SELECT 1
+            FROM modelos_autos
+            WHERE marca_id = %s
+              AND LOWER(nb_modelo) = LOWER(%s)
+              AND id <> %s
+            LIMIT 1
+            """,
+            (marca_id, nb_modelo, modelo_id),
+        ).fetchone()
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Modelo ya existe para la marca seleccionada",
+            )
+
+        row = conn.execute(
+            """
+            UPDATE modelos_autos
+            SET marca_id = %s, nb_modelo = %s
+            WHERE id = %s
+            RETURNING id, marca_id, nb_modelo, created_at
+            """,
+            (marca_id, nb_modelo, modelo_id),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Modelo no encontrado")
+
+    return {
+        "id": row[0],
+        "marca_id": row[1],
+        "nb_marca": marca[1],
+        "nb_modelo": row[2],
+        "created_at": row[3],
+    }
+
+
+@router.delete("/modelos-autos/{modelo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_modelo_auto(modelo_id: int):
+    with get_connection() as conn:
+        result = conn.execute("DELETE FROM modelos_autos WHERE id = %s", (modelo_id,))
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Modelo no encontrado")
+    return None
+
+
 @router.get("/estatus-valuacion")
 def list_estatus_valuacion():
     with get_connection() as conn:

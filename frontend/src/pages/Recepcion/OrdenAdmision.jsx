@@ -988,7 +988,7 @@ export default function OrdenAdmision() {
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
             {error ? <p className="text-sm text-alert-red">{error}</p> : null}
 
-            <section className="bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
+            <section className="bg-surface-dark border border-border-dark rounded-xl overflow-visible relative z-20">
               <div className="px-4 py-3 border-b border-border-dark flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-white">Filtros avanzados</h3>

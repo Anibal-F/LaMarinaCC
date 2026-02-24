@@ -750,6 +750,28 @@ export default function OrdenAdmision() {
       ).sort((a, b) => a.localeCompare(b, "es-MX")),
     [clientes]
   );
+  const marcaFilterOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          marcas
+            .map((item) => String(item.nb_marca || "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "es-MX")),
+    [marcas]
+  );
+  const tipoFilterOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          records
+            .map((item) => String(item.tipo_vehiculo || "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "es-MX")),
+    [records]
+  );
 
   const activeFilterCount = useMemo(
     () =>
@@ -953,26 +975,14 @@ export default function OrdenAdmision() {
             searchValue={query}
             onSearchChange={setQuery}
             actions={
-              <div className="flex items-center gap-2">
-                <button
-                  className="flex items-center gap-2 bg-surface-dark border border-border-dark hover:border-primary/50 text-slate-200 px-3 py-2 rounded-lg text-sm font-bold transition-all"
-                  type="button"
-                  onClick={() => setShowColumnManager((prev) => !prev)}
-                  aria-expanded={showColumnManager}
-                  aria-controls="column-manager-panel"
-                >
-                  <span className="material-symbols-outlined text-sm">view_column</span>
-                  Columnas
-                </button>
-                <button
-                  className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-primary/10"
-                  type="button"
-                  onClick={openModal}
-                >
-                  <span className="material-symbols-outlined text-sm">add</span>
-                  Nueva orden
-                </button>
-              </div>
+              <button
+                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-primary/10"
+                type="button"
+                onClick={openModal}
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                Nueva orden
+              </button>
             }
           />
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
@@ -987,6 +997,16 @@ export default function OrdenAdmision() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 text-xs rounded-lg border border-border-dark text-slate-300 hover:text-white flex items-center gap-1"
+                    onClick={() => setShowColumnManager((prev) => !prev)}
+                    aria-expanded={showColumnManager}
+                    aria-controls="column-manager-panel"
+                  >
+                    <span className="material-symbols-outlined text-base">view_column</span>
+                    Columnas
+                  </button>
                   <span
                     className="text-xs text-slate-300"
                     aria-live="polite"
@@ -1079,14 +1099,22 @@ export default function OrdenAdmision() {
                       Filtros de vehiculo
                     </legend>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-                      <div className="space-y-1">
-                        <label htmlFor="filtro-marca" className="text-[10px] text-slate-400 uppercase">Marca</label>
-                        <input id="filtro-marca" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.marca} onChange={handleFilterChange("marca")} />
-                      </div>
-                      <div className="space-y-1">
-                        <label htmlFor="filtro-tipo" className="text-[10px] text-slate-400 uppercase">Tipo</label>
-                        <input id="filtro-tipo" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.tipo} onChange={handleFilterChange("tipo")} />
-                      </div>
+                      <SearchableSelect
+                        label="Marca"
+                        value={filters.marca}
+                        onChange={(value) => setFilters((prev) => ({ ...prev, marca: value }))}
+                        options={marcaFilterOptions}
+                        placeholder="Seleccionar marca"
+                        emptyLabel="Sin marcas"
+                      />
+                      <SearchableSelect
+                        label="Tipo"
+                        value={filters.tipo}
+                        onChange={(value) => setFilters((prev) => ({ ...prev, tipo: value }))}
+                        options={tipoFilterOptions}
+                        placeholder="Seleccionar tipo"
+                        emptyLabel="Sin tipos"
+                      />
                       <div className="space-y-1">
                         <label htmlFor="filtro-modelo" className="text-[10px] text-slate-400 uppercase">Modelo</label>
                         <input id="filtro-modelo" type="text" className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white" value={filters.modelo} onChange={handleFilterChange("modelo")} />

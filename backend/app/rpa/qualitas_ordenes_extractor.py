@@ -6,7 +6,9 @@ navegando por todas las páginas disponibles.
 """
 
 import asyncio
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Optional
 from playwright.async_api import Page
 

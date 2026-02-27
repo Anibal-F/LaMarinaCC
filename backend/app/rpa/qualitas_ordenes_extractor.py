@@ -273,14 +273,23 @@ def save_ordenes_to_db(ordenes: List[Dict], fecha_extraccion: datetime = None) -
         fecha_extraccion = datetime.now()
     
     # Siempre guardar en JSON primero
-    output_path = Path(__file__).parent / "data" / f"qualitas_ordenes_{fecha_extraccion.strftime('%Y%m%d_%H%M%S')}.json"
+    from datetime import datetime as dt
+    output_path = Path(__file__).parent / "data" / f"qualitas_ordenes_{dt.now().strftime('%Y%m%d_%H%M%S')}.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Convertir fechas a strings para serialización JSON
+    ordenes_serializable = []
+    for o in ordenes:
+        o_copy = dict(o)
+        if o_copy.get('fecha_asignacion') and hasattr(o_copy['fecha_asignacion'], 'isoformat'):
+            o_copy['fecha_asignacion'] = o_copy['fecha_asignacion'].isoformat()
+        ordenes_serializable.append(o_copy)
     
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump({
-            'fecha_extraccion': fecha_extraccion.isoformat(),
+            'fecha_extraccion': fecha_extraccion.isoformat() if hasattr(fecha_extraccion, 'isoformat') else fecha_extraccion,
             'total': len(ordenes),
-            'ordenes': ordenes
+            'ordenes': ordenes_serializable
         }, f, indent=2, ensure_ascii=False)
     
     print(f"[JSON] ✓ {len(ordenes)} órdenes guardadas en: {output_path}")

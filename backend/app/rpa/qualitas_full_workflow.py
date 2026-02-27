@@ -366,10 +366,27 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 filepath = extractor.save_to_file(data)
                 print(f"\n[JSON] Guardado en: {filepath}")
             
-            # Nota: El guardado en DB se hace desde el worker, no desde el RPA
-            # porque el subprocess no tiene acceso a la red del contenedor
-            print("\n[DB] Los datos se guardarán en la base de datos por el worker")
-            print("[DB] Archivo JSON generado para el worker")
+            # Guardar en base de datos
+            print("\n[DB] Guardando indicadores en base de datos...")
+            try:
+                from app.modules.administracion.qualitas_indicadores import save_indicadores
+                save_indicadores(data.to_dict())
+                print("[DB] ✓ Indicadores guardados")
+            except Exception as e:
+                print(f"[DB] ✗ Error guardando indicadores: {e}")
+            
+            # Extraer órdenes asignadas
+            print("\n[4/4] EXTRAYENDO ÓRDENES ASIGNADAS")
+            try:
+                from app.rpa.qualitas_ordenes_extractor import extract_all_ordenes_asignadas, save_ordenes_to_db
+                ordenes = await extract_all_ordenes_asignadas(page)
+                if ordenes:
+                    inserted = save_ordenes_to_db(ordenes)
+                    print(f"[DB] ✓ {inserted} órdenes guardadas")
+                else:
+                    print("[Ordenes] No se encontraron órdenes")
+            except Exception as e:
+                print(f"[Ordenes] ✗ Error extrayendo órdenes: {e}")
             
             # Click en estatus específico si se solicitó
             if click_status:

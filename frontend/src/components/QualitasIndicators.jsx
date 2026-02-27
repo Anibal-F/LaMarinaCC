@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import QualitasOrdenesAsignadas from "./QualitasOrdenesAsignadas.jsx";
 
 export default function QualitasIndicators({ onRefresh }) {
   const [indicadores, setIndicadores] = useState(null);
@@ -396,6 +397,13 @@ export default function QualitasIndicators({ onRefresh }) {
             {updating ? 'Obteniendo datos...' : 'Obtener Indicadores'}
           </button>
         </div>
+      )}
+
+      {/* Tabla de Órdenes Asignadas */}
+      {indicadores && !loading && (
+        <QualitasOrdenesAsignadas 
+          fechaExtraccion={indicadores?.fecha_extraccion} 
+        />
       )}
     </div>
   );

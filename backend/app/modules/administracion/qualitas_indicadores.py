@@ -420,3 +420,53 @@ async def get_estatus():
         "total_ordenes": indicadores['total_ordenes'],
         "taller": indicadores['taller_nombre']
     }
+
+
+# ============================================================================
+# ÓRDENES ASIGNADAS
+# ============================================================================
+
+def get_latest_ordenes(limit: int = 500) -> list:
+    """Obtiene las últimas órdenes asignadas extraídas."""
+    ensure_table_exists()  # Asegura que existe la tabla de indicadores
+    
+    # Verificar si existe la tabla de órdenes
+    with get_connection() as conn:
+        exists = conn.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'qualitas_ordenes_asignadas'
+            )
+        """).fetchone()[0]
+        
+        if not exists:
+            return []
+        
+        conn.row_factory = dict_row
+        rows = conn.execute("""
+            SELECT * FROM v_qualitas_ordenes_recientes
+            ORDER BY fecha_asignacion DESC NULLS LAST
+            LIMIT %s
+        """, (limit,)).fetchall()
+        
+        return [serialize_row(dict(row)) for row in rows]
+
+
+@router.get("/ordenes-asignadas")
+async def get_ordenes_asignadas():
+    """
+    Obtiene las órdenes asignadas más recientes de Qualitas.
+    """
+    ordenes = get_latest_ordenes()
+    
+    if not ordenes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No hay órdenes disponibles"
+        )
+    
+    return {
+        "ordenes": ordenes,
+        "total": len(ordenes),
+        "fecha_extraccion": ordenes[0].get('fecha_extraccion') if ordenes else None
+    }

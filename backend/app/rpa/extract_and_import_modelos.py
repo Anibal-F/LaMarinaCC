@@ -96,14 +96,98 @@ def load_credentials() -> Dict:
 
 
 # ============================================================================
-# LOGIN
+# LOGIN (reutilizando sistema existente)
 # ============================================================================
 
+async def solve_recaptcha_2captcha(site_key: str, page_url: str) -> str:
+    """Resuelve reCAPTCHA usando 2captcha."""
+    import aiohttp
+    
+    api_key = os.getenv("CAPTCHA_API_KEY")
+    if not api_key:
+        raise ValueError("CAPTCHA_API_KEY no configurada")
+    
+    headers = {"Accept-Encoding": "gzip, deflate", "Accept": "application/json"}
+    
+    async with aiohttp.ClientSession(headers=headers) as session:
+        # Enviar CAPTCHA
+        submit_url = "https://2captcha.com/in.php"
+        payload = {
+            "key": api_key,
+            "method": "userrecaptcha",
+            "googlekey": site_key,
+            "pageurl": page_url,
+            "json": 1,
+        }
+        
+        async with session.post(submit_url, data=payload, timeout=30) as resp:
+            result = await resp.json()
+        
+        if result.get("status") != 1:
+            raise RuntimeError(f"2captcha error: {result.get('request')}")
+        
+        captcha_id = result["request"]
+        print(f"[2captcha] CAPTCHA enviado, ID: {captcha_id}")
+        
+        # Poll por resultado
+        result_url = "https://2captcha.com/res.php"
+        for attempt in range(60):  # 5 minutos max
+            await asyncio.sleep(5)
+            
+            params = {"key": api_key, "action": "get", "id": captcha_id, "json": 1}
+            
+            async with session.get(result_url, params=params, timeout=10) as resp:
+                result = await resp.json()
+            
+            if result.get("status") == 1:
+                print(f"[2captcha] ✓ Resuelto en {(attempt + 1) * 5}s")
+                return result["request"]
+            
+            if result.get("request") != "CAPCHA_NOT_READY":
+                raise RuntimeError(f"2captcha error: {result.get('request')}")
+            
+            print(f"[2captcha] Esperando... ({(attempt + 1) * 5}s)")
+        
+        raise TimeoutError("2captcha timeout")
+
+
+async def inject_recaptcha_token(page, token: str):
+    """Inyecta el token de reCAPTCHA."""
+    script = f"""
+    (function() {{
+        var responseElement = document.getElementById('g-recaptcha-response');
+        if (!responseElement) {{
+            responseElement = document.createElement('textarea');
+            responseElement.id = 'g-recaptcha-response';
+            responseElement.name = 'g-recaptcha-response';
+            responseElement.style.display = 'none';
+            document.body.appendChild(responseElement);
+        }}
+        responseElement.value = '{token}';
+        
+        if (typeof grecaptcha !== 'undefined') {{
+            try {{
+                var widgets = Object.keys(___grecaptcha_cfg.clients || {{}});
+                for (var i = 0; i < widgets.length; i++) {{
+                    var client = ___grecaptcha_cfg.clients[widgets[i]];
+                    if (client && client.O && client.O.callback) {{
+                        client.O.callback('{token}');
+                    }}
+                }}
+            }} catch(e) {{}}
+        }}
+    }})();
+    """
+    await page.evaluate(script)
+    await asyncio.sleep(2)
+
+
 async def do_login_qualitas(page, credentials: Dict) -> bool:
-    """Hace login en Qualitas."""
+    """Hace login en Qualitas con resolución de CAPTCHA."""
     user = credentials.get("user", "")
     password = credentials.get("password", "")
     taller_id = credentials.get("taller_id", "")
+    site_key = os.getenv("QUALITAS_RECAPTCHA_SITE_KEY", "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI")  # Default test key
     
     if not user or not password:
         print("[Error] Faltan credenciales de Qualitas")
@@ -125,6 +209,15 @@ async def do_login_qualitas(page, credentials: Dict) -> bool:
             await terms.click()
     except:
         pass
+    
+    # Resolver CAPTCHA
+    print("[Login] Resolviendo reCAPTCHA...")
+    try:
+        token = await solve_recaptcha_2captcha(site_key, QUALITAS_LOGIN_URL)
+        await inject_recaptcha_token(page, token)
+    except Exception as e:
+        print(f"[Login] Error resolviendo CAPTCHA: {e}")
+        return False
     
     # Click en login
     print("[Login] Enviando formulario...")

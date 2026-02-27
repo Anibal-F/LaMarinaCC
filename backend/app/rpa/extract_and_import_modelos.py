@@ -23,6 +23,7 @@ Requisitos:
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,24 @@ from playwright_stealth import Stealth
 
 # Importar configuración de DB
 from app.core.db import get_connection
+
+
+def load_credentials_from_env():
+    """Carga credenciales desde variables de entorno o archivo .envQualitas"""
+    # Intentar cargar desde archivo .envQualitas si existe
+    env_file = backend_dir / ".envQualitas"
+    if env_file.exists():
+        with open(env_file, 'r') as f:
+            for line in f:
+                if '=' in line and not line.startswith('#'):
+                    key, value = line.strip().split('=', 1)
+                    os.environ[key] = value
+    
+    return {
+        "user": os.getenv("QUALITAS_USER", ""),
+        "password": os.getenv("QUALITAS_PASSWORD", ""),
+        "taller_id": os.getenv("QUALITAS_TALLER_ID", "")
+    }
 
 
 # ============================================================================
@@ -177,25 +196,25 @@ async def extract_all_modelos(headless: bool = True) -> List[Dict[str, str]]:
     print("=" * 60)
     
     # Cargar credenciales
+    credentials = load_credentials_from_env()
+    
+    # Intentar también desde DB si está disponible
     try:
         from app.rpa.credentials_helper import get_qualitas_credentials
         creds = get_qualitas_credentials()
         if creds:
             credentials = {
-                "user": creds.get("usuario", ""),
-                "password": creds.get("password", ""),
-                "taller_id": creds.get("taller_id", "")
+                "user": creds.get("usuario", credentials.get("user", "")),
+                "password": creds.get("password", credentials.get("password", "")),
+                "taller_id": creds.get("taller_id", credentials.get("taller_id", ""))
             }
-        else:
-            # Fallback a variables de entorno
-            import os
-            credentials = {
-                "user": os.getenv("QUALITAS_USER", ""),
-                "password": os.getenv("QUALITAS_PASSWORD", ""),
-                "taller_id": os.getenv("QUALITAS_TALLER_ID", "")
-            }
-    except Exception as e:
-        print(f"[Error] No se pudieron cargar credenciales: {e}")
+    except:
+        pass  # Usar credenciales del .envQualitas
+    
+    if not credentials.get("user") or not credentials.get("password"):
+        print("[Error] No se encontraron credenciales de Qualitas")
+        print("[Info] Configura QUALITAS_USER, QUALITAS_PASSWORD y QUALITAS_TALLER_ID")
+        print("       en el archivo .envQualitas o como variables de entorno")
         return []
     
     all_modelos = []

@@ -285,34 +285,54 @@ async def extract_modelos_from_page(page) -> List[Dict[str, str]]:
 
 
 async def get_next_page_button(page) -> bool:
-    """Navega a la siguiente página."""
+    """Navega a la siguiente página usando el botón 'Next'."""
     try:
+        # Selector basado en el HTML real: <a class="page-link" href="..." rel="next" aria-label="Next">»</a>
         next_selectors = [
-            'a:has-text("Siguiente")',
-            'a:has-text("Next")',
-            '.pagination .next a',
-            '.page-link:has-text(">")',
-            'button:has-text("Siguiente")'
+            'a.page-link[rel="next"]',           # Selector principal
+            'a[rel="next"]',                      # Más genérico
+            'a[aria-label="Next"]',               # Por aria-label
+            '.pagination a.page-link:has-text("»")',  # Por texto »
+            '.page-item:not(.disabled) a.page-link:has-text("»")'  # Con clase page-item
         ]
         
         for selector in next_selectors:
-            next_btn = page.locator(selector).first
             try:
-                if await next_btn.is_visible():
-                    disabled = await next_btn.get_attribute('disabled')
-                    class_attr = await next_btn.get_attribute('class')
+                next_btn = page.locator(selector).first
+                
+                # Verificar si existe y es visible
+                if await next_btn.count() == 0:
+                    continue
                     
-                    if disabled or (class_attr and 'disabled' in class_attr):
-                        return False
-                    
-                    await next_btn.click()
-                    await asyncio.sleep(2)
-                    return True
-            except:
+                if not await next_btn.is_visible():
+                    continue
+                
+                # Verificar que el elemento padre no tenga 'disabled'
+                parent = next_btn.locator('..').first
+                parent_class = await parent.get_attribute('class') if parent else ""
+                
+                if parent_class and 'disabled' in parent_class:
+                    print("  [Paginación] Botón 'Next' está deshabilitado (última página)")
+                    return False
+                
+                print(f"  [Paginación] Click en 'Next' usando: {selector}")
+                await next_btn.click()
+                await asyncio.sleep(2)  # Esperar carga de página
+                
+                # Verificar que cambió la URL o hay nuevos datos
+                print(f"  [Paginación] Página cargada: {page.url}")
+                return True
+                
+            except Exception as e:
+                # Silenciosamente continuar con el siguiente selector
                 continue
         
+        # Si ningún selector funcionó, podría ser la última página
+        print("  [Paginación] No se encontró botón 'Next' - posiblemente última página")
         return False
-    except:
+        
+    except Exception as e:
+        print(f"  [Paginación] Error: {e}")
         return False
 
 

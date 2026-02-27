@@ -1,3 +1,4 @@
+import os
 import psycopg
 
 from app.core.config import settings
@@ -10,4 +11,6 @@ def _normalize_dsn(dsn: str) -> str:
 
 
 def get_connection():
-    return psycopg.connect(_normalize_dsn(settings.database_url), autocommit=True)
+    # Priorizar variable de entorno sobre settings (para contenedores en producción)
+    database_url = os.environ.get("DATABASE_URL", settings.database_url)
+    return psycopg.connect(_normalize_dsn(database_url), autocommit=True)

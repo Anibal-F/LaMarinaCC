@@ -70,16 +70,18 @@ async def extract_ordenes_from_page(page: Page) -> List[Dict]:
                 print(f"  [Debug] Primera fila: {cell_texts}")
             
             # Mapear columnas según la tabla real
-            # Columnas: #Exp | Asignación | Póliza | Siniestro/Reporte | Riesgo | Vehículo | Año | Placas | Estatus | Acciones
-            num_exp = cell_texts[0] if len(cell_texts) > 0 else ""
-            fecha_asig = cell_texts[1] if len(cell_texts) > 1 else ""
-            poliza = cell_texts[2] if len(cell_texts) > 2 else ""
-            siniestro_reporte = cell_texts[3] if len(cell_texts) > 3 else ""
-            riesgo = cell_texts[4] if len(cell_texts) > 4 else ""
-            vehiculo = cell_texts[5] if len(cell_texts) > 5 else ""
-            anio = cell_texts[6] if len(cell_texts) > 6 else ""
-            placas = cell_texts[7] if len(cell_texts) > 7 else ""
-            estatus = cell_texts[8] if len(cell_texts) > 8 else "Asignado"
+            # Debug muestra: [ID, #Exp, Asignación, Póliza, Siniestro/Reporte, Riesgo, Vehículo, Año, Placas, Estatus, ...]
+            # Ejemplo: ['697677', '9300160', '2026-02-27 12:51:06', '0640779497', 'S: 0289408 R: 04 0336432 T1', 'Tercero', 'NISSAN...', '2019', 'VNT113D', 'Asignado', ...]
+            id_interno = cell_texts[0] if len(cell_texts) > 0 else ""  # ID interno (no usado)
+            num_exp = cell_texts[1] if len(cell_texts) > 1 else ""      # #Exp
+            fecha_asig = cell_texts[2] if len(cell_texts) > 2 else ""   # Asignación
+            poliza = cell_texts[3] if len(cell_texts) > 3 else ""       # Póliza
+            siniestro_reporte = cell_texts[4] if len(cell_texts) > 4 else ""  # Siniestro/Reporte
+            riesgo = cell_texts[5] if len(cell_texts) > 5 else ""       # Riesgo
+            vehiculo = cell_texts[6] if len(cell_texts) > 6 else ""     # Vehículo
+            anio = cell_texts[7] if len(cell_texts) > 7 else ""         # Año
+            placas = cell_texts[8] if len(cell_texts) > 8 else ""       # Placas
+            estatus = cell_texts[9] if len(cell_texts) > 9 else "Asignado"  # Estatus
             
             # Parsear siniestro y reporte
             siniestro = ""

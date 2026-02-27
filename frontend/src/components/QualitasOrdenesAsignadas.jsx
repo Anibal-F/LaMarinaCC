@@ -5,7 +5,9 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
+  
+  const pageSizeOptions = [10, 50, 100, 500];
 
   useEffect(() => {
     fetchOrdenes();
@@ -38,6 +40,12 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
   // Paginación
   const totalPages = Math.ceil(ordenes.length / pageSize);
   const pagedOrdenes = ordenes.slice((page - 1) * pageSize, page * pageSize);
+  
+  // Resetear página cuando cambia el tamaño
+  const handlePageSizeChange = (newSize) => {
+    setPageSize(Number(newSize));
+    setPage(1); // Volver a página 1
+  };
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
@@ -83,13 +91,30 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
           <h4 className="text-sm font-bold text-white">Órdenes Asignadas</h4>
           <span className="text-xs text-slate-400">({ordenes.length} total)</span>
         </div>
-        <button
-          onClick={fetchOrdenes}
-          className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-          title="Recargar"
-        >
-          <span className="material-symbols-outlined text-sm">refresh</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Selector de cantidad */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">Mostrar:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(e.target.value)}
+              className="bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+            >
+              {pageSizeOptions.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={fetchOrdenes}
+            className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+            title="Recargar"
+          >
+            <span className="material-symbols-outlined text-sm">refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Tabla */}
@@ -142,24 +167,24 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
       </div>
 
       {/* Paginación */}
-      {totalPages > 1 && (
+      {(totalPages > 1 || ordenes.length > pageSizeOptions[0]) && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-border-dark">
           <p className="text-xs text-slate-400">
-            Mostrando {pagedOrdenes.length} de {ordenes.length}
+            Mostrando {pagedOrdenes.length} de {ordenes.length} registros
           </p>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-2 py-1 rounded border border-border-dark text-xs disabled:opacity-40"
+              className="px-2 py-1 rounded border border-border-dark text-xs disabled:opacity-40 hover:bg-slate-700 transition-colors"
             >
               Anterior
             </button>
-            <span className="text-xs text-slate-400">{page} / {totalPages}</span>
+            <span className="text-xs text-slate-400">{page} / {totalPages || 1}</span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-2 py-1 rounded border border-border-dark text-xs disabled:opacity-40"
+              disabled={page === totalPages || totalPages === 0}
+              className="px-2 py-1 rounded border border-border-dark text-xs disabled:opacity-40 hover:bg-slate-700 transition-colors"
             >
               Siguiente
             </button>

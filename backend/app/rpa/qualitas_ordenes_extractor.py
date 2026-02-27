@@ -20,79 +20,114 @@ async def extract_ordenes_from_page(page: Page) -> List[Dict]:
     """
     ordenes = []
     
-    # Selector de la tabla de asignados
+    # Múltiples selectores posibles para la tabla de asignados
     selectors = [
         '#tableasig tbody tr',
         'table[id*="asig"] tbody tr',
-        '.table tbody tr'
+        '.dataTable tbody tr',
+        '.table-hover tbody tr',
+        'table.table tbody tr',
+        '.table-responsive table tbody tr'
     ]
     
     rows = []
+    used_selector = None
     for selector in selectors:
         try:
-            await page.wait_for_selector(selector, timeout=5000)
+            await page.wait_for_selector(selector, timeout=3000)
             rows = await page.locator(selector).all()
             if rows:
+                used_selector = selector
+                print(f"  [Debug] Tabla encontrada con: {selector} ({len(rows)} filas)")
                 break
         except:
             continue
     
     if not rows:
+        print("  [Warning] No se encontraron filas en la tabla")
+        # Debug: guardar HTML para análisis
+        try:
+            html = await page.content()
+            print(f"  [Debug] HTML parcial: {html[:500]}...")
+        except:
+            pass
         return []
     
-    for row in rows:
+    for i, row in enumerate(rows):
         try:
             cells = await row.locator('td').all()
-            if len(cells) < 9:  # Mínimo de columnas esperadas
+            if len(cells) < 8:  # Mínimo de columnas esperadas
                 continue
             
-            # Extraer datos de cada celda
-            # Según la imagen: #Exp, Asignación, Póliza, Siniestro/Reporte, Riesgo, Vehículo, Año, Placas, Estatus
+            # Extraer texto de todas las celdas para debugging
+            cell_texts = []
+            for j, cell in enumerate(cells):
+                text = await cell.text_content()
+                cell_texts.append(text.strip() if text else "")
             
-            num_exp = await cells[0].text_content()
-            fecha_asig = await cells[1].text_content()
-            poliza = await cells[2].text_content()
-            siniestro_reporte = await cells[3].text_content()
-            riesgo = await cells[4].text_content()
-            vehiculo = await cells[5].text_content()
-            anio = await cells[6].text_content()
-            placas = await cells[7].text_content()
-            estatus = await cells[8].text_content()
+            # Debug primera fila
+            if i == 0:
+                print(f"  [Debug] Primera fila: {cell_texts}")
             
-            # Parsear siniestro y reporte (vienen juntos en formato: S: XXX R: XXX)
+            # Mapear columnas según la tabla real
+            # Columnas: #Exp | Asignación | Póliza | Siniestro/Reporte | Riesgo | Vehículo | Año | Placas | Estatus | Acciones
+            num_exp = cell_texts[0] if len(cell_texts) > 0 else ""
+            fecha_asig = cell_texts[1] if len(cell_texts) > 1 else ""
+            poliza = cell_texts[2] if len(cell_texts) > 2 else ""
+            siniestro_reporte = cell_texts[3] if len(cell_texts) > 3 else ""
+            riesgo = cell_texts[4] if len(cell_texts) > 4 else ""
+            vehiculo = cell_texts[5] if len(cell_texts) > 5 else ""
+            anio = cell_texts[6] if len(cell_texts) > 6 else ""
+            placas = cell_texts[7] if len(cell_texts) > 7 else ""
+            estatus = cell_texts[8] if len(cell_texts) > 8 else "Asignado"
+            
+            # Parsear siniestro y reporte
             siniestro = ""
             reporte = ""
             if siniestro_reporte:
                 sr_text = siniestro_reporte.strip()
                 if "S:" in sr_text:
-                    siniestro = sr_text.split("S:")[1].split("R:")[0].strip() if "R:" in sr_text else sr_text.split("S:")[1].strip()
-                if "R:" in sr_text:
-                    reporte = sr_text.split("R:")[1].strip()
+                    s_parts = sr_text.split("S:")
+                    if len(s_parts) > 1:
+                        s_val = s_parts[1]
+                        if "R:" in s_val:
+                            siniestro = s_val.split("R:")[0].strip()
+                            reporte = s_val.split("R:")[1].strip()
+                        else:
+                            siniestro = s_val.strip()
+                if "R:" in sr_text and not reporte:
+                    r_parts = sr_text.split("R:")
+                    if len(r_parts) > 1:
+                        reporte = r_parts[1].strip()
             
             # Parsear año
             try:
-                anio_int = int(anio.strip()) if anio and anio.strip().isdigit() else None
+                anio_clean = anio.strip().replace(',', '')
+                anio_int = int(anio_clean) if anio_clean.isdigit() else None
             except:
                 anio_int = None
             
             orden = {
-                'num_expediente': num_expediente.strip() if num_expediente else "",
+                'num_expediente': num_exp.strip(),
                 'fecha_asignacion': parse_fecha(fecha_asig.strip()) if fecha_asig else None,
-                'poliza': poliza.strip() if poliza else "",
+                'poliza': poliza.strip(),
                 'siniestro': siniestro,
                 'reporte': reporte,
-                'riesgo': riesgo.strip() if riesgo else "",
-                'vehiculo': vehiculo.strip() if vehiculo else "",
+                'riesgo': riesgo.strip(),
+                'vehiculo': vehiculo.strip(),
                 'anio': anio_int,
-                'placas': placas.strip() if placas else "",
-                'estatus': estatus.strip() if estatus else ""
+                'placas': placas.strip().upper(),
+                'estatus': estatus.strip() or "Asignado"
             }
             
-            # Solo agregar si tiene número de expediente
-            if orden['num_expediente']:
+            # Solo agregar si tiene número de expediente válido
+            if orden['num_expediente'] and len(orden['num_expediente']) > 3:
                 ordenes.append(orden)
+                if i < 3:  # Debug primeras 3 órdenes
+                    print(f"  [Orden {i+1}] {orden['num_expediente']} - {orden['vehiculo'][:30]}")
                 
         except Exception as e:
+            print(f"  [Error fila {i}]: {e}")
             continue
     
     return ordenes

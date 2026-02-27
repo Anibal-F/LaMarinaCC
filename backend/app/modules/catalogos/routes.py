@@ -651,3 +651,124 @@ def delete_estatus_valuacion(estatus_id: int):
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Estatus no encontrado")
     return None
+
+
+# ============================================================================
+# IMPORTACIÓN MASIVA DE MODELOS
+# ============================================================================
+
+@router.post("/modelos-autos/importar-masivo")
+def importar_modelos_masivo(payload: dict):
+    """
+    Importa múltiples modelos masivamente desde un array.
+    
+    El payload debe tener formato:
+    {
+        "modelos": [
+            {"marca": "TOYOTA", "modelo": "COROLLA"},
+            {"marca": "HONDA", "modelo": "CIVIC"},
+            ...
+        ],
+        "gpo_marca": "GENERAL"  // opcional, default: GENERAL
+    }
+    
+    Crea automáticamente las marcas si no existen.
+    Omite modelos duplicados.
+    """
+    modelos = payload.get("modelos", [])
+    gpo_marca = payload.get("gpo_marca", "GENERAL")
+    
+    if not modelos:
+        raise HTTPException(status_code=400, detail="No se proporcionaron modelos")
+    
+    # Asegurar que existe el grupo
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO grupos_autos (nb_grupo)
+            VALUES (%s)
+            ON CONFLICT (LOWER(nb_grupo)) DO NOTHING
+            """,
+            (gpo_marca,)
+        )
+        conn.commit()
+    
+    # Obtener marcas existentes
+    marcas_db = {}
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id, UPPER(nb_marca) FROM marcas_autos").fetchall()
+        marcas_db = {row[1]: row[0] for row in rows}
+    
+    # Obtener modelos existentes
+    modelos_existentes = set()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT marca_id, UPPER(nb_modelo) FROM modelos_autos"
+        ).fetchall()
+        modelos_existentes = set(rows)
+    
+    stats = {
+        "marcas_creadas": 0,
+        "modelos_creados": 0,
+        "modelos_omitidos": 0,
+        "errores": []
+    }
+    
+    for item in modelos:
+        marca_nombre = item.get("marca", "").strip()
+        modelo_nombre = item.get("modelo", "").strip()
+        
+        if not marca_nombre or not modelo_nombre:
+            continue
+        
+        marca_upper = marca_nombre.upper()
+        modelo_upper = modelo_nombre.upper()
+        
+        # Verificar/crear marca
+        if marca_upper in marcas_db:
+            marca_id = marcas_db[marca_upper]
+        else:
+            try:
+                with get_connection() as conn:
+                    row = conn.execute(
+                        """
+                        INSERT INTO marcas_autos (gpo_marca, nb_marca)
+                        VALUES (%s, %s)
+                        RETURNING id
+                        """,
+                        (gpo_marca, marca_nombre)
+                    ).fetchone()
+                    conn.commit()
+                    marca_id = row[0]
+                    marcas_db[marca_upper] = marca_id
+                    stats["marcas_creadas"] += 1
+            except Exception as e:
+                stats["errores"].append(f"Error creando marca {marca_nombre}: {e}")
+                continue
+        
+        # Verificar si el modelo ya existe
+        if (marca_id, modelo_upper) in modelos_existentes:
+            stats["modelos_omitidos"] += 1
+            continue
+        
+        # Crear modelo
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO modelos_autos (marca_id, nb_modelo)
+                    VALUES (%s, %s)
+                    """,
+                    (marca_id, modelo_nombre)
+                )
+                conn.commit()
+                modelos_existentes.add((marca_id, modelo_upper))
+                stats["modelos_creados"] += 1
+        except Exception as e:
+            stats["errores"].append(f"Error creando modelo {modelo_nombre}: {e}")
+    
+    return {
+        "success": True,
+        "message": f"Importación completada. {stats['modelos_creados']} modelos creados.",
+        "stats": stats
+    }

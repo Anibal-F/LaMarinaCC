@@ -5,11 +5,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH=/app
 
-# Instalar Python y pip
+# Instalar Python, pip y zonas horarias
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Configurar zona horaria de Mazatlán
+ENV TZ=America/Mazatlan
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /app
 

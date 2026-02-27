@@ -327,53 +327,109 @@ async def get_indicadores():
 @router.post("/indicadores/actualizar")
 async def actualizar_indicadores():
     """
-    Ejecuta el RPA para actualizar los indicadores.
+    Ejecuta el RPA para actualizar indicadores y órdenes asignadas.
     Esto puede tardar 30-120 segundos (hasta 5 min si hay CAPTCHA).
-    Retorna los logs completos para debug.
     """
     import logging
+    import subprocess
     logger = logging.getLogger(__name__)
     
     job_id = f"qualitas_update_{datetime.now(MAZATLAN_TZ).strftime('%Y%m%d_%H%M%S')}"
     
-    # Capturar logs del RPA
-    rpa_logs = []
-    
     try:
-        # Ejecutar síncronamente (puede tardar)
-        result = run_qualitas_rpa_sync()
+        # Ejecutar RPA completo (indicadores + órdenes)
+        backend_dir = Path(__file__).resolve().parents[3]
+        
+        # Ejecutar workflow
+        cmd = [
+            "python3", "-m", "app.rpa.qualitas_full_workflow",
+            "--headless",
+            "--use-db"
+        ]
+        
+        # Verificar si hay sesión
+        session_path = backend_dir / "app" / "rpa" / "sessions" / "qualitas_session.json"
+        if session_path.exists():
+            cmd.append("--skip-login")
+        
+        result = subprocess.run(
+            cmd,
+            cwd=str(backend_dir),
+            capture_output=True,
+            text=True,
+            timeout=400,
+            encoding='utf-8',
+            errors='replace'
+        )
+        
+        logs = result.stdout + "\n" + result.stderr
+        
+        # Buscar archivo JSON de órdenes generado
+        import glob
+        json_files = sorted(
+            glob.glob(str(backend_dir / "app" / "rpa" / "data" / "qualitas_ordenes_*.json")),
+            reverse=True
+        )
+        
+        ordenes_importadas = 0
+        if json_files:
+            # Importar a BD usando psycopg directamente
+            try:
+                import psycopg
+                import json
+                
+                with open(json_files[0], 'r') as f:
+                    data = json.load(f)
+                
+                ordenes = data.get('ordenes', [])
+                fecha_ext = data.get('fecha_extraccion', datetime.now().isoformat())
+                
+                conn = psycopg.connect(
+                    'postgresql://LaMarinaCC:A355Fu584%24@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require',
+                    autocommit=True
+                )
+                
+                for orden in ordenes:
+                    try:
+                        conn.execute("""
+                            INSERT INTO qualitas_ordenes_asignadas 
+                            (num_expediente, fecha_asignacion, poliza, siniestro, reporte, 
+                             riesgo, vehiculo, anio, placas, estatus, fecha_extraccion)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
+                        """, (
+                            orden.get('num_expediente'), orden.get('fecha_asignacion'),
+                            orden.get('poliza'), orden.get('siniestro'), orden.get('reporte'),
+                            orden.get('riesgo'), orden.get('vehiculo'), orden.get('anio'),
+                            orden.get('placas'), orden.get('estatus'), fecha_ext
+                        ))
+                        ordenes_importadas += 1
+                    except:
+                        pass
+                
+                conn.close()
+                logs += f"\n[Import] {ordenes_importadas} órdenes importadas a BD"
+                
+            except Exception as e:
+                logs += f"\n[Import Error] {e}"
         
         return {
-            "success": True,
-            "message": "Indicadores actualizados exitosamente",
+            "success": result.returncode == 0,
+            "message": "Actualización completada" if result.returncode == 0 else "El RPA terminó con errores",
             "job_id": job_id,
             "indicadores": get_latest_indicadores(),
-            "logs": result.get("logs", "")
+            "ordenes_importadas": ordenes_importadas,
+            "logs": logs[-3000:]  # Últimos 3000 chars
         }
         
     except Exception as e:
         import traceback
-        error_trace = traceback.format_exc()
-        
-        # Log del error
-        logger.error(f"[actualizar_indicadores] Error: {e}")
-        logger.error(error_trace)
-        
-        # Extraer logs del error si están disponibles
-        error_str = str(e)
-        logs_from_error = ""
-        if "Logs del RPA:" in error_str:
-            parts = error_str.split("Logs del RPA:")
-            error_str = parts[0].strip()
-            logs_from_error = parts[1].strip() if len(parts) > 1 else ""
-        
-        # Siempre retornar JSON válido
         return {
             "success": False,
-            "message": error_str,
+            "message": str(e),
             "job_id": job_id,
-            "error_detail": error_trace,
-            "logs": logs_from_error
+            "error_detail": traceback.format_exc(),
+            "logs": ""
         }
 
 

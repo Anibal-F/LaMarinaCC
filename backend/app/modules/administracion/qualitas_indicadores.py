@@ -13,10 +13,14 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 from psycopg.rows import dict_row
 from app.core.db import get_connection
+
+# Zona horaria de Mazatlán (Pacific/Mountain)
+MAZATLAN_TZ = ZoneInfo("America/Mazatlan")
 
 router = APIRouter(prefix="/qualitas", tags=["qualitas"])
 
@@ -128,7 +132,7 @@ def save_indicadores(data: Dict[str, Any]) -> int:
             """, (
                 data.get('taller_id', ''),
                 data.get('taller_nombre', ''),
-                data.get('fecha_extraccion', datetime.now().isoformat()),
+                data.get('fecha_extraccion', datetime.now(MAZATLAN_TZ).isoformat()),
                 asignados, revisar_valuacion,
                 complemento_autorizado, complemento_solicitado, complemento_rechazado,
                 pago_danos, perdida_total, dano_menor_deducible, pendiente_terminar,
@@ -330,7 +334,7 @@ async def actualizar_indicadores():
     import logging
     logger = logging.getLogger(__name__)
     
-    job_id = f"qualitas_update_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    job_id = f"qualitas_update_{datetime.now(MAZATLAN_TZ).strftime('%Y%m%d_%H%M%S')}"
     
     # Capturar logs del RPA
     rpa_logs = []
@@ -398,9 +402,13 @@ async def get_estatus():
             "recomendacion": "Ejecute POST /admin/qualitas/indicadores/actualizar" + (" (usará sesión guardada)" if tiene_sesion else " (requiere login con CAPTCHA)")
         }
     
-    # Calcular antigüedad
-    fecha_extraccion = datetime.fromisoformat(indicadores['fecha_extraccion'].replace('Z', '+00:00'))
-    ahora = datetime.now(fecha_extraccion.tzinfo)
+    # Calcular antigüedad usando zona horaria de Mazatlán
+    fecha_str = indicadores['fecha_extraccion'].replace('Z', '+00:00')
+    fecha_extraccion = datetime.fromisoformat(fecha_str)
+    # Asegurar que la fecha tenga zona horaria
+    if fecha_extraccion.tzinfo is None:
+        fecha_extraccion = fecha_extraccion.replace(tzinfo=MAZATLAN_TZ)
+    ahora = datetime.now(MAZATLAN_TZ)
     antiguedad = ahora - fecha_extraccion
     
     return {

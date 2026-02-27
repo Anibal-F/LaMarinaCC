@@ -294,12 +294,26 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 
                 # Verificar si la sesión sigue válida
                 current_url = page.url.lower()
-                if "login" in current_url or "log-in" in current_url or "signin" in current_url:
-                    print("[Session] ⚠ Sesión expirada - Redirigido a login")
-                    raise RuntimeError("SESSION_EXPIRED: La sesión ha expirado, se requiere login completo")
+                login_indicators = ["login", "log-in", "signin", "proordersistem.com.mx/"]
+                session_expired = any(indicator in current_url for indicator in login_indicators)
+                
+                if session_expired:
+                    print(f"[Session] ⚠ Sesión expirada o inválida - URL actual: {current_url}")
+                    print("[Session] Intentando re-login automático...")
+                    
+                    success = await do_login(page, use_db=use_db)
+                    if not success:
+                        raise RuntimeError("Login fallido después de intentar recuperar sesión expirada")
+                    
+                    # Guardar la nueva sesión
+                    storage = await context.storage_state()
+                    session_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(session_path, "w") as f:
+                        json.dump(storage, f, indent=2)
+                    print(f"[Session] Nueva sesión guardada")
                 
                 # Verificar que estamos en el dashboard
-                if "dashboard" not in current_url:
+                elif "dashboard" not in current_url:
                     print(f"[Session] ⚠ URL inesperada: {current_url}")
                     # Intentar navegar al dashboard nuevamente
                     await page.goto(f"{dashboard_url.rstrip('/')}/dashboard", wait_until="networkidle")
@@ -308,7 +322,19 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                     # Verificar nuevamente
                     current_url = page.url.lower()
                     if "dashboard" not in current_url:
-                        raise RuntimeError("SESSION_EXPIRED: No se pudo acceder al dashboard, sesión posiblemente expirada")
+                        print(f"[Session] ⚠ Aún en URL inesperada: {current_url}")
+                        print("[Session] Intentando re-login automático...")
+                        
+                        success = await do_login(page, use_db=use_db)
+                        if not success:
+                            raise RuntimeError("Login fallido después de intentar recuperar sesión")
+                        
+                        # Guardar la nueva sesión
+                        storage = await context.storage_state()
+                        session_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(session_path, "w") as f:
+                            json.dump(storage, f, indent=2)
+                        print(f"[Session] Nueva sesión guardada")
             
             # Manejar modal de aviso (si aparece)
             print("\n[2/4] VERIFICANDO MODAL DE AVISO")

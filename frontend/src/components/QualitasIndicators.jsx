@@ -148,12 +148,28 @@ export default function QualitasIndicators({ onRefresh }) {
     }
   };
 
+  // Zona horaria de Mazatlán
+  const MAZATLAN_TZ = 'America/Mazatlan';
+
   // Calcular si los datos son recientes (< 2 horas)
   const isDataFresh = () => {
     if (!lastUpdate) return false;
     const now = new Date();
     const diffHours = (now - lastUpdate) / (1000 * 60 * 60);
     return diffHours < 2;
+  };
+
+  // Formatear fecha en zona horaria de Mazatlán
+  const formatMazatlanDate = (date) => {
+    if (!date) return '';
+    return date.toLocaleString('es-MX', { 
+      timeZone: MAZATLAN_TZ,
+      hour: '2-digit', 
+      minute: '2-digit',
+      day: '2-digit',
+      month: 'short',
+      hour12: true
+    });
   };
 
   // Formatear número con separador de miles
@@ -195,12 +211,7 @@ export default function QualitasIndicators({ onRefresh }) {
             <div className="flex items-center gap-2">
               {lastUpdate && (
                 <p className={`text-xs ${isDataFresh() ? 'text-alert-green' : 'text-alert-amber'}`}>
-                  Actualizado: {lastUpdate.toLocaleString('es-MX', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    day: '2-digit',
-                    month: 'short'
-                  })}
+                  Actualizado: {formatMazatlanDate(lastUpdate)}
                   {!isDataFresh() && ' (Datos antiguos)'}
                 </p>
               )}

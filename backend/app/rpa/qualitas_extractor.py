@@ -12,8 +12,12 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+from zoneinfo import ZoneInfo
 
 from playwright.async_api import Page
+
+# Zona horaria de Mazatlán (Pacific/Mountain)
+MAZATLAN_TZ = ZoneInfo("America/Mazatlan")
 
 
 @dataclass
@@ -158,7 +162,7 @@ class QualitasExtractor:
         taller_info = await self.extract_taller_info()
         
         return DashboardData(
-            fecha_extraccion=datetime.now().isoformat(),
+            fecha_extraccion=datetime.now(MAZATLAN_TZ).isoformat(),
             taller_id=taller_info.get("taller_id", "96627"),
             taller_nombre=taller_info.get("taller_nombre", "DETALLADO AUTOMOTRIZ LA MARINA"),
             usuario=taller_info.get("usuario", ""),
@@ -272,7 +276,7 @@ class QualitasExtractor:
             Path del archivo guardado
         """
         if filepath is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(MAZATLAN_TZ).strftime("%Y%m%d_%H%M%S")
             filepath = Path(__file__).resolve().parent / "data" / f"qualitas_dashboard_{timestamp}.json"
         
         filepath.parent.mkdir(parents=True, exist_ok=True)

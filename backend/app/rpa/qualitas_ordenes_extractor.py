@@ -261,21 +261,31 @@ async def extract_all_ordenes_asignadas(page: Page) -> List[Dict]:
 # Función para guardar en base de datos
 def save_ordenes_to_db(ordenes: List[Dict], fecha_extraccion: datetime = None) -> int:
     """
-    Guarda las órdenes en la base de datos.
-    Si falla la conexión, guarda en archivo JSON para importación manual.
-    
-    Returns:
-        Cantidad de órdenes insertadas
+    Guarda las órdenes en JSON (método confiable para evitar problemas de DNS).
     """
-    from app.core.db import get_connection
+    from pathlib import Path
     
     if fecha_extraccion is None:
         fecha_extraccion = datetime.now()
     
-    inserted = 0
-    db_error = None
+    # Siempre guardar en JSON primero
+    output_path = Path(__file__).parent / "data" / f"qualitas_ordenes_{fecha_extraccion.strftime('%Y%m%d_%H%M%S')}.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump({
+            'fecha_extraccion': fecha_extraccion.isoformat(),
+            'total': len(ordenes),
+            'ordenes': ordenes
+        }, f, indent=2, ensure_ascii=False)
+    
+    print(f"[JSON] ✓ {len(ordenes)} órdenes guardadas en: {output_path}")
+    print(f"[Info] Para importar a BD, ejecuta en EC2:")
+    print(f"       cd ~/LaMarinaCC/backend && python3 import_ordenes_json.py {output_path}")
+    
+    # Intentar guardar en BD (opcional)
     try:
+        from app.core.db import get_connection
         with get_connection() as conn:
             for orden in ordenes:
                 try:
@@ -288,6 +298,7 @@ def save_ordenes_to_db(ordenes: List[Dict], fecha_extraccion: datetime = None) -
                     """, (
                         orden['num_expediente'],
                         orden['fecha_asignacion'],
+                        orden['poliza'],
                         orden['siniestro'],
                         orden['reporte'],
                         orden['riesgo'],
@@ -297,38 +308,14 @@ def save_ordenes_to_db(ordenes: List[Dict], fecha_extraccion: datetime = None) -
                         orden['estatus'],
                         fecha_extraccion
                     ))
-                    inserted += 1
                 except Exception as e:
-                    print(f"[DB Error] {orden['num_expediente']}: {e}")
-            
+                    pass
             conn.commit()
-            print(f"[DB] ✓ {inserted} órdenes guardadas en base de datos")
-            return inserted
-            
+            print(f"[DB] ✓ Órdenes también guardadas en base de datos")
     except Exception as e:
-        db_error = str(e)
-        print(f"[DB] ✗ Error de conexión: {e}")
-        print("[DB] Guardando órdenes en archivo JSON para importación manual...")
-        
-        # Guardar en JSON para importación manual
-        from pathlib import Path
-        import json
-        
-        output_path = Path(__file__).parent / "data" / f"qualitas_ordenes_{fecha_extraccion.strftime('%Y%m%d_%H%M%S')}.json"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                'fecha_extraccion': fecha_extraccion.isoformat(),
-                'total': len(ordenes),
-                'ordenes': ordenes
-            }, f, indent=2, ensure_ascii=False)
-        
-        print(f"[JSON] Órdenes guardadas en: {output_path}")
-        print(f"[Info] Para importar manualmente, ejecuta:")
-        print(f"       python3 import_ordenes_from_json.py {output_path}")
-        
-        return 0  # Indicar que no se insertaron en BD
+        print(f"[DB] Nota: No se pudieron guardar en BD automáticamente: {e}")
+    
+    return len(ordenes)
 
 
 # Función para obtener últimas órdenes

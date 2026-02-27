@@ -1,8 +1,6 @@
 import os
 import psycopg
 
-from app.core.config import settings
-
 
 def _normalize_dsn(dsn: str) -> str:
     if dsn.startswith("postgresql+psycopg://"):
@@ -11,6 +9,11 @@ def _normalize_dsn(dsn: str) -> str:
 
 
 def get_connection():
-    # Priorizar variable de entorno sobre settings (para contenedores en producción)
-    database_url = os.environ.get("DATABASE_URL", settings.database_url)
+    # Usar directamente la variable de entorno, ignorar settings
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        # Fallback a settings solo si no hay variable de entorno
+        from app.core.config import settings
+        database_url = settings.database_url
+    
     return psycopg.connect(_normalize_dsn(database_url), autocommit=True)

@@ -3,7 +3,7 @@
 Script standalone para extraer modelos de Qualitas e importarlos a RDS.
 
 Este script está diseñado para ejecutarse directamente en el servidor EC2.
-Extrae los modelos de las 34 páginas e inserta directamente en la base de datos.
+NO depende de importar desde app.rpa para evitar problemas con dotenv.
 
 Uso en EC2:
     cd ~/LaMarinaCC/backend
@@ -16,7 +16,7 @@ Uso en EC2:
     python3 -m app.rpa.extract_and_import_modelos --import-only --file modelos.json
 
 Requisitos:
-    - Credenciales de Qualitas configuradas en la base de datos o .envQualitas
+    - Credenciales de Qualitas en .envQualitas o variables de entorno
     - Acceso a la base de datos RDS desde EC2
 """
 
@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import json
 import os
+import socket
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -33,16 +34,52 @@ from typing import Dict, List, Set, Tuple
 backend_dir = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(backend_dir))
 
+# Verificar si estamos en Docker para importar DB correctamente
+def is_docker():
+    try:
+        socket.gethostbyname('db')
+        return True
+    except:
+        return False
+
+# Configurar DATABASE_URL si no está seteada
+if not os.getenv('DATABASE_URL'):
+    if is_docker():
+        os.environ['DATABASE_URL'] = 'postgresql://postgres:postgres@db:5432/lamarinacc'
+    else:
+        # Para EC2, asumimos que está en variables de entorno o .env
+        env_file = backend_dir / ".env"
+        if env_file.exists():
+            with open(env_file) as f:
+                for line in f:
+                    if '=' in line and not line.startswith('#'):
+                        key, value = line.strip().split('=', 1)
+                        if key == 'DATABASE_URL':
+                            os.environ[key] = value
+                            break
+
+# Importar DB después de configurar
+from app.core.db import get_connection
+
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
-# Importar configuración de DB
-from app.core.db import get_connection
+
+# ============================================================================
+# CONFIGURACIÓN
+# ============================================================================
+
+QUALITAS_LOGIN_URL = "https://proordersistem.com.mx/"
+QUALITAS_MODELOS_URL = "https://proordersistem.com.mx/vehiculos-modelos"
 
 
-def load_credentials_from_env():
-    """Carga credenciales desde variables de entorno o archivo .envQualitas"""
-    # Intentar cargar desde archivo .envQualitas si existe
+# ============================================================================
+# CARGA DE CREDENCIALES
+# ============================================================================
+
+def load_credentials() -> Dict:
+    """Carga credenciales desde .envQualitas o variables de entorno."""
+    # Intentar desde archivo
     env_file = backend_dir / ".envQualitas"
     if env_file.exists():
         with open(env_file, 'r') as f:
@@ -59,15 +96,7 @@ def load_credentials_from_env():
 
 
 # ============================================================================
-# CONFIGURACIÓN
-# ============================================================================
-
-QUALITAS_LOGIN_URL = "https://proordersistem.com.mx/"
-QUALITAS_MODELOS_URL = "https://proordersistem.com.mx/vehiculos-modelos"
-
-
-# ============================================================================
-# FUNCIONES DE LOGIN (simplificado)
+# LOGIN
 # ============================================================================
 
 async def do_login_qualitas(page, credentials: Dict) -> bool:
@@ -112,15 +141,20 @@ async def do_login_qualitas(page, credentials: Dict) -> bool:
 
 
 # ============================================================================
-# EXTRACCIÓN DE DATOS
+# EXTRACCIÓN
 # ============================================================================
 
 async def extract_modelos_from_page(page) -> List[Dict[str, str]]:
     """Extrae modelos de la página actual."""
     modelos = []
     
-    # Esperar tabla
-    selectors = ['table tbody tr', '.table tbody tr', 'tbody tr']
+    # Esperar tabla con múltiples intentos
+    selectors = [
+        'table tbody tr',
+        '.table tbody tr',
+        '.dataTable tbody tr',
+        'tbody tr'
+    ]
     rows = []
     
     for selector in selectors:
@@ -128,15 +162,16 @@ async def extract_modelos_from_page(page) -> List[Dict[str, str]]:
             await page.wait_for_selector(selector, timeout=5000)
             rows = await page.locator(selector).all()
             if rows:
+                print(f"  [Debug] Encontradas {len(rows)} filas con: {selector}")
                 break
         except:
             continue
     
     if not rows:
-        print("  [Warning] No se encontraron filas en esta página")
+        print("  [Warning] No se encontraron filas")
         return []
     
-    for row in rows:
+    for i, row in enumerate(rows):
         try:
             cells = await row.locator('td').all()
             if len(cells) >= 2:
@@ -146,10 +181,9 @@ async def extract_modelos_from_page(page) -> List[Dict[str, str]]:
                 modelo = modelo.strip() if modelo else ""
                 marca = marca.strip() if marca else ""
                 
-                # Validar que no esté vacío y no sea encabezado
+                # Validar
                 if modelo and marca and len(modelo) > 1 and len(marca) > 1:
-                    # Ignorar filas de encabezado
-                    if modelo.upper() not in ['MODELO', 'NOMBRE'] and marca.upper() not in ['MARCA']:
+                    if modelo.upper() not in ['MODELO', 'NOMBRE']:
                         modelos.append({'modelo': modelo, 'marca': marca})
         except:
             continue
@@ -158,33 +192,33 @@ async def extract_modelos_from_page(page) -> List[Dict[str, str]]:
 
 
 async def get_next_page_button(page) -> bool:
-    """Navega a la siguiente página si existe."""
+    """Navega a la siguiente página."""
     try:
-        # Buscar botón "Siguiente" o "Next"
         next_selectors = [
             'a:has-text("Siguiente")',
             'a:has-text("Next")',
             '.pagination .next a',
-            '[class*="pagination"] a[rel="next"]',
+            '.page-link:has-text(">")',
             'button:has-text("Siguiente")'
         ]
         
         for selector in next_selectors:
             next_btn = page.locator(selector).first
-            if await next_btn.is_visible():
-                # Verificar si está deshabilitado
-                disabled = await next_btn.get_attribute('disabled')
-                class_attr = await next_btn.get_attribute('class')
-                
-                if disabled or (class_attr and 'disabled' in class_attr):
-                    return False
-                
-                await next_btn.click()
-                await asyncio.sleep(2)  # Esperar carga
-                return True
+            try:
+                if await next_btn.is_visible():
+                    disabled = await next_btn.get_attribute('disabled')
+                    class_attr = await next_btn.get_attribute('class')
+                    
+                    if disabled or (class_attr and 'disabled' in class_attr):
+                        return False
+                    
+                    await next_btn.click()
+                    await asyncio.sleep(2)
+                    return True
+            except:
+                continue
         
         return False
-        
     except:
         return False
 
@@ -195,26 +229,11 @@ async def extract_all_modelos(headless: bool = True) -> List[Dict[str, str]]:
     print("EXTRACCIÓN DE MODELOS - QUALITAS")
     print("=" * 60)
     
-    # Cargar credenciales
-    credentials = load_credentials_from_env()
-    
-    # Intentar también desde DB si está disponible
-    try:
-        from app.rpa.credentials_helper import get_qualitas_credentials
-        creds = get_qualitas_credentials()
-        if creds:
-            credentials = {
-                "user": creds.get("usuario", credentials.get("user", "")),
-                "password": creds.get("password", credentials.get("password", "")),
-                "taller_id": creds.get("taller_id", credentials.get("taller_id", ""))
-            }
-    except:
-        pass  # Usar credenciales del .envQualitas
+    credentials = load_credentials()
     
     if not credentials.get("user") or not credentials.get("password"):
-        print("[Error] No se encontraron credenciales de Qualitas")
-        print("[Info] Configura QUALITAS_USER, QUALITAS_PASSWORD y QUALITAS_TALLER_ID")
-        print("       en el archivo .envQualitas o como variables de entorno")
+        print("[Error] No se encontraron credenciales")
+        print("[Info] Configura QUALITAS_USER, QUALITAS_PASSWORD en .envQualitas")
         return []
     
     all_modelos = []
@@ -241,29 +260,23 @@ async def extract_all_modelos(headless: bool = True) -> List[Dict[str, str]]:
             print("\n[Navegación] Yendo a catálogo de modelos...")
             await page.goto(QUALITAS_MODELOS_URL, wait_until="networkidle")
             await asyncio.sleep(3)
+            print(f"[Navegación] URL actual: {page.url}")
             
             # Extraer página por página
             page_num = 1
-            max_pages = 50  # Seguridad
+            max_pages = 50
             
             while page_num <= max_pages:
                 print(f"\n[Página {page_num}] Extrayendo...")
                 modelos = await extract_modelos_from_page(page)
                 
-                if not modelos:
-                    print("  No se encontraron modelos en esta página")
-                    # Intentar verificar si hay más páginas
-                    has_next = await get_next_page_button(page)
-                    if not has_next:
-                        break
-                    page_num += 1
-                    continue
+                if modelos:
+                    all_modelos.extend(modelos)
+                    print(f"  ✓ {len(modelos)} modelos extraídos")
+                    if modelos:
+                        print(f"     Ej: {modelos[0]['modelo'][:30]} ({modelos[0]['marca']})")
                 
-                all_modelos.extend(modelos)
-                print(f"  ✓ {len(modelos)} modelos extraídos")
-                print(f"  Ejemplos: {modelos[0]['modelo'][:30]} ({modelos[0]['marca']}), ...")
-                
-                # Verificar siguiente página
+                # Intentar siguiente página
                 has_next = await get_next_page_button(page)
                 if not has_next:
                     print("\n[Info] No hay más páginas")
@@ -280,11 +293,11 @@ async def extract_all_modelos(headless: bool = True) -> List[Dict[str, str]]:
 
 
 # ============================================================================
-# IMPORTACIÓN A BASE DE DATOS
+# IMPORTACIÓN
 # ============================================================================
 
 def import_modelos_to_db(modelos: List[Dict[str, str]], dry_run: bool = False) -> Dict:
-    """Importa los modelos a la base de datos RDS."""
+    """Importa los modelos a RDS."""
     stats = {
         "marcas_creadas": 0,
         "modelos_creados": 0,
@@ -301,12 +314,10 @@ def import_modelos_to_db(modelos: List[Dict[str, str]], dry_run: bool = False) -
     
     # Obtener datos existentes
     with get_connection() as conn:
-        # Marcas existentes
         marcas_db = {}
         rows = conn.execute("SELECT id, UPPER(nb_marca) FROM marcas_autos").fetchall()
         marcas_db = {row[1]: row[0] for row in rows}
         
-        # Modelos existentes
         modelos_db = set()
         rows = conn.execute("SELECT marca_id, UPPER(nb_modelo) FROM modelos_autos").fetchall()
         modelos_db = set(rows)
@@ -323,7 +334,7 @@ def import_modelos_to_db(modelos: List[Dict[str, str]], dry_run: bool = False) -
             modelos_por_marca[marca] = set()
         modelos_por_marca[marca].add(modelo)
     
-    print(f"\n[Importación] Procesando {len(modelos_por_marca)} marcas únicas...")
+    print(f"\n[Importación] Procesando {len(modelos_por_marca)} marcas...")
     
     for marca_nombre, modelos_set in modelos_por_marca.items():
         # Verificar/crear marca
@@ -337,15 +348,11 @@ def import_modelos_to_db(modelos: List[Dict[str, str]], dry_run: bool = False) -
             else:
                 try:
                     with get_connection() as conn:
-                        # Asegurar grupo existe
                         conn.execute(
-                            """INSERT INTO grupos_autos (nb_grupo) VALUES ('GENERAL')
-                            ON CONFLICT (LOWER(nb_grupo)) DO NOTHING"""
+                            "INSERT INTO grupos_autos (nb_grupo) VALUES ('GENERAL') ON CONFLICT DO NOTHING"
                         )
-                        
                         row = conn.execute(
-                            """INSERT INTO marcas_autos (gpo_marca, nb_marca)
-                            VALUES ('GENERAL', %s) RETURNING id""",
+                            "INSERT INTO marcas_autos (gpo_marca, nb_marca) VALUES ('GENERAL', %s) RETURNING id",
                             (marca_nombre.title(),)
                         ).fetchone()
                         conn.commit()
@@ -371,8 +378,7 @@ def import_modelos_to_db(modelos: List[Dict[str, str]], dry_run: bool = False) -
                 try:
                     with get_connection() as conn:
                         conn.execute(
-                            """INSERT INTO modelos_autos (marca_id, nb_modelo)
-                            VALUES (%s, %s)""",
+                            "INSERT INTO modelos_autos (marca_id, nb_modelo) VALUES (%s, %s)",
                             (marca_id, modelo_nombre)
                         )
                         conn.commit()
@@ -389,35 +395,12 @@ def import_modelos_to_db(modelos: List[Dict[str, str]], dry_run: bool = False) -
 # ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Extrae modelos de Qualitas e importa a RDS"
-    )
-    parser.add_argument(
-        "--extract-only",
-        action="store_true",
-        help="Solo extrae, no importa a DB"
-    )
-    parser.add_argument(
-        "--import-only",
-        action="store_true",
-        help="Solo importa desde archivo, no extrae"
-    )
-    parser.add_argument(
-        "--file",
-        type=str,
-        default="app/rpa/data/qualitas_modelos_export.json",
-        help="Archivo JSON para guardar/cargar"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simula sin insertar datos"
-    )
-    parser.add_argument(
-        "--no-headless",
-        action="store_true",
-        help="Muestra el navegador"
-    )
+    parser = argparse.ArgumentParser(description="Extrae modelos de Qualitas e importa a RDS")
+    parser.add_argument("--extract-only", action="store_true", help="Solo extrae")
+    parser.add_argument("--import-only", action="store_true", help="Solo importa desde archivo")
+    parser.add_argument("--file", type=str, default="app/rpa/data/qualitas_modelos_export.json")
+    parser.add_argument("--dry-run", action="store_true", help="Simula sin insertar")
+    parser.add_argument("--no-headless", action="store_true", help="Muestra navegador")
     args = parser.parse_args()
     
     modelos = []
@@ -430,7 +413,6 @@ def main():
             print("[Error] No se extrajeron modelos")
             return
         
-        # Guardar a JSON
         output_path = Path(args.file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -441,7 +423,7 @@ def main():
                 'modelos': modelos
             }, f, indent=2, ensure_ascii=False)
         
-        print(f"\n[Guardado] {len(modelos)} modelos guardados en: {output_path}")
+        print(f"\n[Guardado] {len(modelos)} modelos en: {output_path}")
         
         if args.extract_only:
             return
@@ -468,7 +450,7 @@ def main():
         print("=" * 60)
         print(f"Marcas creadas: {stats['marcas_creadas']}")
         print(f"Modelos creados: {stats['modelos_creados']}")
-        print(f"Modelos omitidos (duplicados): {stats['modelos_omitidos']}")
+        print(f"Modelos omitidos: {stats['modelos_omitidos']}")
         
         if stats['errores']:
             print(f"\nErrores ({len(stats['errores'])}):")

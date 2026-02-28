@@ -311,7 +311,7 @@ export default function QualitasIndicators({ onRefresh }) {
               </span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-white">
+              <span className="text-6xl font-extrabold text-white tracking-tight">
                 {formatNumber(indicadores.asignados)}
               </span>
             </div>
@@ -329,7 +329,7 @@ export default function QualitasIndicators({ onRefresh }) {
               </span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-white">
+              <span className="text-6xl font-extrabold text-white tracking-tight">
                 {formatNumber(indicadores.revisar_valuacion)}
               </span>
             </div>

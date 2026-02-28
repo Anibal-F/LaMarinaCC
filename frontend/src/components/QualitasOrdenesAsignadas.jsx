@@ -117,53 +117,55 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* Tabla con scroll y encabezados fijos */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left">
-          <thead className="bg-background-dark/50">
-            <tr>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">#Exp</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Asignación</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Póliza</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Vehículo</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Año</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Placas</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Riesgo</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Estatus</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagedOrdenes.map((orden, idx) => (
-              <tr 
-                key={orden.id || idx} 
-                className="border-b border-border-dark/50 hover:bg-white/5 transition-colors"
-              >
-                <td className="px-3 py-2 text-xs text-white font-mono">{orden.num_expediente}</td>
-                <td className="px-3 py-2 text-xs text-slate-300">{formatDate(orden.fecha_asignacion)}</td>
-                <td className="px-3 py-2 text-xs text-slate-300 font-mono">{orden.poliza}</td>
-                <td className="px-3 py-2 text-xs text-slate-300 max-w-[150px] truncate" title={orden.vehiculo}>
-                  {orden.vehiculo}
-                </td>
-                <td className="px-3 py-2 text-xs text-slate-300">{orden.anio}</td>
-                <td className="px-3 py-2 text-xs text-slate-300 font-mono uppercase">{orden.placas}</td>
-                <td className="px-3 py-2 text-xs">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                    orden.riesgo === 'Tercero' 
-                      ? 'bg-alert-amber/20 text-alert-amber' 
-                      : 'bg-blue-500/20 text-blue-400'
-                  }`}>
-                    {orden.riesgo}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-alert-green/20 text-alert-green">
-                    {orden.estatus}
-                  </span>
-                </td>
+        <div className="max-h-[400px] overflow-y-auto">
+          <table className="w-full text-left">
+            <thead className="bg-surface-dark sticky top-0 z-10">
+              <tr className="border-b border-border-dark">
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">#Exp</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Asignación</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Póliza</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Vehículo</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Año</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Placas</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Riesgo</th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Estatus</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pagedOrdenes.map((orden, idx) => (
+                <tr 
+                  key={orden.id || idx} 
+                  className="border-b border-border-dark/50 hover:bg-white/5 transition-colors"
+                >
+                  <td className="px-3 py-2 text-xs text-white font-mono">{orden.num_expediente}</td>
+                  <td className="px-3 py-2 text-xs text-slate-300">{formatDate(orden.fecha_asignacion)}</td>
+                  <td className="px-3 py-2 text-xs text-slate-300 font-mono">{orden.poliza}</td>
+                  <td className="px-3 py-2 text-xs text-slate-300 max-w-[150px] truncate" title={orden.vehiculo}>
+                    {orden.vehiculo}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-300">{orden.anio}</td>
+                  <td className="px-3 py-2 text-xs text-slate-300 font-mono uppercase">{orden.placas}</td>
+                  <td className="px-3 py-2 text-xs">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                      orden.riesgo === 'Tercero' 
+                        ? 'bg-alert-amber/20 text-alert-amber' 
+                        : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {orden.riesgo}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-alert-green/20 text-alert-green">
+                      {orden.estatus}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Paginación */}

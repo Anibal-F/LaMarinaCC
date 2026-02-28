@@ -125,116 +125,6 @@ async def handle_billing_message(page):
         return False
 
 
-async def handle_multiple_session_modal(page) -> bool:
-    """
-    Maneja el modal de sesión múltiple que aparece cuando hay otra sesión abierta.
-    Retorna True si se manejó el modal.
-    """
-    try:
-        # Buscar el modal por su texto característico
-        modal_texts = [
-            "ya ha iniciado sesión en otro terminal",
-            "Desea continuar",
-            "inicio de sesión previo se volverá inválido"
-        ]
-        
-        for text in modal_texts:
-            modal = page.locator(f'text={text}').first
-            if await modal.count() > 0 and await modal.is_visible():
-                print(f"[Session Modal] Detectado modal de sesión múltiple ('{text}')")
-                
-                # Buscar botón Aceptar/Continuar
-                accept_buttons = [
-                    'button:has-text("Aceptar")',
-                    'button:has-text("Continuar")',
-                    'button:has-text("Sí")',
-                    '.modal-footer button:last-child',
-                    '.btn-primary'
-                ]
-                
-                for btn_selector in accept_buttons:
-                    btn = page.locator(btn_selector).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.click()
-                        print("[Session Modal] ✓ Click en 'Aceptar' para continuar")
-                        await asyncio.sleep(2)
-                        return True
-                        
-                # Si no encontramos el botón específico, hacer click en cualquier botón visible del modal
-                any_button = page.locator('.modal button, .modal-footer button').first
-                if await any_button.count() > 0:
-                    await any_button.click()
-                    print("[Session Modal] ✓ Click en botón del modal")
-                    await asyncio.sleep(2)
-                    return True
-                    
-        return False
-        
-    except Exception as e:
-        print(f"[Session Modal] Error: {e}")
-        return False
-
-
-async def do_logout(page) -> bool:
-    """
-    Realiza logout para liberar la sesión.
-    Esto evita el problema de sesiones múltiples.
-    """
-    try:
-        print("[Logout] Intentando cerrar sesión...")
-        
-        # Opción 1: Ejecutar la función JavaScript LogOff() directamente
-        try:
-            await page.evaluate("() => { if (typeof LogOff === 'function') { LogOff(); return true; } return false; }")
-            print("[Logout] ✓ LogOff() ejecutado via JavaScript")
-            await asyncio.sleep(3)
-            return True
-        except:
-            pass
-        
-        # Opción 2: Buscar el link de Log Off por su onclick
-        logoff_link = page.locator('a[onclick*="LogOff"]').first
-        if await logoff_link.count() > 0 and await logoff_link.is_visible():
-            await logoff_link.click()
-            print("[Logout] ✓ Click en link Log Off")
-            await asyncio.sleep(3)
-            return True
-        
-        # Opción 3: Buscar por texto "Log Off"
-        logout_selectors = [
-            'a:has-text("Log Off")',
-            'a:has-text("Cerrar sesión")',
-            'a:has-text("Logout")',
-            'a:has-text("Salir")',
-            'button:has-text("Cerrar sesión")',
-            '.logout',
-            '.btn-logout',
-            '[href*="logout"]',
-            '[href*="Login"]'
-        ]
-        
-        for selector in logout_selectors:
-            try:
-                logout_btn = page.locator(selector).first
-                if await logout_btn.count() > 0 and await logout_btn.is_visible():
-                    await logout_btn.click()
-                    print("[Logout] ✓ Sesión cerrada")
-                    await asyncio.sleep(3)
-                    return True
-            except:
-                continue
-        
-        # Opción 4: Si no encontramos botón, navegar directamente al login
-        print("[Logout] Navegando al login para invalidar sesión...")
-        await page.goto("https://acg-prod-mx.audatex.com.mx/Audanet/Site/Login")
-        await asyncio.sleep(3)
-        return True
-        
-    except Exception as e:
-        print(f"[Logout] Error: {e}")
-        return False
-
-
 async def is_logged_in(page):
     """Verifica si el login fue exitoso mediante múltiples criterios."""
     current_url = page.url
@@ -463,29 +353,13 @@ async def do_login(page, use_db: bool = True) -> bool:
         return False
     
     # ============================================
-    # PASO 3: Manejar modal de sesión múltiple (si aparece)
-    # ============================================
-    print("[Login] Verificando modal de sesión múltiple...")
-    session_modal_handled = await handle_multiple_session_modal(page)
-    if session_modal_handled:
-        print("[Login] Modal de sesión manejado, esperando navegación...")
-        await asyncio.sleep(3)
-    
-    # ============================================
-    # PASO 4: Esperar navegación post-login
+    # PASO 3: Esperar navegación post-login
     # ============================================
     print("[Login] Esperando navegación post-login...")
     
     # Esperar hasta 20 segundos para la navegación
     for i in range(20):
         await asyncio.sleep(1)
-        
-        # Verificar si apareció el modal de sesión durante la espera
-        if i == 5 and not session_modal_handled:
-            modal_appeared = await handle_multiple_session_modal(page)
-            if modal_appeared:
-                print("[Login] Modal de sesión apareció durante espera, continuando...")
-                await asyncio.sleep(3)
         
         if await is_logged_in(page):
             print(f"[Login] ✓ Login detectado después de {i+1} segundos")
@@ -584,16 +458,8 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
             raise e
             
         finally:
-            # Logout para liberar la sesión (evita problemas de sesiones múltiples)
-            print("\n[Cleanup] Cerrando sesión...")
-            try:
-                await do_logout(page)
-            except Exception as e:
-                print(f"[Cleanup] Error en logout: {e}")
-            
             await context.close()
             await browser.close()
-            print("[Cleanup] ✓ Recursos liberados")
 
 
 def main():

@@ -204,8 +204,8 @@ export default function QualitasIndicators({ onRefresh }) {
       {/* Header con botón de actualizar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <span className="material-symbols-outlined text-white">shield</span>
+          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center overflow-hidden">
+            <img src="/assets/Qualitas_profile.jpg" alt="Qualitas" className="w-full h-full object-cover" />
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">Indicadores Qualitas</h3>

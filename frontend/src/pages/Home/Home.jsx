@@ -56,7 +56,7 @@ export default function Home() {
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  <span className="material-symbols-outlined text-sm">shield</span>
+                  <img src="/assets/Qualitas_profile.jpg" alt="Qualitas" className="w-5 h-5 rounded object-cover" />
                   Qualitas
                 </button>
               </div>

@@ -313,14 +313,14 @@ export default function QualitasIndicators({ onRefresh }) {
                 <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
                 <span>Actualizando...</span>
               </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined text-sm">sync</span>
-              <span>Actualizar</span>
-            </>
-          )}
-        </button>
-      </div>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-sm">sync</span>
+                <span>Actualizar</span>
+              </>
+            )}
+          </button>
+        </div>
 
       {/* Mensaje de actualización en progreso */}
       {updating && (

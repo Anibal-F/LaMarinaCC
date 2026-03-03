@@ -204,8 +204,8 @@ export default function ChubbIndicators({ onRefresh }) {
       {/* Header con botón de actualizar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center overflow-hidden">
-            <span className="text-white font-bold text-sm">CH</span>
+          <div className="w-10 h-10 rounded-lg overflow-hidden">
+            <img src="/assets/CHUBB_profile.jpg" alt="CHUBB" className="w-full h-full object-cover" />
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">Indicadores CHUBB</h3>

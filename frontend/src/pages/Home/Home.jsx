@@ -68,9 +68,7 @@ export default function Home() {
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  <span className="w-5 h-5 rounded bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center text-white font-bold text-[10px]">
-                    CH
-                  </span>
+                  <img src="/assets/CHUBB_profile.jpg" alt="CHUBB" className="w-5 h-5 rounded object-cover" />
                   CHUBB
                 </button>
               </div>

@@ -775,47 +775,74 @@ async def apply_estado_filter(page, estado_nombre: str) -> bool:
     try:
         print(f"[Extract] Aplicando filtro: {estado_nombre}")
         
-        # Buscar el filtro en el acordeón
-        # Según las capturas, los filtros están en elementos li con onclick="Search(this)"
-        filter_selectors = [
-            f'li:has-text("{estado_nombre}")',
-            f'li.ui-widget-content:has-text("{estado_nombre}")',
-            f'p:has-text("{estado_nombre}")',
-        ]
+        # Primero, hacer clic en el acordeón "Trabajo del Sitio" si está cerrado
+        try:
+            accordion = page.locator('h3:has-text("Trabajo del Sitio")')
+            if await accordion.count() > 0:
+                # Verificar si está colapsado (no tiene clase ui-accordion-content-active)
+                content = page.locator('#ui-id-4')  # ID del contenido del acordeón
+                is_visible = await content.is_visible() if await content.count() > 0 else False
+                if not is_visible:
+                    await accordion.click()
+                    await asyncio.sleep(1)
+                    print("[Extract] Acordeón 'Trabajo del Sitio' expandido")
+        except Exception as e:
+            print(f"[Extract] Nota: No se pudo expandir acordeón: {e}")
         
-        for selector in filter_selectors:
-            try:
-                elem = page.locator(selector).first
-                if await elem.count() > 0 and await elem.is_visible():
-                    await elem.click()
-                    print(f"[Extract] ✓ Filtro '{estado_nombre}' aplicado")
-                    await asyncio.sleep(3)  # Esperar carga de la tabla
-                    return True
-            except:
-                continue
-        
-        # Si no funciona el click directo, intentar con JavaScript
+        # Usar JavaScript para hacer clic en el elemento li correcto
+        # Basado en el HTML: <li id="..." onclick="Search(this)" class="ui-widget-content">
         js_result = await page.evaluate(f"""(estado) => {{
-            const items = document.querySelectorAll('li.ui-widget-content');
+            // Buscar en el acordeón de "Trabajo del Sitio"
+            const accordion = document.getElementById('ui-id-4');
+            if (!accordion) {{
+                console.log('No se encontró acordeón ui-id-4');
+                // Buscar en todo el documento
+                const allItems = document.querySelectorAll('li.ui-widget-content, .selectable li');
+                for (const item of allItems) {{
+                    const text = item.textContent.trim();
+                    if (text.toLowerCase() === estado.toLowerCase() || 
+                        text.toLowerCase().includes(estado.toLowerCase())) {{
+                        console.log('Click en (fallback):', text);
+                        item.click();
+                        return {{success: true, text: text}};
+                    }}
+                }}
+                return {{success: false, error: 'No se encontró el elemento'}};
+            }}
+            
+            // Buscar dentro del acordeón
+            const items = accordion.querySelectorAll('li.ui-widget-content, li');
+            console.log('Items encontrados en acordeón:', items.length);
+            
             for (const item of items) {{
-                if (item.textContent.includes(estado)) {{
+                const text = item.textContent.trim();
+                console.log('Revisando item:', text);
+                // Comparación exacta o parcial
+                if (text.toLowerCase() === estado.toLowerCase() || 
+                    text.toLowerCase().includes(estado.toLowerCase())) {{
+                    console.log('Haciendo click en:', text);
                     item.click();
-                    return true;
+                    return {{success: true, text: text}};
                 }}
             }}
-            return false;
+            
+            return {{success: false, error: 'Estado no encontrado', estadoBuscado: estado}};
         }}""", estado_nombre)
         
-        if js_result:
-            print(f"[Extract] ✓ Filtro '{estado_nombre}' aplicado via JS")
-            await asyncio.sleep(3)
-            return True
+        print(f"[Extract] Resultado JS: {js_result}")
         
-        print(f"[Extract] ⚠ No se pudo aplicar filtro '{estado_nombre}'")
-        return False
+        if js_result.get('success'):
+            print(f"[Extract] ✓ Filtro '{estado_nombre}' aplicado via JS")
+            await asyncio.sleep(4)  # Esperar más tiempo para la carga
+            return True
+        else:
+            print(f"[Extract] ⚠ No se pudo aplicar filtro '{estado_nombre}': {js_result.get('error')}")
+            return False
         
     except Exception as e:
         print(f"[Extract] Error aplicando filtro '{estado_nombre}': {e}")
+        import traceback
+        print(f"[Extract] Traceback: {traceback.format_exc()}")
         return False
 
 
@@ -1030,7 +1057,7 @@ async def extract_expedientes_data(page) -> Dict[str, Any]:
         # Pequeña pausa entre estados
         await asyncio.sleep(1)
     
-    indicadores["total"] = sum(indicadores.values()) - indicadores["total"]  # Corregir total
+    # Calcular total correctamente
     indicadores["total"] = len(all_expedientes)
     
     print(f"\n{'='*60}")

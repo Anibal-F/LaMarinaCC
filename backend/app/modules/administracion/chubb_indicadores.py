@@ -132,15 +132,40 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     
     ensure_tables_exists()
     
-    # Extraer valores de los estados
+    # Extraer valores de los estados (del RPA) o calcular desde expedientes
     estados = data.get('estados', {})
-    logger.info(f"[save_indicadores] Estados encontrados: {estados}")
+    expedientes = data.get('expedientes', [])
     
-    por_autorizar = estados.get('por_autorizar', 0)
-    autorizadas = estados.get('autorizadas', 0)
-    rechazadas = estados.get('rechazadas', 0)
-    complementos = estados.get('complementos', 0)
-    total_expedientes = estados.get('total', 0)
+    # Si hay expedientes, calcular indicadores desde ellos
+    if expedientes:
+        logger.info(f"[save_indicadores] Calculando indicadores desde {len(expedientes)} expedientes")
+        
+        por_autorizar = sum(1 for e in expedientes if e.get('estado', '').lower() in ['por aprobar', 'por_autorizar'])
+        autorizadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['autorizado', 'aprobado', 'autorizadas'])
+        rechazadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['rechazado', 'rechazadas'])
+        complementos = sum(1 for e in expedientes if e.get('estado', '').lower() in ['complemento', 'complementos'])
+        total_expedientes = len(expedientes)
+        
+        # Actualizar el diccionario de estados
+        estados = {
+            'por_autorizar': por_autorizar,
+            'autorizadas': autorizadas,
+            'rechazadas': rechazadas,
+            'complementos': complementos,
+            'total': total_expedientes
+        }
+        data['estados'] = estados
+        
+    else:
+        # Usar valores del RPA si no hay expedientes
+        logger.info(f"[save_indicadores] Usando estados del RPA: {estados}")
+        por_autorizar = estados.get('por_autorizar', 0)
+        autorizadas = estados.get('autorizadas', 0)
+        rechazadas = estados.get('rechazadas', 0)
+        complementos = estados.get('complementos', 0)
+        total_expedientes = estados.get('total', 0)
+    
+    logger.info(f"[save_indicadores] Indicadores calculados: por_autorizar={por_autorizar}, autorizadas={autorizadas}, rechazadas={rechazadas}, complementos={complementos}, total={total_expedientes}")
     
     try:
         with get_connection() as conn:

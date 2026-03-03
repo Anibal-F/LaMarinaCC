@@ -669,6 +669,73 @@ async def scheduler_restart(interval_hours: int = 2):
 
 
 # ============================================================================
+# SCHEDULER ESPECÍFICO POR SEGURO (Qualitas/CHUBB)
+# ============================================================================
+
+@router.get("/scheduler/{scheduler_name}/status")
+async def scheduler_specific_status(scheduler_name: str):
+    """
+    Obtiene el estado de un scheduler específico (qualitas o chubb).
+    """
+    from app.modules.administracion.rpa_scheduler import get_scheduler_status
+    
+    status = get_scheduler_status(scheduler_name)
+    
+    if not status or (not status.get("running") and "message" in status):
+        raise HTTPException(status_code=404, detail=f"Scheduler {scheduler_name} no encontrado")
+    
+    return status
+
+
+@router.post("/scheduler/{scheduler_name}/start")
+async def scheduler_specific_start(scheduler_name: str, interval_hours: int = 2):
+    """
+    Inicia un scheduler específico (qualitas o chubb).
+    
+    Args:
+        scheduler_name: Nombre del scheduler (qualitas o chubb)
+        interval_hours: Intervalo en horas entre ejecuciones (default: 2)
+    """
+    from app.modules.administracion.rpa_scheduler import start_scheduler
+    
+    if scheduler_name not in ["qualitas", "chubb"]:
+        raise HTTPException(status_code=400, detail="Scheduler debe ser 'qualitas' o 'chubb'")
+    
+    scheduler = start_scheduler(scheduler_name, interval_hours)
+    
+    return {
+        "success": True,
+        "message": f"Scheduler {scheduler_name} iniciado con intervalo de {interval_hours} horas",
+        "scheduler_name": scheduler_name,
+        "interval_hours": interval_hours
+    }
+
+
+@router.post("/scheduler/{scheduler_name}/stop")
+async def scheduler_specific_stop(scheduler_name: str):
+    """
+    Detiene un scheduler específico (qualitas o chubb).
+    
+    Args:
+        scheduler_name: Nombre del scheduler (qualitas o chubb)
+    """
+    from app.modules.administracion.rpa_scheduler import _schedulers
+    
+    if scheduler_name not in ["qualitas", "chubb"]:
+        raise HTTPException(status_code=400, detail="Scheduler debe ser 'qualitas' o 'chubb'")
+    
+    if scheduler_name in _schedulers:
+        _schedulers[scheduler_name].stop()
+        return {
+            "success": True,
+            "message": f"Scheduler {scheduler_name} detenido",
+            "scheduler_name": scheduler_name
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"Scheduler {scheduler_name} no está corriendo")
+
+
+# ============================================================================
 # TAREAS DE CHUBB
 # ============================================================================
 

@@ -19,12 +19,57 @@ export default function ChubbIndicators({ onRefresh }) {
   const [showLogs, setShowLogs] = useState(false);
   const [estatusInfo, setEstatusInfo] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
+  
+  // Estado del scheduler automático
+  const [schedulerEnabled, setSchedulerEnabled] = useState(true);
+  const [togglingScheduler, setTogglingScheduler] = useState(false);
 
   // Cargar indicadores al montar
   useEffect(() => {
     fetchIndicadores();
     fetchEstatus();
+    fetchSchedulerStatus();
   }, []);
+  
+  // Obtener estado del scheduler
+  const fetchSchedulerStatus = async () => {
+    try {
+      const response = await fetch(getApiUrl() + '/admin/rpa-queue/scheduler/chubb/status');
+      if (response.ok) {
+        const data = await response.json();
+        setSchedulerEnabled(data.running === true);
+      }
+    } catch (err) {
+      console.error("Error fetching scheduler status:", err);
+    }
+  };
+  
+  // Toggle scheduler
+  const toggleScheduler = async () => {
+    try {
+      setTogglingScheduler(true);
+      const newState = !schedulerEnabled;
+      
+      const endpoint = newState 
+        ? getApiUrl() + '/admin/rpa-queue/scheduler/chubb/start'
+        : getApiUrl() + '/admin/rpa-queue/scheduler/chubb/stop';
+      
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        setSchedulerEnabled(newState);
+      } else {
+        console.error("Error toggling scheduler");
+      }
+    } catch (err) {
+      console.error("Error toggling scheduler:", err);
+    } finally {
+      setTogglingScheduler(false);
+    }
+  };
 
   // Polling de tarea activa
   useEffect(() => {
@@ -233,27 +278,49 @@ export default function ChubbIndicators({ onRefresh }) {
           </div>
         </div>
         
-        <button
-          onClick={handleRefresh}
-          disabled={updating}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-            updating
-              ? "bg-slate-700 text-slate-400 cursor-wait"
-              : "bg-purple-600 hover:bg-purple-500 text-white"
-          }`}
-        >
-          {updating ? (
-            <>
-              <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
-              <span>Actualizando...</span>
-            </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined text-sm">sync</span>
-              <span>Actualizar</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Toggle Scheduler */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 uppercase font-medium">Auto</span>
+            <button
+              onClick={toggleScheduler}
+              disabled={togglingScheduler}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                schedulerEnabled ? 'bg-purple-600' : 'bg-slate-700'
+              } ${togglingScheduler ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+              title={schedulerEnabled ? "Desactivar actualización automática" : "Activar actualización automática"}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  schedulerEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          
+          {/* Botón Actualizar */}
+          <button
+            onClick={handleRefresh}
+            disabled={updating}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              updating
+                ? "bg-slate-700 text-slate-400 cursor-wait"
+                : "bg-purple-600 hover:bg-purple-500 text-white"
+            }`}
+          >
+            {updating ? (
+              <>
+                <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
+                <span>Actualizando...</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-sm">sync</span>
+                <span>Actualizar</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Mensaje de actualización en progreso */}

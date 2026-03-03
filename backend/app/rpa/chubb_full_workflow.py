@@ -884,10 +884,9 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
             return data;
         }""")
         
-        // Log de debug para verificar el primer registro
-        if (rows_data.length > 0) {
+        # Log de debug para verificar el primer registro
+        if len(rows_data) > 0:
             print(f"[Extract] Ejemplo de fila extraída: {rows_data[0]}")
-        }
         
         print(f"[Extract] ✓ {len(rows_data)} filas extraídas de página actual")
         return rows_data

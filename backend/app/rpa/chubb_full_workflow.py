@@ -566,6 +566,9 @@ async def do_login(page, use_db: bool = True) -> bool:
     current_url = page.url
     print(f"[Login] URL después de navegación inicial: {current_url}")
     
+    # Inicializar variable de control
+    login_detected = False
+    
     # Si estamos en /Audanet/ sin /Site/Login, verificar si es dashboard o error
     if '/Site/Login' not in current_url:
         print("[Login] URL cambió de /Site/Login, verificando contenido...")

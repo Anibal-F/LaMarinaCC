@@ -41,6 +41,8 @@ class TaskStatus(str, Enum):
 class TaskType(str, Enum):
     QUALITAS_LOGIN = "qualitas_login"
     QUALITAS_EXTRACT = "qualitas_extract"
+    CHUBB_LOGIN = "chubb_login"
+    CHUBB_EXTRACT = "chubb_extract"
 
 
 @dataclass
@@ -444,6 +446,8 @@ def worker_loop():
                 
                 if task_type == TaskType.QUALITAS_LOGIN.value or task_type == TaskType.QUALITAS_EXTRACT.value:
                     run_qualitas_task(task_id, params)
+                elif task_type == TaskType.CHUBB_LOGIN.value or task_type == TaskType.CHUBB_EXTRACT.value:
+                    run_chubb_task(task_id, params)
                 else:
                     logger.warning(f"[Worker] Tipo de tarea desconocido: {task_type}")
                     update_task(
@@ -661,4 +665,169 @@ async def scheduler_restart(interval_hours: int = 2):
         "success": True,
         "message": f"Scheduler reiniciado con intervalo de {interval_hours} horas",
         "interval_hours": interval_hours
+    }
+
+
+# ============================================================================
+# TAREAS DE CHUBB
+# ============================================================================
+
+def run_chubb_task(task_id: str, params: Dict[str, Any]):
+    """Ejecuta una tarea de CHUBB con reintento inteligente."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    backend_dir = Path(__file__).resolve().parents[3]
+    logs = []
+    
+    def log(msg):
+        logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+        logger.info(f"[Task {task_id}] {msg}")
+    
+    try:
+        log("Iniciando tarea de CHUBB")
+        update_task(task_id, status=TaskStatus.RUNNING.value, started_at=datetime.now())
+        
+        # Determinar si usar sesión existente
+        session_path = backend_dir / "app" / "rpa" / "sessions" / "chubb_session.json"
+        has_session = session_path.exists()
+        
+        # Comando base
+        base_cmd = [
+            "python3", "-m", "app.rpa.chubb_full_workflow",
+            "--headless",
+            "--use-db",
+            "--extract-data"
+        ]
+        
+        returncode = -1
+        stdout = ""
+        stderr = ""
+        
+        # Intento 1: Usar sesión existente si está disponible
+        if has_session:
+            log("Intentando con sesión existente...")
+            cmd = base_cmd + ["--skip-login"]
+            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log)
+            
+            # Verificar si falló por sesión expirada
+            if returncode != 0 and _is_session_expired(stdout, stderr):
+                log("⚠ Sesión expirada detectada, intentando login completo...")
+                # Eliminar sesión expirada
+                try:
+                    session_path.unlink()
+                    log("Sesión expirada eliminada")
+                except Exception as e:
+                    log(f"No se pudo eliminar sesión: {e}")
+                
+                # Intento 2: Login completo
+                log("Iniciando login completo...")
+                cmd = base_cmd  # Sin --skip-login
+                returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+            elif returncode != 0:
+                log(f"✗ Error no relacionado a sesión (código {returncode})")
+        else:
+            log("No hay sesión guardada, iniciando login completo...")
+            cmd = base_cmd
+            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+        
+        log(f"RPA terminó con código: {returncode}")
+        
+        if returncode != 0:
+            raise RuntimeError(f"RPA falló con código {returncode}")
+        
+        # Buscar el archivo JSON más reciente generado por el RPA
+        data_dir = backend_dir / "app" / "rpa" / "data"
+        json_files = sorted(data_dir.glob("chubb_data_*.json"), reverse=True)
+        
+        if not json_files:
+            raise RuntimeError("El RPA se ejecutó pero no se encontró archivo de datos")
+        
+        # Leer datos del archivo JSON
+        with open(json_files[0], 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        log(f"Datos leídos del archivo: {json_files[0].name}")
+        
+        # Guardar en base de datos
+        from app.modules.administracion.chubb_indicadores import save_indicadores, save_expedientes, get_latest_indicadores
+        
+        try:
+            # Guardar indicadores
+            indicadores = data.get('indicadores', {})
+            if indicadores:
+                record_id = save_indicadores(data)
+                log(f"✓ Indicadores guardados en DB con ID: {record_id}")
+            
+            # Guardar expedientes
+            expedientes = data.get('expedientes', [])
+            fecha_ext = data.get('fecha_extraccion', datetime.now().isoformat())
+            if expedientes:
+                count = save_expedientes(expedientes, fecha_ext)
+                log(f"✓ {count} expedientes guardados en DB")
+        except Exception as db_error:
+            log(f"⚠ Error guardando en DB: {db_error}")
+        
+        # Verificar que se guardaron datos
+        indicadores = get_latest_indicadores()
+        
+        if not indicadores:
+            log("Usando datos del archivo JSON (no se encontraron en DB)")
+            indicadores = data.get('indicadores', {})
+        
+        total_exp = indicadores.get('total_expedientes', 0) if isinstance(indicadores, dict) else 0
+        log(f"✓ Éxito - {total_exp} expedientes procesados")
+        
+        # Actualizar tarea como completada
+        def json_serial(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+        
+        result_json = json.dumps(indicadores, default=json_serial) if isinstance(indicadores, dict) else indicadores
+        
+        update_task(
+            task_id,
+            status=TaskStatus.COMPLETED.value,
+            completed_at=datetime.now(),
+            result=result_json,
+            logs="\n".join(logs)
+        )
+        
+    except subprocess.TimeoutExpired:
+        log("✗ Timeout - El RPA tardó más de 10 minutos")
+        update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            completed_at=datetime.now(),
+            error="Timeout: El proceso tardó más de 10 minutos",
+            logs="\n".join(logs),
+            retry_count=get_task(task_id)['retry_count'] + 1
+        )
+    except Exception as e:
+        log(f"✗ Error: {str(e)}")
+        update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            completed_at=datetime.now(),
+            error=str(e),
+            logs="\n".join(logs),
+            retry_count=get_task(task_id)['retry_count'] + 1
+        )
+
+
+@router.post("/chubb/actualizar")
+async def queue_chubb_update():
+    """
+    Encola una actualización de indicadores de CHUBB.
+    Retorna inmediatamente con el ID de la tarea.
+    """
+    task_id = create_task(TaskType.CHUBB_EXTRACT, {"auto_retry": True})
+    
+    return {
+        "success": True,
+        "message": "Tarea encolada. El RPA se ejecutará en background.",
+        "task_id": task_id,
+        "status": "pending",
+        "check_status_url": f"/admin/rpa-queue/tasks/{task_id}"
     }

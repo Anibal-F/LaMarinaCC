@@ -1,5 +1,5 @@
 """
-Workflow completo: Login automático en CHUBB / Audatex (Solera).
+Workflow completo: Login automático en CHUBB / Audatex (Solera) y extracción de expedientes.
 
 Uso:
     python3 -m app.rpa.chubb_full_workflow
@@ -10,6 +10,7 @@ Opciones:
     --save-json     Guardar datos en archivo JSON
     --use-db        Usar credenciales desde la base de datos (por defecto)
     --use-env       Usar credenciales desde archivo .env
+    --extract-data  Extraer datos de expedientes de todas las páginas
 """
 
 import argparse
@@ -17,6 +18,8 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Any, Optional
 
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
@@ -519,8 +522,317 @@ async def do_login(page, use_db: bool = True) -> bool:
     return login_success
 
 
+# ============================================================================
+# EXTRACCIÓN DE DATOS DE EXPEDIENTES
+# ============================================================================
+
+ESTADOS_FILTRO = {
+    "por_autorizar": "Por Aprobar",
+    "autorizadas": "Autorizado", 
+    "rechazadas": "Rechazado",
+    "complementos": "Complemento"
+}
+
+
+async def navigate_to_mi_trabajo(page):
+    """Navega a la sección 'Mi Trabajo' donde está la tabla de expedientes."""
+    try:
+        print("[Extract] Navegando a Mi Trabajo...")
+        
+        # Buscar y hacer clic en "MI TRABAJO" en el menú
+        mi_trabajo_selectors = [
+            'a:has-text("MI TRABAJO")',
+            'a[href*="Work"]:visible',
+            '#ui-id-3',  # ID del acordeón según las capturas
+            'h3:has-text("Trabajo del Sitio")'
+        ]
+        
+        for selector in mi_trabajo_selectors:
+            try:
+                elem = page.locator(selector).first
+                if await elem.count() > 0 and await elem.is_visible():
+                    await elem.click()
+                    print(f"[Extract] ✓ Click en Mi Trabajo ({selector})")
+                    await asyncio.sleep(3)
+                    return True
+            except:
+                continue
+        
+        # Si no encontramos el menú, verificar si ya estamos en la página correcta
+        table_exists = await page.locator('#gridMyWorks').count() > 0
+        if table_exists:
+            print("[Extract] Tabla ya visible, no es necesario navegar")
+            return True
+        
+        print("[Extract] ⚠ No se pudo navegar a Mi Trabajo")
+        return False
+        
+    except Exception as e:
+        print(f"[Extract] Error navegando a Mi Trabajo: {e}")
+        return False
+
+
+async def apply_estado_filter(page, estado_nombre: str) -> bool:
+    """Aplica un filtro de estado en el acordeón."""
+    try:
+        print(f"[Extract] Aplicando filtro: {estado_nombre}")
+        
+        # Buscar el filtro en el acordeón
+        # Según las capturas, los filtros están en elementos li con onclick="Search(this)"
+        filter_selectors = [
+            f'li:has-text("{estado_nombre}")',
+            f'li.ui-widget-content:has-text("{estado_nombre}")',
+            f'p:has-text("{estado_nombre}")',
+        ]
+        
+        for selector in filter_selectors:
+            try:
+                elem = page.locator(selector).first
+                if await elem.count() > 0 and await elem.is_visible():
+                    await elem.click()
+                    print(f"[Extract] ✓ Filtro '{estado_nombre}' aplicado")
+                    await asyncio.sleep(3)  # Esperar carga de la tabla
+                    return True
+            except:
+                continue
+        
+        # Si no funciona el click directo, intentar con JavaScript
+        js_result = await page.evaluate(f"""(estado) => {{
+            const items = document.querySelectorAll('li.ui-widget-content');
+            for (const item of items) {{
+                if (item.textContent.includes(estado)) {{
+                    item.click();
+                    return true;
+                }}
+            }}
+            return false;
+        }}""", estado_nombre)
+        
+        if js_result:
+            print(f"[Extract] ✓ Filtro '{estado_nombre}' aplicado via JS")
+            await asyncio.sleep(3)
+            return True
+        
+        print(f"[Extract] ⚠ No se pudo aplicar filtro '{estado_nombre}'")
+        return False
+        
+    except Exception as e:
+        print(f"[Extract] Error aplicando filtro '{estado_nombre}': {e}")
+        return False
+
+
+async def get_total_records(page) -> int:
+    """Obtiene el total de registros desde el texto de paginación."""
+    try:
+        # Buscar el texto "Mostrando registros del X al Y de un total de Z registros"
+        pagination_text = await page.locator('#table-rateRelations_info').text_content()
+        if pagination_text:
+            # Extraer el número después de "total de"
+            import re
+            match = re.search(r'total de (\d+) registros', pagination_text)
+            if match:
+                return int(match.group(1))
+        
+        # Alternativa: contar filas de la tabla
+        rows = await page.locator('#gridMyWorks tbody tr').count()
+        return rows
+        
+    except Exception as e:
+        print(f"[Extract] Error obteniendo total de registros: {e}")
+        return 0
+
+
+async def extract_table_data(page) -> List[Dict[str, Any]]:
+    """Extrae los datos de la tabla actual."""
+    try:
+        print("[Extract] Extrayendo datos de tabla...")
+        
+        # Esperar a que la tabla esté visible
+        await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
+        
+        # Extraer datos de todas las filas visibles
+        rows_data = await page.evaluate("""() => {
+            const rows = document.querySelectorAll('#gridMyWorks tbody tr');
+            const data = [];
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 8) {
+                    data.push({
+                        num_expediente: cells[1]?.textContent?.trim() || '',
+                        tipo_vehiculo: cells[2]?.textContent?.trim() || '',
+                        fecha_accidente: cells[3]?.textContent?.trim() || '',
+                        estado: cells[4]?.textContent?.trim() || '',
+                        fecha_creacion: cells[5]?.textContent?.trim() || '',
+                        fecha_inspeccion: cells[6]?.textContent?.trim() || '',
+                        fecha_actualizacion: cells[7]?.textContent?.trim() || '',
+                        placas: cells[8]?.textContent?.trim() || '',
+                        asignado_a: cells[9]?.textContent?.trim() || '',
+                        compania: cells[10]?.textContent?.trim() || ''
+                    });
+                }
+            });
+            
+            return data;
+        }""")
+        
+        print(f"[Extract] ✓ {len(rows_data)} filas extraídas de página actual")
+        return rows_data
+        
+    except Exception as e:
+        print(f"[Extract] Error extrayendo datos de tabla: {e}")
+        return []
+
+
+async def has_next_page(page) -> bool:
+    """Verifica si hay página siguiente disponible."""
+    try:
+        # Buscar botón siguiente que NO esté disabled
+        next_btn = page.locator('#table-rateRelations_next:not(.paginate_button_disabled)')
+        return await next_btn.count() > 0 and await next_btn.is_visible()
+    except:
+        return False
+
+
+async def go_to_next_page(page) -> bool:
+    """Navega a la siguiente página."""
+    try:
+        next_btn = page.locator('#table-rateRelations_next').first
+        if await next_btn.count() > 0 and await next_btn.is_visible():
+            await next_btn.click()
+            print("[Extract] → Navegando a siguiente página...")
+            await asyncio.sleep(2)  # Esperar carga
+            return True
+        return False
+    except Exception as e:
+        print(f"[Extract] Error navegando a siguiente página: {e}")
+        return False
+
+
+async def extract_all_pages(page, estado_key: str) -> List[Dict[str, Any]]:
+    """Extrae todos los datos de todas las páginas para un estado específico."""
+    all_data = []
+    page_num = 1
+    max_pages = 50  # Límite de seguridad
+    
+    while page_num <= max_pages:
+        print(f"[Extract] Procesando página {page_num}...")
+        
+        # Extraer datos de página actual
+        page_data = await extract_table_data(page)
+        
+        # Agregar el estado como metadata
+        for item in page_data:
+            item['estado_categoria'] = estado_key
+        
+        all_data.extend(page_data)
+        
+        # Verificar si hay siguiente página
+        if not await has_next_page(page):
+            print(f"[Extract] No hay más páginas")
+            break
+        
+        # Ir a siguiente página
+        if not await go_to_next_page(page):
+            break
+        
+        page_num += 1
+    
+    print(f"[Extract] ✓ Total de {len(all_data)} registros extraídos para {estado_key}")
+    return all_data
+
+
+async def extract_expedientes_data(page) -> Dict[str, Any]:
+    """
+    Extrae todos los expedientes de todos los estados.
+    Navega por cada filtro de estado y extrae todas las páginas.
+    """
+    print("=" * 60)
+    print("EXTRACCIÓN DE EXPEDIENTES CHUBB")
+    print("=" * 60)
+    
+    # Navegar a Mi Trabajo
+    if not await navigate_to_mi_trabajo(page):
+        print("[Extract] ✗ No se pudo navegar a Mi Trabajo")
+        return {"indicadores": {}, "expedientes": []}
+    
+    all_expedientes = []
+    indicadores = {
+        "por_autorizar": 0,
+        "autorizadas": 0,
+        "rechazadas": 0,
+        "complementos": 0,
+        "total": 0
+    }
+    
+    # Extraer datos para cada estado
+    for estado_key, estado_nombre in ESTADOS_FILTRO.items():
+        print(f"\n{'='*40}")
+        print(f"Procesando: {estado_nombre}")
+        print(f"{'='*40}")
+        
+        # Aplicar filtro
+        if not await apply_estado_filter(page, estado_nombre):
+            print(f"[Extract] ⚠ Saltando {estado_nombre}")
+            continue
+        
+        # Obtener total de registros para este estado
+        total_records = await get_total_records(page)
+        print(f"[Extract] Total registros en {estado_nombre}: {total_records}")
+        indicadores[estado_key] = total_records
+        
+        # Extraer todos los datos de todas las páginas
+        estado_data = await extract_all_pages(page, estado_key)
+        all_expedientes.extend(estado_data)
+        
+        # Pequeña pausa entre estados
+        await asyncio.sleep(1)
+    
+    indicadores["total"] = sum(indicadores.values()) - indicadores["total"]  # Corregir total
+    indicadores["total"] = len(all_expedientes)
+    
+    print(f"\n{'='*60}")
+    print(f"EXTRACCIÓN COMPLETADA")
+    print(f"Total expedientes: {len(all_expedientes)}")
+    print(f"  - Por Autorizar: {indicadores['por_autorizar']}")
+    print(f"  - Autorizadas: {indicadores['autorizadas']}")
+    print(f"  - Rechazadas: {indicadores['rechazadas']}")
+    print(f"  - Complementos: {indicadores['complementos']}")
+    print(f"{'='*60}")
+    
+    return {
+        "indicadores": indicadores,
+        "expedientes": all_expedientes
+    }
+
+
+def save_data_to_json(data: Dict[str, Any]) -> Path:
+    """Guarda los datos extraídos en un archivo JSON."""
+    data_dir = Path(__file__).resolve().parent / "data"
+    data_dir.mkdir(exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    file_path = data_dir / f"chubb_data_{timestamp}.json"
+    
+    # Agregar metadata
+    data['fecha_extraccion'] = datetime.now().isoformat()
+    data['taller_id'] = 'CHUBB_LA_MARINA'
+    data['taller_nombre'] = 'La Marina Collision Center'
+    
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    print(f"[Data] ✓ Datos guardados en: {file_path}")
+    return file_path
+
+
+# ============================================================================
+# WORKFLOW PRINCIPAL
+# ============================================================================
+
 async def run_workflow(skip_login: bool = False, headless: bool = False, 
-                       save_json: bool = False, use_db: bool = True):
+                       save_json: bool = False, use_db: bool = True,
+                       extract_data: bool = False):
     """Ejecuta el workflow completo."""
     
     session_path = Path(__file__).resolve().parent / "sessions" / "chubb_session.json"
@@ -528,6 +840,8 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
     print("=" * 60)
     print("CHUBB/AUDATEX - WORKFLOW COMPLETO")
     print("=" * 60)
+    
+    extracted_data = None
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -569,6 +883,17 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
             print(f"[Info] URL: {page.url}")
             print(f"[Info] Título: {await page.title()}")
             
+            # Extraer datos si se solicita
+            if extract_data:
+                print("\n[3/3] EXTRAYENDO DATOS DE EXPEDIENTES")
+                extracted_data = await extract_expedientes_data(page)
+                
+                # Guardar en JSON
+                json_path = save_data_to_json(extracted_data)
+                
+                if save_json:
+                    print(f"[Data] Archivo JSON: {json_path}")
+            
             print("\n" + "=" * 60)
             print("✓ WORKFLOW COMPLETADO")
             print("=" * 60)
@@ -577,7 +902,7 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 print("\n[Navegador abierto 60 segundos...]")
                 await asyncio.sleep(60)
             
-            return True
+            return extracted_data or True
             
         except Exception as e:
             await take_screenshot(page, "error_final")
@@ -603,6 +928,7 @@ def main():
     parser.add_argument("--save-json", action="store_true", help="Guardar datos en JSON")
     parser.add_argument("--use-db", action="store_true", default=True, help="Usar credenciales desde la base de datos (default)")
     parser.add_argument("--use-env", action="store_true", help="Usar credenciales desde archivo .envChubb")
+    parser.add_argument("--extract-data", action="store_true", help="Extraer datos de expedientes")
     args = parser.parse_args()
     
     # Determinar si usar DB o .env
@@ -617,12 +943,20 @@ def main():
         return
     
     try:
-        asyncio.run(run_workflow(
+        result = asyncio.run(run_workflow(
             skip_login=args.skip_login,
             headless=args.headless,
             save_json=args.save_json,
-            use_db=use_db
+            use_db=use_db,
+            extract_data=args.extract_data
         ))
+        
+        # Si se extrajeron datos, mostrar resumen
+        if isinstance(result, dict) and 'indicadores' in result:
+            print("\n[Resumen de datos extraídos:]")
+            print(f"  Indicadores: {result['indicadores']}")
+            print(f"  Total expedientes: {len(result['expedientes'])}")
+            
     except KeyboardInterrupt:
         print("\n[Interrumpido]")
     except Exception as e:

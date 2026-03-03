@@ -3,9 +3,10 @@ import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import RPAExecutor from "../../components/RPAExecutor.jsx";
 import QualitasIndicators from "../../components/QualitasIndicators.jsx";
+import ChubbIndicators from "../../components/ChubbIndicators.jsx";
 
 export default function Home() {
-  const [activeView, setActiveView] = useState("local"); // "local" | "qualitas"
+  const [activeView, setActiveView] = useState("local"); // "local" | "qualitas" | "chubb"
   const [isUpdating, setIsUpdating] = useState(false);
 
   return (
@@ -59,6 +60,19 @@ export default function Home() {
                   <img src="/assets/Qualitas_profile.jpg" alt="Qualitas" className="w-5 h-5 rounded object-cover" />
                   Qualitas
                 </button>
+                <button
+                  onClick={() => setActiveView("chubb")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+                    activeView === "chubb"
+                      ? "bg-purple-600 text-white"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span className="w-5 h-5 rounded bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center text-white font-bold text-[10px]">
+                    CH
+                  </span>
+                  CHUBB
+                </button>
               </div>
 
               {isUpdating && (
@@ -70,7 +84,7 @@ export default function Home() {
             </div>
 
             {/* Contenido según vista activa */}
-            {activeView === "local" ? (
+            {activeView === "local" && (
               // Vista Local - Indicadores del Taller
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="bg-surface-dark border border-border-dark p-5 rounded-xl">
@@ -135,13 +149,20 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-            ) : (
+            )}
+            
+            {activeView === "qualitas" && (
               // Vista Qualitas - Indicadores de Qualitas
               <QualitasIndicators onRefresh={setIsUpdating} />
             )}
+            
+            {activeView === "chubb" && (
+              // Vista CHUBB - Indicadores de CHUBB
+              <ChubbIndicators onRefresh={setIsUpdating} />
+            )}
 
             {/* Resto del contenido (Kanban, etc) - solo visible en vista local */}
-            {activeView === "local" && (
+            {(activeView === "local" || activeView === "qualitas" || activeView === "chubb") && activeView === "local" && (
               <>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

@@ -19,7 +19,17 @@ export default function ChubbExpedientes({ fechaExtraccion }) {
   const fetchExpedientes = async () => {
     try {
       setLoading(true);
-      const url = new URL(`${import.meta.env.VITE_API_URL}/admin/chubb/expedientes`);
+      // Usar la URL base del environment o fallback
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      let url;
+      
+      if (baseUrl) {
+        url = new URL(`${baseUrl}/admin/chubb/expedientes`);
+      } else {
+        // Fallback: usar path relativo
+        url = new URL('/admin/chubb/expedientes', window.location.origin);
+      }
+      
       if (estadoFiltro) {
         url.searchParams.append('estado', estadoFiltro);
       }
@@ -46,9 +56,12 @@ export default function ChubbExpedientes({ fechaExtraccion }) {
 
   const fetchEstadosDisponibles = async () => {
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/chubb/expedientes/estados`
-      );
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      const url = baseUrl 
+        ? `${baseUrl}/admin/chubb/expedientes/estados`
+        : '/admin/chubb/expedientes/estados';
+      
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setEstadosDisponibles(data.estados || []);

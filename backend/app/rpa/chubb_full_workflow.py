@@ -251,7 +251,7 @@ async def do_logout(page) -> bool:
         return False
 
 
-async def is_logged_in(page):
+async def is_logged_in(page, verbose=True):
     """Verifica si el login fue exitoso mediante múltiples criterios."""
     current_url = page.url
     
@@ -270,14 +270,17 @@ async def is_logged_in(page):
         'a:has-text("Cerrar sesión")',
         '.navbar-nav',            # Barra de navegación
         '#btnBillingMessage',     # Botón de billing (si aparece)
+        'text=MI TRABAJO',        # Menú Mi Trabajo
+        'text=Mi Trabajo',
     ]
     
     dashboard_found = False
+    found_element = None
     for indicator in dashboard_indicators:
         try:
             count = await page.locator(indicator).count()
             if count > 0:
-                print(f"[Login Check] Elemento encontrado: {indicator}")
+                found_element = indicator
                 dashboard_found = True
                 break
         except Exception as e:
@@ -286,27 +289,39 @@ async def is_logged_in(page):
     
     # Criterio 3: Verificar que el formulario de login ya NO está visible
     try:
-        login_form_visible = await page.locator('#loginB2C:visible, #loginForm:visible, #Password:visible').count() > 0
-    except:
+        login_b2c = await page.locator('#loginB2C:visible').count()
+        login_form = await page.locator('#loginForm:visible').count()
+        password_field = await page.locator('#Password:visible').count()
+        login_form_visible = (login_b2c + login_form + password_field) > 0
+        
+        if verbose and login_form_visible:
+            print(f"[Login Check] Formulario visible - loginB2C:{login_b2c}, loginForm:{login_form}, Password:{password_field}")
+    except Exception as e:
+        if verbose:
+            print(f"[Login Check] Error verificando formulario: {e}")
         login_form_visible = False
     
     # Criterio 4: La URL contiene indicadores de estar logueado
     logged_in_url_indicators = [
         '/Home',
         '/Dashboard',
-        '/Site/',
         '/Work',
-        'Audanet/Site'
     ]
     
     url_indicates_logged_in = any(indicator in current_url for indicator in logged_in_url_indicators)
     
-    result = (not is_login_page and not login_form_visible) or dashboard_found or url_indicates_logged_in
+    # NUEVO: Si estamos en /Audanet/ sin /Site/Login y NO hay formulario visible, es login exitoso
+    is_audanet_root = current_url.rstrip('/').endswith('/Audanet')
+    alt_login_success = is_audanet_root and not login_form_visible and not is_login_page
     
-    print(f"[Login Check] URL: {current_url}")
-    print(f"[Login Check] is_login_page: {is_login_page}, login_form_visible: {login_form_visible}")
-    print(f"[Login Check] dashboard_found: {dashboard_found}, url_indicates_logged_in: {url_indicates_logged_in}")
-    print(f"[Login Check] Result: {result}")
+    result = (not is_login_page and not login_form_visible) or dashboard_found or url_indicates_logged_in or alt_login_success
+    
+    if verbose:
+        print(f"[Login Check] URL: {current_url}")
+        print(f"[Login Check] is_login_page: {is_login_page}, login_form_visible: {login_form_visible}")
+        print(f"[Login Check] dashboard_found: {dashboard_found} ({found_element or 'N/A'})")
+        print(f"[Login Check] url_indicates_logged_in: {url_indicates_logged_in}, alt_login_success: {alt_login_success}")
+        print(f"[Login Check] Result: {result}")
     
     return result
 
@@ -544,36 +559,107 @@ async def do_login(page, use_db: bool = True) -> bool:
     print("[Login] Esperando navegación post-login...")
     
     # Esperar a que la navegación ocurra (puede tardar varios segundos)
-    print("[Login] Esperando 5 segundos para navegación inicial...")
-    await asyncio.sleep(5)
+    print("[Login] Esperando 8 segundos para navegación inicial...")
+    await asyncio.sleep(8)
     
-    # Esperar hasta 30 segundos para la navegación completa
-    login_detected = False
-    for i in range(25):
-        await asyncio.sleep(1)
+    # Verificar estado inicial después de la navegación
+    current_url = page.url
+    print(f"[Login] URL después de navegación inicial: {current_url}")
+    
+    # Si estamos en /Audanet/ sin /Site/Login, verificar si es dashboard o error
+    if '/Site/Login' not in current_url:
+        print("[Login] URL cambió de /Site/Login, verificando contenido...")
         
-        # Verificar si apareció el modal de sesión durante la espera
-        if i == 3:
-            try:
-                if not session_modal_handled:
-                    modal_appeared = await handle_multiple_session_modal(page)
-                    if modal_appeared:
-                        print("[Login] Modal de sesión apareció durante espera, continuando...")
-                        await asyncio.sleep(3)
-            except Exception as e:
-                print(f"[Login] Error verificando modal en espera: {e}")
-        
+        # Verificar si hay formulario de login visible
         try:
-            if await is_logged_in(page):
-                print(f"[Login] ✓ Login detectado después de {i+6} segundos")
+            login_form_count = await page.locator('#loginB2C:visible, #loginForm:visible, #Password:visible').count()
+            print(f"[Login] Formularios de login visibles: {login_form_count}")
+            
+            if login_form_count == 0:
+                # No hay formulario de login, probablemente estamos logueados
+                print("[Login] No se detecta formulario de login, asumiendo login exitoso")
                 login_detected = True
-                break
+            else:
+                # Hay formulario de login, puede ser error de credenciales
+                print("[Login] Aún hay formulario de login visible, verificando errores...")
         except Exception as e:
-            print(f"[Login] Error en verificación (intento {i+1}): {e}")
-            continue
+            print(f"[Login] Error verificando formulario: {e}")
+    
+    # Si no detectamos login aún, continuar con verificación normal
+    if not login_detected:
+        # Esperar hasta 20 segundos adicionales para la navegación completa
+        for i in range(20):
+            await asyncio.sleep(1)
+            
+            # Verificar si apareció el modal de sesión durante la espera
+            if i == 2:
+                try:
+                    if not session_modal_handled:
+                        modal_appeared = await handle_multiple_session_modal(page)
+                        if modal_appeared:
+                            print("[Login] Modal de sesión apareció durante espera, continuando...")
+                            await asyncio.sleep(3)
+                except Exception as e:
+                    print(f"[Login] Error verificando modal en espera: {e}")
+            
+            try:
+                if await is_logged_in(page):
+                    print(f"[Login] ✓ Login detectado después de {i+9} segundos")
+                    login_detected = True
+                    break
+            except Exception as e:
+                print(f"[Login] Error en verificación (intento {i+1}): {e}")
+                continue
+            
+            if i == 19:
+                print("[Login] ⚠ Timeout esperando navegación")
+    
+    # Si no se detectó login, verificar si hay error de credenciales
+    if not login_detected:
+        print("[Login] Verificando posibles errores...")
         
-        if i == 24:
-            print("[Login] ⚠ Timeout esperando navegación")
+        # Verificar mensajes de error comunes
+        error_selectors = [
+            '.validation-summary-errors',
+            '.field-validation-error',
+            '[class*="error"]',
+            'text=contraseña incorrecta',
+            'text=password incorrect',
+            'text=usuario no válido',
+            'text=invalid user',
+            '.alert-danger',
+            '#error-message'
+        ]
+        
+        for selector in error_selectors:
+            try:
+                error_elem = page.locator(selector).first
+                if await error_elem.count() > 0:
+                    error_text = await error_elem.text_content()
+                    if error_text and error_text.strip():
+                        print(f"[Login] ⚠ Error detectado: {error_text.strip()}")
+            except:
+                continue
+        
+        # Verificar si la URL es diferente pero seguimos en página de login
+        current_url = page.url
+        print(f"[Login] URL actual: {current_url}")
+        
+        # Si la URL es /Audanet/ sin /Site/Login, puede ser redirect por sesión inválida
+        if current_url.rstrip('/').endswith('/Audanet'):
+            print("[Login] ⚠ Posible redirección por sesión inválida o error de login")
+            
+            # Intentar esperar más tiempo por si hay redirección automática
+            print("[Login] Esperando 10 segundos adicionales por posible redirección...")
+            await asyncio.sleep(10)
+            
+            # Re-verificar login
+            try:
+                if await is_logged_in(page):
+                    print("[Login] ✓ Login detectado después de espera extendida")
+                    login_detected = True
+            except:
+                pass
     
     # Esperar a que la red se estabilice
     if login_detected:
@@ -607,6 +693,18 @@ async def do_login(page, use_db: bool = True) -> bool:
         if not login_success and attempt < 2:
             print(f"[Login] Reintentando verificación en 3 segundos...")
             await asyncio.sleep(3)
+    
+    # Verificación alternativa: si la URL cambió y no hay formulario de login
+    if not login_success:
+        try:
+            current_url = page.url
+            login_form_visible = await page.locator('#loginB2C:visible, #loginForm:visible, #Password:visible').count() > 0
+            
+            if '/Site/Login' not in current_url and not login_form_visible:
+                print("[Login] URL cambió y no hay formulario de login visible, asumiendo login exitoso")
+                login_success = True
+        except:
+            pass
     
     if login_success:
         print("[Login] ✓ Login exitoso!")

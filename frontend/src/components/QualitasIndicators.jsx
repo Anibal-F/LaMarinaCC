@@ -321,6 +321,7 @@ export default function QualitasIndicators({ onRefresh }) {
             )}
           </button>
         </div>
+      </div>
 
       {/* Mensaje de actualización en progreso */}
       {updating && (

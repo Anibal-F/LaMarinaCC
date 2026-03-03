@@ -863,33 +863,38 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
                 const cells = row.querySelectorAll('td');
                 if (rowIdx === 0) {
                     debugInfo.firstRowCells = cells.length;
-                    // Guardar muestra de los primeros 5 textos de celda
-                    for (let i = 0; i < Math.min(5, cells.length); i++) {
-                        debugInfo.sampleCells.push(cells[i]?.textContent?.trim() || '');
+                    // Guardar muestra de todas las celdas para debug
+                    for (let i = 0; i < cells.length; i++) {
+                        const text = cells[i]?.textContent?.trim() || '(vacío)';
+                        debugInfo.sampleCells.push(`[${i}]${text.substring(0, 30)}`);
                     }
                 }
                 
-                if (cells.length >= 6) {
+                if (cells.length >= 10) {
                     // Función auxiliar para limpiar texto
                     const getText = (index) => {
                         if (index >= cells.length) return '';
                         return cells[index]?.textContent?.trim() || '';
                     };
                     
-                    // Basado en la estructura real de la tabla CHUBB
-                    // Índice 0: checkbox, 1: No. Expediente, 2: Tipo Vehículo, 3: Estado
-                    // 4: Fecha Creación, 5: Fecha Inspección, 6: Última Actualización, 7: Placa
-                    // 8: Asignado A, 9: Compañía
+                    // Estructura REAL de la tabla CHUBB según HTML:
+                    // 0: checkbox (vacío), 1: ícono lupa (vacío)
+                    // 2: Número de Expediente, 3: Tipo de Vehículo
+                    // 4: (vacío - columna sin datos visibles)
+                    // 5: Estado, 6: Fecha Creación, 7: Fecha Inspección
+                    // 8: Última Fecha Actualización, 9: Placa
+                    // 10: Asignado A, 11: Compañía
+                    // 12: (vacío), 13: Estatus Audatrace
                     data.push({
-                        num_expediente: getText(1),
-                        tipo_vehiculo: getText(2),
-                        estado: getText(3),
-                        fecha_creacion: getText(4),
-                        fecha_inspeccion: getText(5),
-                        fecha_actualizacion: getText(6),
-                        placas: getText(7),
-                        asignado_a: getText(8),
-                        compania: getText(9),
+                        num_expediente: getText(2),
+                        tipo_vehiculo: getText(3),
+                        estado: getText(5),
+                        fecha_creacion: getText(6),
+                        fecha_inspeccion: getText(7),
+                        fecha_actualizacion: getText(8),
+                        placas: getText(9),
+                        asignado_a: getText(10),
+                        compania: getText(11),
                         fecha_accidente: '' // No hay columna visible para fecha accidente
                     });
                 }

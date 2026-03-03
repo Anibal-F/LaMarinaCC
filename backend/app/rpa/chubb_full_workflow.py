@@ -849,78 +849,62 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
         await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
         
         # Extraer datos de todas las filas visibles
-        # Mapeo dinámico basado en los encabezados de la tabla para mayor robustez
-        rows_data = await page.evaluate("""() => {
-            const table = document.querySelector('#gridMyWorks');
-            const rows = table?.querySelectorAll('tbody tr') || [];
+        # Usar índices fijos basados en la estructura observada de la tabla CHUBB/Audatex
+        rows_result = await page.evaluate("""() => {
+            const rows = document.querySelectorAll('#gridMyWorks tbody tr');
             const data = [];
+            const debugInfo = {
+                totalRows: rows.length,
+                firstRowCells: 0,
+                sampleCells: []
+            };
             
-            // Obtener encabezados para mapeo dinámico
-            const headers = [];
-            const headerCells = table?.querySelectorAll('thead th') || [];
-            headerCells.forEach((th, idx) => {
-                headers[idx] = th.textContent?.trim().toLowerCase() || '';
-            });
-            
-            // Crear mapeo de índices basado en encabezados
-            const getColumnIndex = (keywords) => {
-                for (let i = 0; i < headers.length; i++) {
-                    const header = headers[i];
-                    for (const keyword of keywords) {
-                        if (header.includes(keyword.toLowerCase())) return i;
+            rows.forEach((row, rowIdx) => {
+                const cells = row.querySelectorAll('td');
+                if (rowIdx === 0) {
+                    debugInfo.firstRowCells = cells.length;
+                    // Guardar muestra de los primeros 5 textos de celda
+                    for (let i = 0; i < Math.min(5, cells.length); i++) {
+                        debugInfo.sampleCells.push(cells[i]?.textContent?.trim() || '');
                     }
                 }
-                return -1;
-            };
-            
-            const colMap = {
-                num_expediente: getColumnIndex(['no.', 'expediente', 'número']),
-                tipo_vehiculo: getColumnIndex(['tipo', 'vehículo', 'vehiculo']),
-                fecha_accidente: getColumnIndex(['accidente', 'fecha accidente']),
-                estado: getColumnIndex(['estado']),
-                fecha_creacion: getColumnIndex(['creación', 'creacion']),
-                fecha_inspeccion: getColumnIndex(['inspección', 'inspeccion']),
-                fecha_actualizacion: getColumnIndex(['actualización', 'actualizacion', 'última']),
-                placas: getColumnIndex(['placa']),
-                asignado_a: getColumnIndex(['asignado']),
-                compania: getColumnIndex(['compañía', 'compania', 'cia'])
-            };
-            
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length >= 5) {
+                
+                if (cells.length >= 6) {
                     // Función auxiliar para limpiar texto
                     const getText = (index) => {
-                        if (index < 0 || index >= cells.length) return '';
+                        if (index >= cells.length) return '';
                         return cells[index]?.textContent?.trim() || '';
                     };
                     
+                    // Basado en la estructura real de la tabla CHUBB
+                    // Índice 0: checkbox, 1: No. Expediente, 2: Tipo Vehículo, 3: Estado
+                    // 4: Fecha Creación, 5: Fecha Inspección, 6: Última Actualización, 7: Placa
+                    // 8: Asignado A, 9: Compañía
                     data.push({
-                        num_expediente: getText(colMap.num_expediente),
-                        tipo_vehiculo: getText(colMap.tipo_vehiculo),
-                        fecha_accidente: getText(colMap.fecha_accidente),
-                        estado: getText(colMap.estado),
-                        fecha_creacion: getText(colMap.fecha_creacion),
-                        fecha_inspeccion: getText(colMap.fecha_inspeccion),
-                        fecha_actualizacion: getText(colMap.fecha_actualizacion),
-                        placas: getText(colMap.placas),
-                        asignado_a: getText(colMap.asignado_a),
-                        compania: getText(colMap.compania)
+                        num_expediente: getText(1),
+                        tipo_vehiculo: getText(2),
+                        estado: getText(3),
+                        fecha_creacion: getText(4),
+                        fecha_inspeccion: getText(5),
+                        fecha_actualizacion: getText(6),
+                        placas: getText(7),
+                        asignado_a: getText(8),
+                        compania: getText(9),
+                        fecha_accidente: '' // No hay columna visible para fecha accidente
                     });
                 }
             });
             
-            return {data: data, headers: headers, mapping: colMap};
+            return {data: data, debug: debugInfo};
         }""")
         
-        # Extraer datos y mostrar debug
-        headers_info = rows_data.get('headers', [])
-        mapping_info = rows_data.get('mapping', {})
-        rows_data = rows_data.get('data', [])
+        rows_data = rows_result.get('data', [])
+        debug_info = rows_result.get('debug', {})
         
-        # Log de debug para verificar el primer registro
-        print(f"[Extract] Headers encontrados: {headers_info}")
-        print(f"[Extract] Mapeo de columnas: {mapping_info}")
+        # Log de debug
+        print(f"[Extract] Debug - Total filas encontradas: {debug_info.get('totalRows', 0)}")
+        print(f"[Extract] Debug - Celdas en primera fila: {debug_info.get('firstRowCells', 0)}")
+        print(f"[Extract] Debug - Muestra celdas: {debug_info.get('sampleCells', [])}")
         if len(rows_data) > 0:
             print(f"[Extract] Ejemplo de fila extraída: {rows_data[0]}")
         

@@ -179,10 +179,22 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
     
     ensure_tables_exists()
     
+    def parse_date(value):
+        """Convierte valor a fecha o NULL si está vacío."""
+        if not value or value == '' or value == '-':
+            return None
+        return value
+    
     count = 0
     with get_connection() as conn:
         for exp in expedientes:
             try:
+                # Validar que tenga número de expediente
+                num_exp = exp.get('num_expediente', '').strip()
+                if not num_exp:
+                    logger.warning(f"[save_expedientes] Saltando expediente sin número")
+                    continue
+                
                 conn.execute("""
                     INSERT INTO chubb_expedientes (
                         num_expediente, tipo_vehiculo, estado, 
@@ -192,16 +204,16 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
                 """, (
-                    exp.get('num_expediente'),
-                    exp.get('tipo_vehiculo'),
-                    exp.get('estado'),
-                    exp.get('fecha_creacion'),
-                    exp.get('fecha_inspeccion'),
-                    exp.get('fecha_actualizacion'),
-                    exp.get('placas'),
-                    exp.get('asignado_a'),
-                    exp.get('compania'),
-                    exp.get('fecha_accidente'),
+                    num_exp,
+                    exp.get('tipo_vehiculo') or None,
+                    exp.get('estado') or 'Pendiente',
+                    parse_date(exp.get('fecha_creacion')),
+                    parse_date(exp.get('fecha_inspeccion')),
+                    parse_date(exp.get('fecha_actualizacion')),
+                    exp.get('placas') or None,
+                    exp.get('asignado_a') or None,
+                    exp.get('compania') or None,
+                    parse_date(exp.get('fecha_accidente')),
                     fecha_extraccion
                 ))
                 count += 1

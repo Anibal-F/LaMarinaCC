@@ -20,6 +20,9 @@ export default function ChubbIndicators({ onRefresh }) {
   const [estatusInfo, setEstatusInfo] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
   
+  // Estado para filtro de expedientes
+  const [filtroEstado, setFiltroEstado] = useState('');
+  
   // Estado del scheduler automático
   const [schedulerEnabled, setSchedulerEnabled] = useState(true);
   const [togglingScheduler, setTogglingScheduler] = useState(false);
@@ -376,7 +379,14 @@ export default function ChubbIndicators({ onRefresh }) {
       {indicadores && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Por Autorizar */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-purple-500/50 transition-all group">
+          <div 
+            onClick={() => setFiltroEstado(filtroEstado === 'Por aprobar' ? '' : 'Por aprobar')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstado === 'Por aprobar' 
+                ? 'border-purple-500 ring-2 ring-purple-500/30' 
+                : 'border-border-dark hover:border-purple-500/50'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Por Autorizar
@@ -394,7 +404,14 @@ export default function ChubbIndicators({ onRefresh }) {
           </div>
 
           {/* Card 2: Autorizadas */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-alert-green/50 transition-all group">
+          <div 
+            onClick={() => setFiltroEstado(filtroEstado === 'Autorizado' ? '' : 'Autorizado')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstado === 'Autorizado' 
+                ? 'border-alert-green ring-2 ring-alert-green/30' 
+                : 'border-border-dark hover:border-alert-green/50'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Autorizadas
@@ -412,7 +429,14 @@ export default function ChubbIndicators({ onRefresh }) {
           </div>
 
           {/* Card 3: Rechazadas */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-alert-red/50 transition-all group">
+          <div 
+            onClick={() => setFiltroEstado(filtroEstado === 'Rechazado' ? '' : 'Rechazado')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstado === 'Rechazado' 
+                ? 'border-alert-red ring-2 ring-alert-red/30' 
+                : 'border-border-dark hover:border-alert-red/50'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Rechazadas
@@ -430,7 +454,14 @@ export default function ChubbIndicators({ onRefresh }) {
           </div>
 
           {/* Card 4: Complementos */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-alert-amber/50 transition-all group">
+          <div 
+            onClick={() => setFiltroEstado(filtroEstado === 'Complemento' ? '' : 'Complemento')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstado === 'Complemento' 
+                ? 'border-alert-amber ring-2 ring-alert-amber/30' 
+                : 'border-border-dark hover:border-alert-amber/50'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Complementos
@@ -469,7 +500,8 @@ export default function ChubbIndicators({ onRefresh }) {
       {/* Tabla de Expedientes */}
       {indicadores && !loading && (
         <ChubbExpedientes 
-          fechaExtraccion={indicadores?.fecha_extraccion} 
+          fechaExtraccion={indicadores?.fecha_extraccion}
+          filtroEstadoInicial={filtroEstado}
         />
       )}
     </div>

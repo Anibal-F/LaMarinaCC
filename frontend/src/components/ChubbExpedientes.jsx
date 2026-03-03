@@ -11,17 +11,23 @@ const getApiUrl = () => {
   return '';
 };
 
-export default function ChubbExpedientes({ fechaExtraccion }) {
+export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial = '' }) {
   const [expedientes, setExpedientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [estadoFiltro, setEstadoFiltro] = useState('');
+  const [estadoFiltro, setEstadoFiltro] = useState(filtroEstadoInicial);
   const [estadosDisponibles, setEstadosDisponibles] = useState([]);
   
   const pageSizeOptions = [10, 25, 50, 100];
   const API_BASE = getApiUrl();
+
+  // Sincronizar filtro inicial desde props
+  useEffect(() => {
+    setEstadoFiltro(filtroEstadoInicial);
+    setPage(1); // Resetear a primera página al cambiar filtro
+  }, [filtroEstadoInicial]);
 
   useEffect(() => {
     fetchExpedientes();

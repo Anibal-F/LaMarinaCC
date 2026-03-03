@@ -849,42 +849,78 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
         await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
         
         # Extraer datos de todas las filas visibles
-        # Según las capturas HTML de CHUBB/Audatex, el orden de columnas es:
-        # 0: checkbox, 1: No. Expediente, 2: Tipo Vehículo, 3: Fecha Accidente, 4: Estado
-        # 5: Fecha Creación, 6: Fecha Inspección, 7: Última Actualización, 8: Placa
-        # 9: Asignado A, 10: Compañía, 11: Estatus Audatex
+        # Mapeo dinámico basado en los encabezados de la tabla para mayor robustez
         rows_data = await page.evaluate("""() => {
-            const rows = document.querySelectorAll('#gridMyWorks tbody tr');
+            const table = document.querySelector('#gridMyWorks');
+            const rows = table?.querySelectorAll('tbody tr') || [];
             const data = [];
+            
+            // Obtener encabezados para mapeo dinámico
+            const headers = [];
+            const headerCells = table?.querySelectorAll('thead th') || [];
+            headerCells.forEach((th, idx) => {
+                headers[idx] = th.textContent?.trim().toLowerCase() || '';
+            });
+            
+            // Crear mapeo de índices basado en encabezados
+            const getColumnIndex = (keywords) => {
+                for (let i = 0; i < headers.length; i++) {
+                    const header = headers[i];
+                    for (const keyword of keywords) {
+                        if (header.includes(keyword.toLowerCase())) return i;
+                    }
+                }
+                return -1;
+            };
+            
+            const colMap = {
+                num_expediente: getColumnIndex(['no.', 'expediente', 'número']),
+                tipo_vehiculo: getColumnIndex(['tipo', 'vehículo', 'vehiculo']),
+                fecha_accidente: getColumnIndex(['accidente', 'fecha accidente']),
+                estado: getColumnIndex(['estado']),
+                fecha_creacion: getColumnIndex(['creación', 'creacion']),
+                fecha_inspeccion: getColumnIndex(['inspección', 'inspeccion']),
+                fecha_actualizacion: getColumnIndex(['actualización', 'actualizacion', 'última']),
+                placas: getColumnIndex(['placa']),
+                asignado_a: getColumnIndex(['asignado']),
+                compania: getColumnIndex(['compañía', 'compania', 'cia'])
+            };
             
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length >= 9) {
+                if (cells.length >= 5) {
                     // Función auxiliar para limpiar texto
                     const getText = (index) => {
-                        if (index >= cells.length) return '';
+                        if (index < 0 || index >= cells.length) return '';
                         return cells[index]?.textContent?.trim() || '';
                     };
                     
                     data.push({
-                        num_expediente: getText(1),
-                        tipo_vehiculo: getText(2),
-                        fecha_accidente: getText(3),
-                        estado: getText(4),
-                        fecha_creacion: getText(5),
-                        fecha_inspeccion: getText(6),
-                        fecha_actualizacion: getText(7),
-                        placas: getText(8),
-                        asignado_a: getText(9),
-                        compania: getText(10)
+                        num_expediente: getText(colMap.num_expediente),
+                        tipo_vehiculo: getText(colMap.tipo_vehiculo),
+                        fecha_accidente: getText(colMap.fecha_accidente),
+                        estado: getText(colMap.estado),
+                        fecha_creacion: getText(colMap.fecha_creacion),
+                        fecha_inspeccion: getText(colMap.fecha_inspeccion),
+                        fecha_actualizacion: getText(colMap.fecha_actualizacion),
+                        placas: getText(colMap.placas),
+                        asignado_a: getText(colMap.asignado_a),
+                        compania: getText(colMap.compania)
                     });
                 }
             });
             
-            return data;
+            return {data: data, headers: headers, mapping: colMap};
         }""")
         
+        # Extraer datos y mostrar debug
+        headers_info = rows_data.get('headers', [])
+        mapping_info = rows_data.get('mapping', {})
+        rows_data = rows_data.get('data', [])
+        
         # Log de debug para verificar el primer registro
+        print(f"[Extract] Headers encontrados: {headers_info}")
+        print(f"[Extract] Mapeo de columnas: {mapping_info}")
         if len(rows_data) > 0:
             print(f"[Extract] Ejemplo de fila extraída: {rows_data[0]}")
         

@@ -9,15 +9,22 @@ const getApiUrl = () => {
   return '';
 };
 
-export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
+export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatusInicial = '' }) {
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [estatusFiltro, setEstatusFiltro] = useState(filtroEstatusInicial);
   
   const pageSizeOptions = [10, 50, 100, 500];
   const API_BASE = getApiUrl();
+
+  // Sincronizar filtro inicial desde props
+  useEffect(() => {
+    setEstatusFiltro(filtroEstatusInicial);
+    setPage(1); // Resetear a primera página al cambiar filtro
+  }, [filtroEstatusInicial]);
 
   useEffect(() => {
     fetchOrdenes();
@@ -45,9 +52,14 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
     }
   };
 
+  // Filtrar órdenes por estatus
+  const ordenesFiltradas = estatusFiltro 
+    ? ordenes.filter(o => o.estatus && o.estatus.toLowerCase().includes(estatusFiltro.toLowerCase()))
+    : ordenes;
+
   // Paginación
-  const totalPages = Math.ceil(ordenes.length / pageSize);
-  const pagedOrdenes = ordenes.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.ceil(ordenesFiltradas.length / pageSize);
+  const pagedOrdenes = ordenesFiltradas.slice((page - 1) * pageSize, page * pageSize);
   
   // Resetear página cuando cambia el tamaño
   const handlePageSizeChange = (newSize) => {
@@ -97,7 +109,7 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-blue-500">list_alt</span>
           <h4 className="text-sm font-bold text-white">Órdenes Asignadas</h4>
-          <span className="text-xs text-slate-400">({ordenes.length} total)</span>
+          <span className="text-xs text-slate-400">({ordenesFiltradas.length} de {ordenes.length} total)</span>
         </div>
         <div className="flex items-center gap-3">
           {/* Selector de cantidad */}
@@ -180,7 +192,8 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
       {(totalPages > 1 || ordenes.length > pageSizeOptions[0]) && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-border-dark">
           <p className="text-xs text-slate-400">
-            Mostrando {pagedOrdenes.length} de {ordenes.length} registros
+            Mostrando {pagedOrdenes.length} de {ordenesFiltradas.length} registros
+            {estatusFiltro && ` (filtrado por: ${estatusFiltro})`}
           </p>
           <div className="flex items-center gap-2">
             <button

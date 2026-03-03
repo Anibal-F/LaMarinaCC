@@ -20,6 +20,9 @@ export default function QualitasIndicators({ onRefresh }) {
   const [estatusInfo, setEstatusInfo] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
   
+  // Estado para filtro de órdenes
+  const [filtroEstatus, setFiltroEstatus] = useState('');
+  
   // Estado del scheduler automático
   const [schedulerEnabled, setSchedulerEnabled] = useState(true);
   const [togglingScheduler, setTogglingScheduler] = useState(false);
@@ -375,8 +378,15 @@ export default function QualitasIndicators({ onRefresh }) {
       {/* Indicadores */}
       {indicadores && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1: Asignados */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-blue-500/50 transition-all group">
+          {/* Card 1: Asignados - Muestra todos */}
+          <div 
+            onClick={() => setFiltroEstatus('')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstatus === '' 
+                ? 'border-blue-500 ring-2 ring-blue-500/30' 
+                : 'border-border-dark hover:border-blue-500/50'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Asignados
@@ -390,11 +400,20 @@ export default function QualitasIndicators({ onRefresh }) {
                 {formatNumber(indicadores.asignados)}
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Órdenes asignadas al taller</p>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {filtroEstatus === '' ? 'Mostrando todas las órdenes' : 'Clic para ver todas'}
+            </p>
           </div>
 
           {/* Card 2: Pendiente Valuación */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-alert-amber/50 transition-all group">
+          <div 
+            onClick={() => setFiltroEstatus(filtroEstatus === 'Revisar Valuación' ? '' : 'Revisar Valuación')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstatus === 'Revisar Valuación' 
+                ? 'border-alert-amber ring-2 ring-alert-amber/30' 
+                : 'border-border-dark hover:border-alert-amber/50'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Pendiente Valuación
@@ -422,21 +441,42 @@ export default function QualitasIndicators({ onRefresh }) {
               </span>
             </div>
             
-            {/* Grid de 3 indicadores */}
+            {/* Grid de 3 indicadores clickeables */}
             <div className="grid grid-cols-3 gap-2">
-              <div className="text-center p-2 bg-alert-green/10 rounded-lg">
+              <div 
+                onClick={() => setFiltroEstatus(filtroEstatus === 'Complemento Autorizado' ? '' : 'Complemento Autorizado')}
+                className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
+                  filtroEstatus === 'Complemento Autorizado'
+                    ? 'bg-alert-green/30 ring-1 ring-alert-green'
+                    : 'bg-alert-green/10 hover:bg-alert-green/20'
+                }`}
+              >
                 <span className="text-lg font-bold text-alert-green block">
                   {formatNumber(indicadores.complemento_autorizado)}
                 </span>
                 <span className="text-[9px] text-slate-400 uppercase">Autorizado</span>
               </div>
-              <div className="text-center p-2 bg-alert-amber/10 rounded-lg">
+              <div 
+                onClick={() => setFiltroEstatus(filtroEstatus === 'Complemento Solicitado' ? '' : 'Complemento Solicitado')}
+                className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
+                  filtroEstatus === 'Complemento Solicitado'
+                    ? 'bg-alert-amber/30 ring-1 ring-alert-amber'
+                    : 'bg-alert-amber/10 hover:bg-alert-amber/20'
+                }`}
+              >
                 <span className="text-lg font-bold text-alert-amber block">
                   {formatNumber(indicadores.complemento_solicitado)}
                 </span>
                 <span className="text-[9px] text-slate-400 uppercase">Solicitado</span>
               </div>
-              <div className="text-center p-2 bg-alert-red/10 rounded-lg">
+              <div 
+                onClick={() => setFiltroEstatus(filtroEstatus === 'Complemento Rechazado' ? '' : 'Complemento Rechazado')}
+                className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
+                  filtroEstatus === 'Complemento Rechazado'
+                    ? 'bg-alert-red/30 ring-1 ring-alert-red'
+                    : 'bg-alert-red/10 hover:bg-alert-red/20'
+                }`}
+              >
                 <span className="text-lg font-bold text-alert-red block">
                   {formatNumber(indicadores.complemento_rechazado)}
                 </span>
@@ -477,7 +517,8 @@ export default function QualitasIndicators({ onRefresh }) {
       {/* Tabla de Órdenes Asignadas */}
       {indicadores && !loading && (
         <QualitasOrdenesAsignadas 
-          fechaExtraccion={indicadores?.fecha_extraccion} 
+          fechaExtraccion={indicadores?.fecha_extraccion}
+          filtroEstatusInicial={filtroEstatus}
         />
       )}
     </div>

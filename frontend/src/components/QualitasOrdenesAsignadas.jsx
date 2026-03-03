@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react';
 
+// URL base de la API
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.replace(/\/$/, '');
+  }
+  return '';
+};
+
 export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -8,6 +17,7 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
   const [pageSize, setPageSize] = useState(10);
   
   const pageSizeOptions = [10, 50, 100, 500];
+  const API_BASE = getApiUrl();
 
   useEffect(() => {
     fetchOrdenes();
@@ -16,9 +26,7 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion }) {
   const fetchOrdenes = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/qualitas/ordenes-asignadas`
-      );
+      const response = await fetch(API_BASE + '/admin/qualitas/ordenes-asignadas');
       
       if (!response.ok) {
         if (response.status === 404) {

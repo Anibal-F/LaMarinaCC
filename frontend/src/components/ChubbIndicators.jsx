@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import ChubbExpedientes from "./ChubbExpedientes.jsx";
 
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.replace(/\/$/, '');
+  }
+  return '';
+};
+
 export default function ChubbIndicators({ onRefresh }) {
   const [indicadores, setIndicadores] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,7 +43,7 @@ export default function ChubbIndicators({ onRefresh }) {
       setError(null);
       
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/chubb/indicadores`
+        getApiUrl() + '/admin/chubb/indicadores'
       );
       
       if (response.status === 404) {
@@ -61,7 +69,7 @@ export default function ChubbIndicators({ onRefresh }) {
   const fetchEstatus = async () => {
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/chubb/indicadores/estatus`
+        getApiUrl() + '/admin/chubb/indicadores/estatus'
       );
       if (response.ok) {
         const data = await response.json();
@@ -83,7 +91,7 @@ export default function ChubbIndicators({ onRefresh }) {
       
       // Usar cola asíncrona
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/rpa-queue/chubb/actualizar`,
+        getApiUrl() + '/admin/rpa-queue/chubb/actualizar',
         {
           method: "POST",
           headers: { "Content-Type": "application/json" }
@@ -109,7 +117,7 @@ export default function ChubbIndicators({ onRefresh }) {
   const checkTaskStatus = async (taskId) => {
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/rpa-queue/tasks/${taskId}`
+        `${getApiUrl()}/admin/rpa-queue/tasks/${taskId}`
       );
       
       if (!response.ok) return;

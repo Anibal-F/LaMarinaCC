@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import QualitasOrdenesAsignadas from "./QualitasOrdenesAsignadas.jsx";
 
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.replace(/\/$/, '');
+  }
+  return '';
+};
+
 export default function QualitasIndicators({ onRefresh }) {
   const [indicadores, setIndicadores] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,7 +43,7 @@ export default function QualitasIndicators({ onRefresh }) {
       setError(null);
       
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/qualitas/indicadores`
+        getApiUrl() + '/admin/qualitas/indicadores'
       );
       
       if (response.status === 404) {
@@ -61,7 +69,7 @@ export default function QualitasIndicators({ onRefresh }) {
   const fetchEstatus = async () => {
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/qualitas/indicadores/estatus`
+        getApiUrl() + '/admin/qualitas/indicadores/estatus'
       );
       if (response.ok) {
         const data = await response.json();
@@ -83,7 +91,7 @@ export default function QualitasIndicators({ onRefresh }) {
       
       // Usar cola asíncrona
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/rpa-queue/qualitas/actualizar`,
+        getApiUrl() + '/admin/rpa-queue/qualitas/actualizar',
         {
           method: "POST",
           headers: { "Content-Type": "application/json" }
@@ -109,7 +117,7 @@ export default function QualitasIndicators({ onRefresh }) {
   const checkTaskStatus = async (taskId) => {
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/rpa-queue/tasks/${taskId}`
+        `${getApiUrl()}/admin/rpa-queue/tasks/${taskId}`
       );
       
       if (!response.ok) return;

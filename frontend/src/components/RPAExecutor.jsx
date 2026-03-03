@@ -1,5 +1,13 @@
 import { useState } from "react";
 
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.replace(/\/$/, '');
+  }
+  return '';
+};
+
 export default function RPAExecutor() {
   const [loadingQualitas, setLoadingQualitas] = useState(false);
   const [loadingChubb, setLoadingChubb] = useState(false);
@@ -12,7 +20,7 @@ export default function RPAExecutor() {
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/rpa/${seguro.toLowerCase()}`,
+        `${getApiUrl()}/admin/rpa/${seguro.toLowerCase()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -47,7 +55,7 @@ export default function RPAExecutor() {
   const checkJobStatus = async (jobId, seguro) => {
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/rpa/status/${jobId}`
+        `${getApiUrl()}/admin/rpa/status/${jobId}`
       );
       
       if (response.ok) {

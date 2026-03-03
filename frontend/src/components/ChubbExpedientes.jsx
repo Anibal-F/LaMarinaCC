@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react';
 
+// URL base de la API - usa el proxy del vite.config.js o la variable de entorno
+const getApiUrl = () => {
+  // Intentar usar la variable de entorno
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.replace(/\/$/, ''); // quitar slash final
+  }
+  // Fallback: usar path relativo (funciona con proxy de Vite)
+  return '';
+};
+
 export default function ChubbExpedientes({ fechaExtraccion }) {
   const [expedientes, setExpedientes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10,6 +21,7 @@ export default function ChubbExpedientes({ fechaExtraccion }) {
   const [estadosDisponibles, setEstadosDisponibles] = useState([]);
   
   const pageSizeOptions = [10, 25, 50, 100];
+  const API_BASE = getApiUrl();
 
   useEffect(() => {
     fetchExpedientes();
@@ -19,35 +31,37 @@ export default function ChubbExpedientes({ fechaExtraccion }) {
   const fetchExpedientes = async () => {
     try {
       setLoading(true);
-      // Usar la URL base del environment o fallback
-      const baseUrl = import.meta.env.VITE_API_URL || '';
-      let url;
       
-      if (baseUrl) {
-        url = new URL(`${baseUrl}/admin/chubb/expedientes`);
-      } else {
-        // Fallback: usar path relativo
-        url = new URL('/admin/chubb/expedientes', window.location.origin);
-      }
+      // Construir URL manualmente sin usar constructor URL
+      let url = API_BASE + '/admin/chubb/expedientes';
       
+      // Agregar query params
+      const params = [];
       if (estadoFiltro) {
-        url.searchParams.append('estado', estadoFiltro);
+        params.push('estado=' + encodeURIComponent(estadoFiltro));
       }
-      url.searchParams.append('limit', '500');
+      params.push('limit=500');
       
-      const response = await fetch(url.toString());
+      if (params.length > 0) {
+        url += '?' + params.join('&');
+      }
+      
+      console.log('[ChubbExpedientes] Fetching:', url);
+      
+      const response = await fetch(url);
       
       if (!response.ok) {
         if (response.status === 404) {
           setExpedientes([]);
           return;
         }
-        throw new Error('Error al cargar expedientes');
+        throw new Error('Error al cargar expedientes: ' + response.status);
       }
       
       const data = await response.json();
       setExpedientes(data.expedientes || []);
     } catch (err) {
+      console.error('[ChubbExpedientes] Error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -56,10 +70,8 @@ export default function ChubbExpedientes({ fechaExtraccion }) {
 
   const fetchEstadosDisponibles = async () => {
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || '';
-      const url = baseUrl 
-        ? `${baseUrl}/admin/chubb/expedientes/estados`
-        : '/admin/chubb/expedientes/estados';
+      const url = API_BASE + '/admin/chubb/expedientes/estados';
+      console.log('[ChubbExpedientes] Fetching estados:', url);
       
       const response = await fetch(url);
       if (response.ok) {

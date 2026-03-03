@@ -339,13 +339,12 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         
         log(f"RPA terminó con código: {returncode}")
         
-        # DEBUG: Agregar logs del RPA
-        if stdout:
-            log(f"RPA STDOUT:\n{stdout[-2000:]}")
-        if stderr:
-            log(f"RPA STDERR:\n{stderr[-1000:]}")
-        
         if returncode != 0:
+            # Log errores solo si falló
+            if stdout:
+                log(f"RPA STDOUT:\n{stdout[-2000:]}")
+            if stderr:
+                log(f"RPA STDERR:\n{stderr[-1000:]}")
             raise RuntimeError(f"RPA falló con código {returncode}")
         
         # Buscar el archivo JSON más reciente generado por el RPA
@@ -361,11 +360,9 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         
         log(f"Datos leídos del archivo: {json_files[0].name}")
         
-        # DEBUG: Ver cuántos expedientes tiene el JSON
+        # Ver cuántos expedientes tiene el JSON
         expedientes_json = data.get('expedientes', [])
-        log(f"DEBUG - Expedientes en JSON: {len(expedientes_json)}")
-        if expedientes_json:
-            log(f"DEBUG - Primer expediente: {expedientes_json[0]}")
+        log(f"Expedientes en JSON: {len(expedientes_json)}")
         
         # Guardar en base de datos (desde el worker, no desde el RPA)
         from app.modules.administracion.qualitas_indicadores import save_indicadores, get_latest_indicadores

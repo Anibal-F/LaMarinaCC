@@ -177,18 +177,65 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
         logger.info("[save_expedientes] No hay expedientes para guardar")
         return 0
     
-    # DEBUG: Log de los primeros 3 expedientes recibidos
-    logger.warning(f"[save_expedientes] DEBUG - Total recibidos: {len(expedientes)}")
-    for i, exp in enumerate(expedientes[:3]):
-        logger.warning(f"[save_expedientes] DEBUG - Expediente {i}: {exp}")
+    # Log de los primeros 3 expedientes recibidos
+    logger.info(f"[save_expedientes] Total recibidos: {len(expedientes)}")
+    if expedientes:
+        logger.info(f"[save_expedientes] Primer expediente: {expedientes[0].get('num_expediente')}")
     
     ensure_tables_exists()
     
     def parse_date(value):
-        """Convierte valor a fecha o NULL si está vacío."""
+        """Convierte valor a fecha o NULL si está vacío.
+        Soporta formato español: '27/02/2026 11:07:33 a. m.' -> '2026-02-27 11:07:33'
+        """
         if not value or value == '' or value == '-':
             return None
-        return value
+        
+        try:
+            import re
+            from datetime import datetime
+            
+            # Limpiar el valor
+            value = value.strip()
+            
+            # Patrón para fechas en español: DD/MM/YYYY HH:MM:SS a. m./p. m.
+            # Ejemplo: '27/02/2026 11:07:33 a. m.'
+            pattern = r'(\d{2})/(\d{2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(a\.?\s*m\.?|p\.?\s*m\.?)'
+            match = re.match(pattern, value, re.IGNORECASE)
+            
+            if match:
+                day, month, year, hour, minute, second, ampm = match.groups()
+                hour = int(hour)
+                minute = int(minute)
+                second = int(second)
+                
+                # Convertir a formato 24 horas
+                ampm_clean = ampm.lower().replace('.', '').replace(' ', '')
+                if ampm_clean == 'pm' and hour != 12:
+                    hour += 12
+                elif ampm_clean == 'am' and hour == 12:
+                    hour = 0
+                
+                # Crear fecha en formato ISO
+                dt = datetime(int(year), int(month), int(day), hour, minute, second)
+                return dt.isoformat()
+            
+            # Si no coincide con el patrón español, intentar otros formatos comunes
+            # Formato ISO directo
+            if 'T' in value:
+                return value
+            
+            # Formato YYYY-MM-DD HH:MM:SS
+            if re.match(r'\d{4}-\d{2}-\d{2}', value):
+                return value
+                
+            # Si no se puede parsear, devolver None
+            logger.warning(f"[save_expedientes] No se pudo parsear fecha: {value}")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"[save_expedientes] Error parseando fecha '{value}': {e}")
+            return None
     
     count = 0
     with get_connection() as conn:
@@ -197,7 +244,7 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
                 # Validar que tenga número de expediente
                 num_exp = exp.get('num_expediente', '').strip()
                 if not num_exp:
-                    logger.warning(f"[save_expedientes] Saltando expediente {idx} sin número. Datos: {exp}")
+                    logger.warning(f"[save_expedientes] Saltando expediente {idx} sin número")
                     continue
                 
                 conn.execute("""

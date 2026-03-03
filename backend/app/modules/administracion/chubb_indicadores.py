@@ -177,6 +177,11 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
         logger.info("[save_expedientes] No hay expedientes para guardar")
         return 0
     
+    # DEBUG: Log de los primeros 3 expedientes recibidos
+    logger.warning(f"[save_expedientes] DEBUG - Total recibidos: {len(expedientes)}")
+    for i, exp in enumerate(expedientes[:3]):
+        logger.warning(f"[save_expedientes] DEBUG - Expediente {i}: {exp}")
+    
     ensure_tables_exists()
     
     def parse_date(value):
@@ -187,12 +192,12 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
     
     count = 0
     with get_connection() as conn:
-        for exp in expedientes:
+        for idx, exp in enumerate(expedientes):
             try:
                 # Validar que tenga número de expediente
                 num_exp = exp.get('num_expediente', '').strip()
                 if not num_exp:
-                    logger.warning(f"[save_expedientes] Saltando expediente sin número")
+                    logger.warning(f"[save_expedientes] Saltando expediente {idx} sin número. Datos: {exp}")
                     continue
                 
                 conn.execute("""

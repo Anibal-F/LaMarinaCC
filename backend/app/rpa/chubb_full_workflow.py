@@ -849,30 +849,45 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
         await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
         
         # Extraer datos de todas las filas visibles
+        # Según las capturas HTML de CHUBB/Audatex, el orden de columnas es:
+        # 0: checkbox, 1: No. Expediente, 2: Tipo Vehículo, 3: Fecha Accidente, 4: Estado
+        # 5: Fecha Creación, 6: Fecha Inspección, 7: Última Actualización, 8: Placa
+        # 9: Asignado A, 10: Compañía, 11: Estatus Audatex
         rows_data = await page.evaluate("""() => {
             const rows = document.querySelectorAll('#gridMyWorks tbody tr');
             const data = [];
             
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length >= 8) {
+                if (cells.length >= 9) {
+                    // Función auxiliar para limpiar texto
+                    const getText = (index) => {
+                        if (index >= cells.length) return '';
+                        return cells[index]?.textContent?.trim() || '';
+                    };
+                    
                     data.push({
-                        num_expediente: cells[1]?.textContent?.trim() || '',
-                        tipo_vehiculo: cells[2]?.textContent?.trim() || '',
-                        fecha_accidente: cells[3]?.textContent?.trim() || '',
-                        estado: cells[4]?.textContent?.trim() || '',
-                        fecha_creacion: cells[5]?.textContent?.trim() || '',
-                        fecha_inspeccion: cells[6]?.textContent?.trim() || '',
-                        fecha_actualizacion: cells[7]?.textContent?.trim() || '',
-                        placas: cells[8]?.textContent?.trim() || '',
-                        asignado_a: cells[9]?.textContent?.trim() || '',
-                        compania: cells[10]?.textContent?.trim() || ''
+                        num_expediente: getText(1),
+                        tipo_vehiculo: getText(2),
+                        fecha_accidente: getText(3),
+                        estado: getText(4),
+                        fecha_creacion: getText(5),
+                        fecha_inspeccion: getText(6),
+                        fecha_actualizacion: getText(7),
+                        placas: getText(8),
+                        asignado_a: getText(9),
+                        compania: getText(10)
                     });
                 }
             });
             
             return data;
         }""")
+        
+        // Log de debug para verificar el primer registro
+        if (rows_data.length > 0) {
+            print(f"[Extract] Ejemplo de fila extraída: {rows_data[0]}")
+        }
         
         print(f"[Extract] ✓ {len(rows_data)} filas extraídas de página actual")
         return rows_data

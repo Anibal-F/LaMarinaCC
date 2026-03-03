@@ -142,34 +142,47 @@ async def handle_multiple_session_modal(page) -> bool:
         ]
         
         for text in modal_texts:
-            modal = page.locator(f'text={text}').first
-            if await modal.count() > 0 and await modal.is_visible():
-                print(f"[Session Modal] Detectado modal de sesión múltiple ('{text}')")
-                
-                # Buscar botón Aceptar/Continuar
-                accept_buttons = [
-                    'button:has-text("Aceptar")',
-                    'button:has-text("Continuar")',
-                    'button:has-text("Sí")',
-                    '.modal-footer button:last-child',
-                    '.btn-primary'
-                ]
-                
-                for btn_selector in accept_buttons:
-                    btn = page.locator(btn_selector).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.click()
-                        print("[Session Modal] ✓ Click en 'Aceptar' para continuar")
-                        await asyncio.sleep(2)
-                        return True
+            try:
+                modal = page.locator(f'text={text}').first
+                count = await modal.count()
+                if count > 0:
+                    is_visible = await modal.is_visible()
+                    if is_visible:
+                        print(f"[Session Modal] Detectado modal de sesión múltiple ('{text}')")
                         
-                # Si no encontramos el botón específico, hacer click en cualquier botón visible del modal
-                any_button = page.locator('.modal button, .modal-footer button').first
-                if await any_button.count() > 0:
-                    await any_button.click()
-                    print("[Session Modal] ✓ Click en botón del modal")
-                    await asyncio.sleep(2)
-                    return True
+                        # Buscar botón Aceptar/Continuar
+                        accept_buttons = [
+                            'button:has-text("Aceptar")',
+                            'button:has-text("Continuar")',
+                            'button:has-text("Sí")',
+                            '.modal-footer button:last-child',
+                            '.btn-primary'
+                        ]
+                        
+                        for btn_selector in accept_buttons:
+                            try:
+                                btn = page.locator(btn_selector).first
+                                if await btn.count() > 0 and await btn.is_visible():
+                                    await btn.click()
+                                    print("[Session Modal] ✓ Click en 'Aceptar' para continuar")
+                                    await asyncio.sleep(2)
+                                    return True
+                            except:
+                                continue
+                                
+                        # Si no encontramos el botón específico, hacer click en cualquier botón visible del modal
+                        try:
+                            any_button = page.locator('.modal button, .modal-footer button').first
+                            if await any_button.count() > 0:
+                                await any_button.click()
+                                print("[Session Modal] ✓ Click en botón del modal")
+                                await asyncio.sleep(2)
+                                return True
+                        except:
+                            pass
+            except Exception as inner_e:
+                # Ignorar errores de elementos individuales
+                continue
                     
         return False
         
@@ -243,32 +256,59 @@ async def is_logged_in(page):
     current_url = page.url
     
     # Criterio 1: No estamos en la página de login
-    is_login_page = "/Site/Login" in current_url
+    is_login_page = "/Site/Login" in current_url or "/Login" in current_url
     
-    # Criterio 2: Buscar elementos del dashboard/página principal
+    # Criterio 2: Buscar elementos específicos de CHUBB/Audatex post-login
     dashboard_indicators = [
-        '.dashboard',
-        '.menu',
-        '.navbar',
-        '#main-content',
-        '.container-fluid',
-        'nav',
+        '#gridMyWorks',           # Tabla principal de expedientes
+        '#ui-id-3',               # Acordeón Mi Trabajo
+        '.ui-accordion',          # Acordeón
+        '#formFilters',           # Formulario de filtros
+        '#contentGrid',           # Contenido principal
+        '#pageResults',           # Resultados de página
+        'a:has-text("Log Off")',  # Link de logout
+        'a:has-text("Cerrar sesión")',
+        '.navbar-nav',            # Barra de navegación
+        '#btnBillingMessage',     # Botón de billing (si aparece)
     ]
     
     dashboard_found = False
     for indicator in dashboard_indicators:
         try:
-            count = await page.locator(indicator + ':visible').count()
+            count = await page.locator(indicator).count()
             if count > 0:
+                print(f"[Login Check] Elemento encontrado: {indicator}")
                 dashboard_found = True
                 break
-        except:
+        except Exception as e:
+            # Ignorar errores de contexto destruido
             continue
     
     # Criterio 3: Verificar que el formulario de login ya NO está visible
-    login_form_visible = await page.locator('#loginB2C:visible, #loginForm:visible, #Password:visible').count() > 0
+    try:
+        login_form_visible = await page.locator('#loginB2C:visible, #loginForm:visible, #Password:visible').count() > 0
+    except:
+        login_form_visible = False
     
-    return (not is_login_page and not login_form_visible) or dashboard_found
+    # Criterio 4: La URL contiene indicadores de estar logueado
+    logged_in_url_indicators = [
+        '/Home',
+        '/Dashboard',
+        '/Site/',
+        '/Work',
+        'Audanet/Site'
+    ]
+    
+    url_indicates_logged_in = any(indicator in current_url for indicator in logged_in_url_indicators)
+    
+    result = (not is_login_page and not login_form_visible) or dashboard_found or url_indicates_logged_in
+    
+    print(f"[Login Check] URL: {current_url}")
+    print(f"[Login Check] is_login_page: {is_login_page}, login_form_visible: {login_form_visible}")
+    print(f"[Login Check] dashboard_found: {dashboard_found}, url_indicates_logged_in: {url_indicates_logged_in}")
+    print(f"[Login Check] Result: {result}")
+    
+    return result
 
 
 async def do_login(page, use_db: bool = True) -> bool:
@@ -421,6 +461,8 @@ async def do_login(page, use_db: bool = True) -> bool:
     # Click en botón ACEPTAR
     print("[Login] Clic en botón ACEPTAR...")
     click_success = False
+    initial_url = page.url
+    
     try:
         # Verificar que el botón existe y está habilitado
         btn_locator = page.locator('#btnEnter')
@@ -430,9 +472,18 @@ async def do_login(page, use_db: bool = True) -> bool:
             is_enabled = await btn_locator.is_enabled()
             print(f"[Login] Botón btnEnter existe y está habilitado: {is_enabled}")
             
-            # Hacer click sin esperar navegación (a veces tarda)
-            await btn_locator.click(timeout=5000, no_wait_after=True)
-            print("[Login] ✓ ACEPTAR clickeado")
+            # Hacer click y esperar navegación
+            try:
+                # Intentar esperar navegación
+                async with page.expect_navigation(timeout=10000, wait_until="domcontentloaded"):
+                    await btn_locator.click(timeout=5000)
+                print("[Login] ✓ ACEPTAR clickeado, navegación detectada")
+            except Exception as nav_err:
+                # Si no detectamos navegación, hacer click sin esperar
+                print(f"[Login] Navegación no detectada inmediatamente: {nav_err}")
+                await btn_locator.click(timeout=5000, no_wait_after=True)
+                print("[Login] ✓ ACEPTAR clickeado (sin espera de navegación)")
+            
             click_success = True
         else:
             print("[Login] Botón btnEnter no encontrado, intentando alternativas...")
@@ -465,42 +516,73 @@ async def do_login(page, use_db: bool = True) -> bool:
         await take_screenshot(page, "error_aceptar")
         return False
     
+    # Pequeña pausa para permitir que la navegación inicie
+    await asyncio.sleep(2)
+    
+    # Verificar si la URL cambió
+    current_url = page.url
+    if current_url != initial_url:
+        print(f"[Login] URL cambió: {initial_url} → {current_url}")
+    
     # ============================================
     # PASO 3: Manejar modal de sesión múltiple (si aparece)
     # ============================================
     print("[Login] Verificando modal de sesión múltiple...")
-    session_modal_handled = await handle_multiple_session_modal(page)
-    if session_modal_handled:
-        print("[Login] Modal de sesión manejado, esperando navegación...")
-        await asyncio.sleep(3)
+    try:
+        session_modal_handled = await handle_multiple_session_modal(page)
+        if session_modal_handled:
+            print("[Login] Modal de sesión manejado, esperando navegación...")
+            await asyncio.sleep(3)
+    except Exception as e:
+        print(f"[Login] Error verificando modal (posible navegación): {e}")
+        # Esperar un poco más si hubo error de navegación
+        await asyncio.sleep(5)
     
     # ============================================
     # PASO 4: Esperar navegación post-login
     # ============================================
     print("[Login] Esperando navegación post-login...")
     
-    # Esperar hasta 20 segundos para la navegación
-    for i in range(20):
+    # Esperar a que la navegación ocurra (puede tardar varios segundos)
+    print("[Login] Esperando 5 segundos para navegación inicial...")
+    await asyncio.sleep(5)
+    
+    # Esperar hasta 30 segundos para la navegación completa
+    login_detected = False
+    for i in range(25):
         await asyncio.sleep(1)
         
         # Verificar si apareció el modal de sesión durante la espera
-        if i == 5 and not session_modal_handled:
-            modal_appeared = await handle_multiple_session_modal(page)
-            if modal_appeared:
-                print("[Login] Modal de sesión apareció durante espera, continuando...")
-                await asyncio.sleep(3)
+        if i == 3:
+            try:
+                if not session_modal_handled:
+                    modal_appeared = await handle_multiple_session_modal(page)
+                    if modal_appeared:
+                        print("[Login] Modal de sesión apareció durante espera, continuando...")
+                        await asyncio.sleep(3)
+            except Exception as e:
+                print(f"[Login] Error verificando modal en espera: {e}")
         
-        if await is_logged_in(page):
-            print(f"[Login] ✓ Login detectado después de {i+1} segundos")
-            break
+        try:
+            if await is_logged_in(page):
+                print(f"[Login] ✓ Login detectado después de {i+6} segundos")
+                login_detected = True
+                break
+        except Exception as e:
+            print(f"[Login] Error en verificación (intento {i+1}): {e}")
+            continue
         
-        if i == 19:
+        if i == 24:
             print("[Login] ⚠ Timeout esperando navegación")
     
-    try:
-        await page.wait_for_load_state("networkidle", timeout=10000)
-    except:
-        pass
+    # Esperar a que la red se estabilice
+    if login_detected:
+        print("[Login] Esperando estabilización de red...")
+        try:
+            await page.wait_for_load_state("networkidle", timeout=15000)
+        except:
+            pass
+        await asyncio.sleep(2)
     
     await take_screenshot(page, "05_post_login")
     
@@ -510,14 +592,32 @@ async def do_login(page, use_db: bool = True) -> bool:
         print("[Login] ✓ Volante procesado")
         await take_screenshot(page, "06_after_billing")
     
-    # Verificación final de login
-    login_success = await is_logged_in(page)
+    # Verificación final de login con reintentos
+    print("[Login] Verificación final de login...")
+    login_success = False
+    
+    for attempt in range(3):
+        try:
+            login_success = await is_logged_in(page)
+            if login_success:
+                break
+        except Exception as e:
+            print(f"[Login] Error en verificación {attempt + 1}: {e}")
+        
+        if not login_success and attempt < 2:
+            print(f"[Login] Reintentando verificación en 3 segundos...")
+            await asyncio.sleep(3)
     
     if login_success:
         print("[Login] ✓ Login exitoso!")
     else:
         print("[Login] ✗ Login fallido")
-        await take_screenshot(page, "error_login_failed")
+        # Tomar screenshot del estado final para debug
+        try:
+            await take_screenshot(page, "error_login_failed")
+            print(f"[Login] URL final: {page.url}")
+        except:
+            pass
     
     return login_success
 

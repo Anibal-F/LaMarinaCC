@@ -217,35 +217,76 @@ def parse_fecha(fecha_str: str) -> Optional[datetime]:
         return None
 
 
-async def click_next_page_ordenes(page: Page) -> bool:
+async def click_next_page_ordenes(page: Page, table_id: str = "tableasig") -> bool:
     """
     Clica en el botón 'Siguiente' de la tabla de órdenes.
     
+    Args:
+        page: Página de Playwright
+        table_id: ID de la tabla (ej: 'tableasig', 'tableentregadas')
+        
     Returns:
         True si pudo navegar a la siguiente página
     """
     try:
-        # Selector basado en el HTML: button#pagina_siguiente_tableasig
-        next_button = page.locator('#pagina_siguiente_tableasig').first
+        # Construir el ID del botón basado en el table_id
+        # Ejemplo: tableasig -> pagina_siguiente_tableasig
+        #          tableentregadas -> pagina_siguiente_tableentregadas
+        next_button_id = f'pagina_siguiente_{table_id}'
         
-        if await next_button.count() == 0:
+        # Múltiples selectores posibles
+        selectors = [
+            f'#{next_button_id}',  # ID específico
+            f'button[id="{next_button_id}"]',
+            f'button[id*="pagina_siguiente_{table_id}"]',
+            # Fallback: buscar cualquier botón de siguiente página
+            f'button[id*="{table_id}"][id*="siguiente"]',
+            f'button[onclick*="{table_id}"][onclick*="siguiente"]',
+        ]
+        
+        next_button = None
+        for selector in selectors:
+            try:
+                button = page.locator(selector).first
+                if await button.count() > 0:
+                    next_button = button
+                    break
+            except:
+                continue
+        
+        if not next_button:
             return False
         
-        # Verificar si está deshabilitado
-        disabled = await next_button.get_attribute('disabled')
-        if disabled:
-            return False
+        # Verificar si está deshabilitado (atributo disabled)
+        try:
+            disabled = await next_button.get_attribute('disabled')
+            if disabled:
+                return False
+        except:
+            pass
         
         # Verificar clase disabled
-        class_attr = await next_button.get_attribute('class')
-        if class_attr and 'disabled' in class_attr:
-            return False
+        try:
+            class_attr = await next_button.get_attribute('class')
+            if class_attr and ('disabled' in class_attr.lower() or 'btn-light' in class_attr.lower()):
+                return False
+        except:
+            pass
+        
+        # Verificar si el onclick tiene el parámetro correcto
+        try:
+            onclick = await next_button.get_attribute('onclick')
+            if onclick and 'disabled' in onclick.lower():
+                return False
+        except:
+            pass
         
         await next_button.click()
         await asyncio.sleep(2)  # Esperar carga
         return True
         
     except Exception as e:
+        print(f"  [Pagination] Error navegando: {e}")
         return False
 
 
@@ -294,7 +335,7 @@ async def extract_all_ordenes_asignadas(page: Page) -> List[Dict]:
             print(f"  ✓ {len(ordenes)} órdenes extraídas")
         
         # Intentar ir a la siguiente página
-        has_next = await click_next_page_ordenes(page)
+        has_next = await click_next_page_ordenes(page, "tableasig")
         if not has_next:
             print("[OrdenesExtractor] No hay más páginas")
             break

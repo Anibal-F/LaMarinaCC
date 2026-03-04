@@ -115,7 +115,7 @@ async def extract_ordenes_from_status_tab(
                 print(f"  ✓ {len(ordenes_pagina)} órdenes extraídas")
             
             # Intentar ir a la siguiente página
-            has_next = await click_next_page_ordenes(page)
+            has_next = await click_next_page_ordenes(page, table_id)
             if not has_next:
                 print(f"[StatusExtractor] {status_name} - No hay más páginas")
                 break

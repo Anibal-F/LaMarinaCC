@@ -9,60 +9,84 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from playwright.async_api import Page
 
+from app.rpa.qualitas_ordenes_extractor import click_next_page_ordenes
+
 
 async def extract_ordenes_from_table(
     page: Page,
     table_id: str,
-    status_name: str
+    status_name: str,
+    max_pages: int = 100
 ) -> List[Dict]:
     """
     Extrae órdenes de una tabla específica según el estatus.
-    Cada estatus tiene una estructura de tabla diferente.
+    Navega por todas las páginas de la tabla.
     """
     ordenes = []
+    page_num = 1
     
     # Detectar qué tipo de estructura tiene esta tabla
     table_structure = await detect_table_structure(page, table_id)
     print(f"  [ExtractorV2] Estructura detectada para {status_name}: {table_structure}")
     
-    rows = await get_table_rows(page, table_id)
-    if not rows:
-        return []
-    
-    for i, row in enumerate(rows):
-        try:
-            cells = await row.locator('td').all()
-            if len(cells) < 3:  # Mínimo de columnas
-                continue
-            
-            # Extraer texto de todas las celdas
-            cell_texts = []
-            for cell in cells:
-                text = await cell.text_content()
-                cell_texts.append(text.strip() if text else "")
-            
-            # Debug primera fila
-            if i == 0:
-                print(f"  [Debug] Primera fila {status_name}: {cell_texts}")
-            
-            # Parsear según la estructura detectada
-            if table_structure == "asignados":
-                orden = parse_row_asignados(cell_texts, status_name)
-            elif table_structure == "historico":
-                orden = parse_row_historico(cell_texts, status_name)
-            else:
-                # Estructura genérica para Tránsito, Piso, Terminadas, Entregadas
-                orden = parse_row_generico(cell_texts, status_name)
-            
-            if orden and orden.get('num_expediente'):
-                ordenes.append(orden)
-                if i < 3:
-                    print(f"  [Orden {i+1}] {orden['num_expediente'][:20]}...")
+    while page_num <= max_pages:
+        print(f"  [ExtractorV2] {status_name} - Página {page_num}")
+        
+        rows = await get_table_rows(page, table_id)
+        if not rows:
+            print(f"  [ExtractorV2] No se encontraron filas en página {page_num}")
+            break
+        
+        page_ordenes = []
+        for i, row in enumerate(rows):
+            try:
+                cells = await row.locator('td').all()
+                if len(cells) < 3:  # Mínimo de columnas
+                    continue
                 
-        except Exception as e:
-            print(f"  [Error fila {i}]: {e}")
-            continue
+                # Extraer texto de todas las celdas
+                cell_texts = []
+                for cell in cells:
+                    text = await cell.text_content()
+                    cell_texts.append(text.strip() if text else "")
+                
+                # Debug primera fila
+                if i == 0 and page_num == 1:
+                    print(f"  [Debug] Primera fila {status_name}: {cell_texts}")
+                
+                # Parsear según la estructura detectada
+                if table_structure == "asignados":
+                    orden = parse_row_asignados(cell_texts, status_name)
+                elif table_structure == "historico":
+                    orden = parse_row_historico(cell_texts, status_name)
+                else:
+                    # Estructura genérica para Tránsito, Piso, Terminadas, Entregadas
+                    orden = parse_row_generico(cell_texts, status_name)
+                
+                if orden and orden.get('num_expediente'):
+                    page_ordenes.append(orden)
+                    if i < 3 and page_num == 1:
+                        print(f"  [Orden {i+1}] {orden['num_expediente'][:20]}...")
+                    
+            except Exception as e:
+                print(f"  [Error fila {i}]: {e}")
+                continue
+        
+        if page_ordenes:
+            ordenes.extend(page_ordenes)
+            print(f"    ✓ {len(page_ordenes)} órdenes en página {page_num}")
+        else:
+            print(f"    ⚠ No se encontraron órdenes en página {page_num}")
+        
+        # Intentar ir a la siguiente página
+        has_next = await click_next_page_ordenes(page, table_id)
+        if not has_next:
+            print(f"  [ExtractorV2] {status_name} - No hay más páginas")
+            break
+        
+        page_num += 1
     
+    print(f"  [ExtractorV2] {status_name} - Total: {len(ordenes)} órdenes en {page_num} páginas")
     return ordenes
 
 

@@ -50,6 +50,10 @@ export default function Sidebar() {
     () => location.pathname.startsWith("/valuacion"),
     [location.pathname]
   );
+  const isTallerRoute = useMemo(
+    () => location.pathname.startsWith("/taller"),
+    [location.pathname]
+  );
   const isReportesRoute = useMemo(
     () => location.pathname.startsWith("/reportes"),
     [location.pathname]
@@ -273,15 +277,18 @@ export default function Sidebar() {
             <span className="material-symbols-outlined text-[18px] ml-auto">table_rows</span>
           </NavLink>
         ) : null}
-        <button
-          className={`${navItemBase} ${navItemInactive}`}
-          type="button"
+        <NavLink
+          to="/taller"
+          className={`${navItemBase} ${isTallerRoute ? navItemActive : navItemInactive}`}
           title={!showLabels ? "Taller" : undefined}
-          onClick={() => !showLabels && setCollapsed(false)}
+          onClick={() => {
+            if (!showLabels) setCollapsed(false);
+            if (isMobile) setMobileOpen(false);
+          }}
         >
           <span className="material-symbols-outlined text-[22px]">build</span>
           {showLabels ? <span className="text-sm font-medium">Taller</span> : null}
-        </button>
+        </NavLink>
         <button
           className={`${navItemBase} ${navItemInactive}`}
           type="button"

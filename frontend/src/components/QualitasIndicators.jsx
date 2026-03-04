@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import QualitasOrdenesAsignadas from "./QualitasOrdenesAsignadas.jsx";
 
 const getApiUrl = () => {
@@ -242,6 +242,158 @@ export default function QualitasIndicators({ onRefresh }) {
     return "~1-3 minutos (resolviendo CAPTCHA)";
   };
 
+  // Definir todos los indicadores posibles con sus configuraciones
+  const allIndicadoresConfig = useMemo(() => [
+    { 
+      key: 'asignados', 
+      label: 'Asignados', 
+      icon: 'assignment_ind', 
+      color: 'blue',
+      description: 'Mostrando todas las órdenes'
+    },
+    { 
+      key: 'revisar_valuacion', 
+      label: 'Pendiente Valuación', 
+      icon: 'pending_actions', 
+      color: 'amber',
+      filterValue: 'Revisar Valuación',
+      description: 'Por revisar valuación'
+    },
+    { 
+      key: 'complemento_autorizado', 
+      label: 'Complemento Autorizado', 
+      icon: 'check_circle', 
+      color: 'green',
+      filterValue: 'Complemento Autorizado',
+      group: 'complementos'
+    },
+    { 
+      key: 'complemento_solicitado', 
+      label: 'Complemento Solicitado', 
+      icon: 'schedule', 
+      color: 'amber',
+      filterValue: 'Complemento Solicitado',
+      group: 'complementos'
+    },
+    { 
+      key: 'complemento_rechazado', 
+      label: 'Complemento Rechazado', 
+      icon: 'cancel', 
+      color: 'red',
+      filterValue: 'Complemento Rechazado',
+      group: 'complementos'
+    },
+    { 
+      key: 'pago_danos', 
+      label: 'Pago de Daños', 
+      icon: 'payments', 
+      color: 'purple',
+      filterValue: 'Pago de Daños'
+    },
+    { 
+      key: 'perdida_total', 
+      label: 'Pérdida Total', 
+      icon: 'car_crash', 
+      color: 'red',
+      filterValue: 'Pérdida Total'
+    },
+    { 
+      key: 'dano_menor_deducible', 
+      label: 'Daño Menor a Deducible', 
+      icon: 'minor_crash', 
+      color: 'slate',
+      filterValue: 'Daño Menor a Deducible'
+    },
+    { 
+      key: 'pendiente_terminar', 
+      label: 'Pendiente de Terminar', 
+      icon: 'construction', 
+      color: 'orange',
+      filterValue: 'Pendiente de terminar'
+    }
+  ], []);
+
+  // Filtrar solo indicadores con datos > 0
+  const indicadoresConDatos = useMemo(() => {
+    if (!indicadores) return [];
+    
+    return allIndicadoresConfig.filter(config => {
+      const value = indicadores[config.key];
+      return value && value > 0;
+    });
+  }, [indicadores, allIndicadoresConfig]);
+
+  // Separar indicadores individuales de los grupos
+  const { individuales, complementos } = useMemo(() => {
+    const ind = [];
+    const comp = [];
+    
+    indicadoresConDatos.forEach(config => {
+      if (config.group === 'complementos') {
+        comp.push(config);
+      } else {
+        ind.push(config);
+      }
+    });
+    
+    return { individuales: ind, complementos: comp };
+  }, [indicadoresConDatos]);
+
+  // Verificar si hay complementos para mostrar la tarjeta agrupada
+  const hasComplementos = complementos.length > 0;
+
+  // Calcular total de complementos
+  const totalComplementos = useMemo(() => {
+    if (!indicadores) return 0;
+    return (indicadores.complemento_autorizado || 0) + 
+           (indicadores.complemento_solicitado || 0) + 
+           (indicadores.complemento_rechazado || 0);
+  }, [indicadores]);
+
+  // Renderizar una tarjeta de indicador individual
+  const renderIndicadorCard = (config, isActive, onClick) => {
+    const value = indicadores?.[config.key] || 0;
+    const colorClasses = {
+      blue: { border: 'border-blue-500', ring: 'ring-blue-500/30', text: 'text-blue-500', hover: 'hover:border-blue-500/50', bg: 'bg-blue-500/20' },
+      amber: { border: 'border-alert-amber', ring: 'ring-alert-amber/30', text: 'text-alert-amber', hover: 'hover:border-alert-amber/50', bg: 'bg-alert-amber/20' },
+      green: { border: 'border-alert-green', ring: 'ring-alert-green/30', text: 'text-alert-green', hover: 'hover:border-alert-green/50', bg: 'bg-alert-green/20' },
+      red: { border: 'border-alert-red', ring: 'ring-alert-red/30', text: 'text-alert-red', hover: 'hover:border-alert-red/50', bg: 'bg-alert-red/20' },
+      purple: { border: 'border-purple-500', ring: 'ring-purple-500/30', text: 'text-purple-500', hover: 'hover:border-purple-500/50', bg: 'bg-purple-500/20' },
+      orange: { border: 'border-orange-500', ring: 'ring-orange-500/30', text: 'text-orange-500', hover: 'hover:border-orange-500/50', bg: 'bg-orange-500/20' },
+      slate: { border: 'border-slate-500', ring: 'ring-slate-500/30', text: 'text-slate-400', hover: 'hover:border-slate-500/50', bg: 'bg-slate-500/20' }
+    };
+    const colors = colorClasses[config.color] || colorClasses.blue;
+
+    return (
+      <div 
+        key={config.key}
+        onClick={onClick}
+        className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+          isActive 
+            ? `${colors.border} ring-2 ${colors.ring}` 
+            : `border-border-dark ${colors.hover}`
+        }`}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            {config.label}
+          </span>
+          <span className={`material-symbols-outlined ${colors.text} text-xl group-hover:scale-110 transition-transform`}>
+            {config.icon}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-5xl font-extrabold text-white tracking-tight">
+            {formatNumber(value)}
+          </span>
+        </div>
+        {config.description && (
+          <p className="text-[10px] text-slate-500 mt-1">{config.description}</p>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -375,125 +527,81 @@ export default function QualitasIndicators({ onRefresh }) {
         </div>
       )}
 
-      {/* Indicadores */}
+      {/* Indicadores - Grid dinámico */}
       {indicadores && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1: Asignados - Muestra todos */}
-          <div 
-            onClick={() => setFiltroEstatus('')}
-            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
-              filtroEstatus === '' 
-                ? 'border-blue-500 ring-2 ring-blue-500/30' 
-                : 'border-border-dark hover:border-blue-500/50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Asignados
-              </span>
-              <span className="material-symbols-outlined text-blue-500 text-xl group-hover:scale-110 transition-transform">
-                assignment_ind
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-6xl font-extrabold text-white tracking-tight">
-                {formatNumber(indicadores.asignados)}
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1">
-              {filtroEstatus === '' ? 'Mostrando todas las órdenes' : 'Clic para ver todas'}
-            </p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {/* Tarjeta "Todos" - siempre visible si hay asignados */}
+          {indicadores.asignados > 0 && renderIndicadorCard(
+            { 
+              key: 'asignados', 
+              label: 'Asignados', 
+              icon: 'assignment_ind', 
+              color: 'blue',
+              description: filtroEstatus === '' ? 'Mostrando todas las órdenes' : 'Clic para ver todas'
+            },
+            filtroEstatus === '',
+            () => setFiltroEstatus('')
+          )}
 
-          {/* Card 2: Pendiente Valuación */}
-          <div 
-            onClick={() => setFiltroEstatus(filtroEstatus === 'Revisar Valuación' ? '' : 'Revisar Valuación')}
-            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
-              filtroEstatus === 'Revisar Valuación' 
-                ? 'border-alert-amber ring-2 ring-alert-amber/30' 
-                : 'border-border-dark hover:border-alert-amber/50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Pendiente Valuación
-              </span>
-              <span className="material-symbols-outlined text-alert-amber text-xl group-hover:scale-110 transition-transform">
-                pending_actions
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-6xl font-extrabold text-white tracking-tight">
-                {formatNumber(indicadores.revisar_valuacion)}
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1">Por revisar valuación</p>
-          </div>
+          {/* Indicadores individuales con datos (excepto asignados y complementos) */}
+          {individuales.filter(i => i.key !== 'asignados').map(config => 
+            renderIndicadorCard(
+              config,
+              filtroEstatus === config.filterValue,
+              () => setFiltroEstatus(filtroEstatus === config.filterValue ? '' : config.filterValue)
+            )
+          )}
 
-          {/* Card 3: Complementos (3 en 1) */}
-          <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-purple-500/50 transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Complementos
-              </span>
-              <span className="material-symbols-outlined text-purple-500 text-xl group-hover:scale-110 transition-transform">
-                add_circle
-              </span>
-            </div>
-            
-            {/* Grid de 3 indicadores clickeables */}
-            <div className="grid grid-cols-3 gap-2">
-              <div 
-                onClick={() => setFiltroEstatus(filtroEstatus === 'Complemento Autorizado' ? '' : 'Complemento Autorizado')}
-                className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
-                  filtroEstatus === 'Complemento Autorizado'
-                    ? 'bg-alert-green/30 ring-1 ring-alert-green'
-                    : 'bg-alert-green/10 hover:bg-alert-green/20'
-                }`}
-              >
-                <span className="text-lg font-bold text-alert-green block">
-                  {formatNumber(indicadores.complemento_autorizado)}
+          {/* Tarjeta de Complementos (solo si hay complementos) */}
+          {hasComplementos && (
+            <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-purple-500/50 transition-all group">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  Complementos
                 </span>
-                <span className="text-[9px] text-slate-400 uppercase">Autorizado</span>
+                <span className="material-symbols-outlined text-purple-500 text-xl group-hover:scale-110 transition-transform">
+                  add_circle
+                </span>
               </div>
-              <div 
-                onClick={() => setFiltroEstatus(filtroEstatus === 'Complemento Solicitado' ? '' : 'Complemento Solicitado')}
-                className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
-                  filtroEstatus === 'Complemento Solicitado'
-                    ? 'bg-alert-amber/30 ring-1 ring-alert-amber'
-                    : 'bg-alert-amber/10 hover:bg-alert-amber/20'
-                }`}
-              >
-                <span className="text-lg font-bold text-alert-amber block">
-                  {formatNumber(indicadores.complemento_solicitado)}
-                </span>
-                <span className="text-[9px] text-slate-400 uppercase">Solicitado</span>
+              
+              {/* Grid de complementos con datos */}
+              <div className={`grid gap-2 ${complementos.length === 1 ? 'grid-cols-1' : complementos.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {complementos.map(config => {
+                  const colorClasses = {
+                    green: 'bg-alert-green/10 hover:bg-alert-green/20 text-alert-green ring-alert-green',
+                    amber: 'bg-alert-amber/10 hover:bg-alert-amber/20 text-alert-amber ring-alert-amber',
+                    red: 'bg-alert-red/10 hover:bg-alert-red/20 text-alert-red ring-alert-red'
+                  };
+                  const isActive = filtroEstatus === config.filterValue;
+                  
+                  return (
+                    <div 
+                      key={config.key}
+                      onClick={() => setFiltroEstatus(filtroEstatus === config.filterValue ? '' : config.filterValue)}
+                      className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
+                        isActive
+                          ? `${colorClasses[config.color].split(' ')[0]} ring-1 ${colorClasses[config.color].split(' ')[3]}`
+                          : colorClasses[config.color]
+                      }`}
+                    >
+                      <span className={`text-lg font-bold ${colorClasses[config.color].split(' ')[2]} block`}>
+                        {formatNumber(indicadores[config.key])}
+                      </span>
+                      <span className="text-[9px] text-slate-400 uppercase">{config.label.replace('Complemento ', '')}</span>
+                    </div>
+                  );
+                })}
               </div>
-              <div 
-                onClick={() => setFiltroEstatus(filtroEstatus === 'Complemento Rechazado' ? '' : 'Complemento Rechazado')}
-                className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
-                  filtroEstatus === 'Complemento Rechazado'
-                    ? 'bg-alert-red/30 ring-1 ring-alert-red'
-                    : 'bg-alert-red/10 hover:bg-alert-red/20'
-                }`}
-              >
-                <span className="text-lg font-bold text-alert-red block">
-                  {formatNumber(indicadores.complemento_rechazado)}
+              
+              {/* Total */}
+              <div className="mt-3 pt-2 border-t border-border-dark flex justify-between items-center">
+                <span className="text-[10px] text-slate-400">Total Complementos</span>
+                <span className="text-sm font-bold text-white">
+                  {formatNumber(totalComplementos)}
                 </span>
-                <span className="text-[9px] text-slate-400 uppercase">Rechazado</span>
               </div>
             </div>
-            
-            {/* Total */}
-            <div className="mt-3 pt-2 border-t border-border-dark flex justify-between items-center">
-              <span className="text-[10px] text-slate-400">Total Complementos</span>
-              <span className="text-sm font-bold text-white">
-                {formatNumber(indicadores.total_complementos || 
-                  (indicadores.complemento_autorizado + indicadores.complemento_solicitado + indicadores.complemento_rechazado)
-                )}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -519,6 +627,7 @@ export default function QualitasIndicators({ onRefresh }) {
         <QualitasOrdenesAsignadas 
           fechaExtraccion={indicadores?.fecha_extraccion}
           filtroEstatusInicial={filtroEstatus}
+          onFiltroChange={setFiltroEstatus}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 // URL base de la API
 const getApiUrl = () => {
@@ -9,21 +9,28 @@ const getApiUrl = () => {
   return '';
 };
 
-export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatusInicial = '' }) {
+// Configuración de navegación automática
+const AUTO_NAVIGATION_DELAY = 10000; // 10 segundos entre cambios de página/tab
+
+export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatusInicial = '', onFiltroChange }) {
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [estatusFiltro, setEstatusFiltro] = useState(filtroEstatusInicial);
+  const [activeTab, setActiveTab] = useState('');
+  const [autoNavigationEnabled, setAutoNavigationEnabled] = useState(false);
+  const autoNavTimerRef = useRef(null);
   
   const pageSizeOptions = [10, 50, 100, 500];
   const API_BASE = getApiUrl();
 
   // Sincronizar filtro inicial desde props
   useEffect(() => {
-    setEstatusFiltro(filtroEstatusInicial);
-    setPage(1); // Resetear a primera página al cambiar filtro
+    if (filtroEstatusInicial !== activeTab) {
+      setActiveTab(filtroEstatusInicial);
+      setPage(1); // Resetear a primera página al cambiar filtro
+    }
   }, [filtroEstatusInicial]);
 
   useEffect(() => {
@@ -52,19 +59,98 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatu
     }
   };
 
-  // Filtrar órdenes por estatus
-  const ordenesFiltradas = estatusFiltro 
-    ? ordenes.filter(o => o.estatus && o.estatus.toLowerCase().includes(estatusFiltro.toLowerCase()))
-    : ordenes;
+  // Obtener estatus únicos y sus conteos
+  const estatusTabs = useMemo(() => {
+    const counts = {};
+    
+    // Contar órdenes por estatus
+    ordenes.forEach(orden => {
+      const estatus = orden.estatus?.trim() || 'Sin Estatus';
+      counts[estatus] = (counts[estatus] || 0) + 1;
+    });
+    
+    // Convertir a array y ordenar por cantidad (descendente)
+    const tabs = Object.entries(counts)
+      .map(([estatus, count]) => ({ estatus, count }))
+      .sort((a, b) => b.count - a.count);
+    
+    return tabs;
+  }, [ordenes]);
+
+  // Filtrar órdenes por estatus del tab activo
+  const ordenesFiltradas = useMemo(() => {
+    if (!activeTab) return ordenes;
+    return ordenes.filter(o => o.estatus?.trim() === activeTab);
+  }, [ordenes, activeTab]);
 
   // Paginación
   const totalPages = Math.ceil(ordenesFiltradas.length / pageSize);
   const pagedOrdenes = ordenesFiltradas.slice((page - 1) * pageSize, page * pageSize);
   
-  // Resetear página cuando cambia el tamaño
+  // Resetear página cuando cambia el tamaño o el tab
   const handlePageSizeChange = (newSize) => {
     setPageSize(Number(newSize));
-    setPage(1); // Volver a página 1
+    setPage(1);
+  };
+
+  // Cambiar de tab
+  const handleTabChange = (estatus) => {
+    setActiveTab(estatus);
+    setPage(1);
+    if (onFiltroChange) {
+      onFiltroChange(estatus);
+    }
+  };
+
+  // Navegación automática
+  useEffect(() => {
+    if (!autoNavigationEnabled) {
+      if (autoNavTimerRef.current) {
+        clearTimeout(autoNavTimerRef.current);
+        autoNavTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Solo iniciar navegación si hay más de una página o más de un tab
+    const hasMultiplePages = totalPages > 1;
+    const hasMultipleTabs = estatusTabs.length > 1;
+    
+    if (!hasMultiplePages && !hasMultipleTabs) return;
+
+    const navigate = () => {
+      // Si estamos en la última página del tab actual
+      if (page >= totalPages) {
+        // Buscar el índice del tab actual
+        const currentTabIndex = estatusTabs.findIndex(t => t.estatus === activeTab);
+        
+        if (currentTabIndex < estatusTabs.length - 1) {
+          // Pasar al siguiente tab
+          const nextTab = estatusTabs[currentTabIndex + 1].estatus;
+          handleTabChange(nextTab);
+        } else {
+          // Volver al primer tab (o "Todos" si no hay estatusTabs)
+          handleTabChange(estatusTabs[0]?.estatus || '');
+        }
+        // La página se resetea a 1 automáticamente en handleTabChange
+      } else {
+        // Avanzar a la siguiente página
+        setPage(p => Math.min(totalPages, p + 1));
+      }
+    };
+
+    autoNavTimerRef.current = setTimeout(navigate, AUTO_NAVIGATION_DELAY);
+
+    return () => {
+      if (autoNavTimerRef.current) {
+        clearTimeout(autoNavTimerRef.current);
+      }
+    };
+  }, [autoNavigationEnabled, page, totalPages, activeTab, estatusTabs]);
+
+  // Toggle navegación automática
+  const toggleAutoNavigation = () => {
+    setAutoNavigationEnabled(prev => !prev);
   };
 
   const formatDate = (dateStr) => {
@@ -78,6 +164,27 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatu
       minute: '2-digit'
     });
   };
+
+  // Calcular contador regresivo para navegación automática
+  const [countdown, setCountdown] = useState(AUTO_NAVIGATION_DELAY / 1000);
+  
+  useEffect(() => {
+    if (!autoNavigationEnabled) {
+      setCountdown(AUTO_NAVIGATION_DELAY / 1000);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          return AUTO_NAVIGATION_DELAY / 1000;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [autoNavigationEnabled, page, activeTab]);
 
   if (loading) {
     return (
@@ -104,37 +211,90 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatu
 
   return (
     <div className="mt-6 bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-dark">
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-blue-500">list_alt</span>
-          <h4 className="text-sm font-bold text-white">Órdenes Asignadas</h4>
-          <span className="text-xs text-slate-400">({ordenesFiltradas.length} de {ordenes.length} total)</span>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Selector de cantidad */}
+      {/* Header con Tabs */}
+      <div className="border-b border-border-dark">
+        {/* Título y controles */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-dark/50">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Mostrar:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => handlePageSizeChange(e.target.value)}
-              className="bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
-            >
-              {pageSizeOptions.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
+            <span className="material-symbols-outlined text-blue-500">list_alt</span>
+            <h4 className="text-sm font-bold text-white">Órdenes Asignadas</h4>
+            <span className="text-xs text-slate-400">({ordenesFiltradas.length} de {ordenes.length} total)</span>
           </div>
-          <button
-            onClick={fetchOrdenes}
-            className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-            title="Recargar"
-          >
-            <span className="material-symbols-outlined text-sm">refresh</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Toggle Navegación Automática */}
+            <button
+              onClick={toggleAutoNavigation}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                autoNavigationEnabled
+                  ? 'bg-green-600/20 text-green-400 border border-green-600/50'
+                  : 'bg-slate-700 text-slate-400 border border-slate-600 hover:bg-slate-600'
+              }`}
+              title={autoNavigationEnabled ? "Desactivar navegación automática" : "Activar navegación automática"}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {autoNavigationEnabled ? 'pause' : 'play_arrow'}
+              </span>
+              <span>
+                {autoNavigationEnabled ? `Auto (${countdown}s)` : 'Auto'}
+              </span>
+            </button>
+
+            {/* Selector de cantidad */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Mostrar:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(e.target.value)}
+                className="bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+              >
+                {pageSizeOptions.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={fetchOrdenes}
+              className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+              title="Recargar"
+            >
+              <span className="material-symbols-outlined text-sm">refresh</span>
+            </button>
+          </div>
         </div>
+
+        {/* Tabs de Estatus - Solo mostrar si hay múltiples estatus */}
+        {estatusTabs.length > 0 && (
+          <div className="flex items-center gap-1 px-2 py-2 overflow-x-auto">
+            {/* Tab "Todos" */}
+            <button
+              onClick={() => handleTabChange('')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                activeTab === ''
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Todos ({ordenes.length})
+            </button>
+            
+            {/* Tabs por estatus - Solo mostrar si tienen datos */}
+            {estatusTabs.map(({ estatus, count }) => (
+              <button
+                key={estatus}
+                onClick={() => handleTabChange(estatus)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  activeTab === estatus
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                {estatus} ({count})
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tabla con scroll y encabezados fijos */}
@@ -189,12 +349,19 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatu
       </div>
 
       {/* Paginación */}
-      {(totalPages > 1 || ordenes.length > pageSizeOptions[0]) && (
+      {(totalPages > 1 || ordenesFiltradas.length > pageSizeOptions[0]) && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-border-dark">
-          <p className="text-xs text-slate-400">
-            Mostrando {pagedOrdenes.length} de {ordenesFiltradas.length} registros
-            {estatusFiltro && ` (filtrado por: ${estatusFiltro})`}
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-slate-400">
+              Mostrando {pagedOrdenes.length} de {ordenesFiltradas.length} registros
+              {activeTab && ` (filtrado por: ${activeTab})`}
+            </p>
+            {autoNavigationEnabled && (
+              <span className="text-[10px] text-green-400 animate-pulse">
+                ● Auto-nav activo
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}

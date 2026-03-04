@@ -2,12 +2,9 @@ import { useState } from "react";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import RPAExecutor from "../../components/RPAExecutor.jsx";
-import QualitasIndicators from "../../components/QualitasIndicators.jsx";
-import ChubbIndicators from "../../components/ChubbIndicators.jsx";
 
 export default function Home() {
-  const [activeView, setActiveView] = useState("local"); // "local" | "qualitas" | "chubb"
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [activeView, setActiveView] = useState("local");
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
@@ -49,36 +46,7 @@ export default function Home() {
                   <span className="material-symbols-outlined text-sm">home_repair_service</span>
                   Taller
                 </button>
-                <button
-                  onClick={() => setActiveView("qualitas")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
-                    activeView === "qualitas"
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <img src="/assets/Qualitas_profile.jpg" alt="Qualitas" className="w-5 h-5 rounded object-cover" />
-                  Qualitas
-                </button>
-                <button
-                  onClick={() => setActiveView("chubb")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
-                    activeView === "chubb"
-                      ? "bg-purple-600 text-white"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <img src="/assets/CHUBB_profile.jpg" alt="CHUBB" className="w-5 h-5 rounded object-cover" />
-                  CHUBB
-                </button>
               </div>
-
-              {isUpdating && (
-                <div className="flex items-center gap-2 text-xs text-blue-400">
-                  <span className="material-symbols-outlined animate-spin">refresh</span>
-                  Actualizando datos...
-                </div>
-              )}
             </div>
 
             {/* Contenido según vista activa */}
@@ -149,18 +117,8 @@ export default function Home() {
               </div>
             )}
             
-            {activeView === "qualitas" && (
-              // Vista Qualitas - Indicadores de Qualitas
-              <QualitasIndicators onRefresh={setIsUpdating} />
-            )}
-            
-            {activeView === "chubb" && (
-              // Vista CHUBB - Indicadores de CHUBB
-              <ChubbIndicators onRefresh={setIsUpdating} />
-            )}
-
             {/* Resto del contenido (Kanban, etc) - solo visible en vista local */}
-            {(activeView === "local" || activeView === "qualitas" || activeView === "chubb") && activeView === "local" && (
+            {activeView === "local" && (
               <>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

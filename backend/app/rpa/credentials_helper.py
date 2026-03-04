@@ -24,15 +24,22 @@ def _is_db_host_available():
     except socket.gaierror:
         return False
 
-# Solo importar DB si estamos en Docker o si DATABASE_URL apunta a localhost
+# Verificar si DATABASE_URL está configurado
+def _has_database_url():
+    """Verifica si DATABASE_URL está configurado en las variables de entorno."""
+    return bool(os.getenv('DATABASE_URL'))
+
+# Importar DB si estamos en Docker, si DATABASE_URL apunta a localhost, 
+# o si DATABASE_URL está configurado (para conexiones a RDS, etc.)
 try:
-    if _is_db_host_available() or 'localhost' in os.getenv('DATABASE_URL', ''):
+    if _is_db_host_available() or 'localhost' in os.getenv('DATABASE_URL', '') or _has_database_url():
         from app.core.db import get_connection
         from psycopg.rows import dict_row
         DB_AVAILABLE = True
     else:
         DB_AVAILABLE = False
-except Exception:
+except Exception as e:
+    print(f"[CredentialsHelper] Error al importar DB: {e}")
     DB_AVAILABLE = False
 
 

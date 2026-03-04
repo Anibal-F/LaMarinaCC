@@ -30,6 +30,9 @@ export default function Sidebar() {
   const [valuacionExpanded, setValuacionExpanded] = useState(
     location.pathname.startsWith("/valuacion")
   );
+  const [tallerExpanded, setTallerExpanded] = useState(
+    location.pathname.startsWith("/taller")
+  );
   const [reportesExpanded, setReportesExpanded] = useState(
     location.pathname.startsWith("/reportes")
   );
@@ -277,18 +280,39 @@ export default function Sidebar() {
             <span className="material-symbols-outlined text-[18px] ml-auto">table_rows</span>
           </NavLink>
         ) : null}
-        <NavLink
-          to="/taller"
-          className={`${navItemBase} ${isTallerRoute ? navItemActive : navItemInactive}`}
+        <button
+          className={`${navItemBase} ${isTallerRoute ? navItemActive : navItemInactive} justify-between`}
+          type="button"
           title={!showLabels ? "Taller" : undefined}
           onClick={() => {
             if (!showLabels) setCollapsed(false);
-            if (isMobile) setMobileOpen(false);
+            setTallerExpanded((value) => !value);
           }}
         >
-          <span className="material-symbols-outlined text-[22px]">build</span>
-          {showLabels ? <span className="text-sm font-medium">Taller</span> : null}
-        </NavLink>
+          <span className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-[22px]">build</span>
+            {showLabels ? <span className="text-sm font-medium">Taller</span> : null}
+          </span>
+          {showLabels ? (
+            <span className="material-symbols-outlined text-lg">
+              {tallerExpanded ? "expand_more" : "chevron_right"}
+            </span>
+          ) : null}
+        </button>
+        {tallerExpanded ? (
+          <NavLink
+            to="/taller/autos-en-sitio"
+            className={({ isActive }) =>
+              `${navItemBase} ml-6 ${isActive ? "text-white" : "text-slate-400 hover:text-white"}`
+            }
+            onClick={() => {
+              if (isMobile) setMobileOpen(false);
+            }}
+          >
+            {showLabels ? <span className="text-sm font-medium">Autos en Sitio</span> : null}
+            <span className="material-symbols-outlined text-[18px] ml-auto">directions_car</span>
+          </NavLink>
+        ) : null}
         <button
           className={`${navItemBase} ${navItemInactive}`}
           type="button"

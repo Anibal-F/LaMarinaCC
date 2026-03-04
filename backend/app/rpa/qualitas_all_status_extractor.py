@@ -12,9 +12,11 @@ from typing import List, Dict, Optional
 from playwright.async_api import Page
 
 from app.rpa.qualitas_ordenes_extractor import (
-    extract_ordenes_from_page, 
     click_next_page_ordenes,
     parse_fecha
+)
+from app.rpa.qualitas_ordenes_extractor_v2 import (
+    extract_ordenes_from_table
 )
 
 
@@ -100,8 +102,8 @@ async def extract_ordenes_from_status_tab(
         while page_num <= max_pages:
             print(f"[StatusExtractor] {status_name} - Página {page_num}")
             
-            # Extraer órdenes de la página actual, pasando el ID de tabla
-            ordenes_pagina = await extract_ordenes_from_page(page, table_id)
+            # Extraer órdenes de la página actual, usando el nuevo extractor
+            ordenes_pagina = await extract_ordenes_from_table(page, table_id, status_name)
             
             if ordenes_pagina:
                 # Agregar el estatus a cada orden

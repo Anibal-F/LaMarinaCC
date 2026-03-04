@@ -74,13 +74,13 @@ export default function QualitasIndicators({ onRefresh }) {
     }
   };
 
-  // Polling de tarea activa
+  // Polling de tarea activa - más frecuente para logs en tiempo real
   useEffect(() => {
     if (!activeTask) return;
     
     const interval = setInterval(async () => {
       await checkTaskStatus(activeTask);
-    }, 3000); // Cada 3 segundos
+    }, 2000); // Cada 2 segundos para mejor tiempo real
     
     return () => clearInterval(interval);
   }, [activeTask]);
@@ -172,9 +172,18 @@ export default function QualitasIndicators({ onRefresh }) {
       
       const task = await response.json();
       
-      // Guardar logs si hay
-      if (task.logs) {
+      // Guardar logs si hay (actualizar en tiempo real)
+      if (task.logs && task.logs !== logs) {
         setLogs(task.logs);
+        // Auto-scroll al final si los logs están visibles
+        if (showLogs) {
+          setTimeout(() => {
+            const logsContainer = document.querySelector('.custom-scrollbar pre');
+            if (logsContainer) {
+              logsContainer.parentElement.scrollTop = logsContainer.parentElement.scrollHeight;
+            }
+          }, 100);
+        }
       }
       
       // Si la tarea terminó
@@ -186,6 +195,11 @@ export default function QualitasIndicators({ onRefresh }) {
         // Recargar indicadores
         await fetchIndicadores();
         await fetchEstatus();
+        
+        // Mostrar logs automáticamente al completar
+        if (task.logs) {
+          setShowLogs(true);
+        }
         
       } else if (task.status === 'failed') {
         setActiveTask(null);
@@ -481,20 +495,45 @@ export default function QualitasIndicators({ onRefresh }) {
       {/* Mensaje de actualización en progreso */}
       {updating && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-blue-400 animate-spin">refresh</span>
-            <div>
-              <p className="text-sm text-blue-400 font-bold">Actualización en progreso</p>
-              <p className="text-xs text-slate-400">
-                {getEstimatedTime()}
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-blue-400 animate-spin">refresh</span>
+              <div>
+                <p className="text-sm text-blue-400 font-bold">Actualización en progreso</p>
+                <p className="text-xs text-slate-400">
+                  {getEstimatedTime()}
+                </p>
+              </div>
             </div>
+            
+            {/* Botón para expandir/colapsar logs */}
+            <button
+              onClick={() => setShowLogs(!showLogs)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-medium transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">
+                {showLogs ? 'expand_less' : 'expand_more'}
+              </span>
+              {showLogs ? 'Ocultar logs' : 'Ver logs'}
+            </button>
           </div>
           
-          {/* Logs en tiempo real */}
-          {logs && (
-            <div className="mt-3 p-2 bg-black/50 rounded text-[9px] font-mono text-slate-300 overflow-auto max-h-32">
-              <pre>{logs.split('\n').slice(-10).join('\n')}</pre>
+          {/* Logs en tiempo real - Expandible */}
+          {showLogs && logs && (
+            <div className="mt-3 p-3 bg-black/70 rounded-lg border border-blue-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                  Logs de ejecución (tiempo real)
+                </span>
+                <span className="text-[9px] text-slate-500">
+                  {logs.split('\n').filter(l => l.trim()).length} líneas
+                </span>
+              </div>
+              <div className="text-[10px] font-mono text-slate-300 overflow-auto max-h-64 custom-scrollbar">
+                <pre className="whitespace-pre-wrap break-all">
+                  {logs}
+                </pre>
+              </div>
             </div>
           )}
         </div>

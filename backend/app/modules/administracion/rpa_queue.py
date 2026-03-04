@@ -9,6 +9,7 @@ Este módulo proporciona:
 """
 
 import json
+import select
 import subprocess
 import threading
 import time
@@ -216,9 +217,105 @@ _worker_thread = None
 _worker_running = False
 
 
+def _execute_rpa_command_realtime(cmd: list, backend_dir: Path, task_id: str, logs: list, log_func, timeout: int = 600) -> tuple:
+    """
+    Ejecuta el comando RPA en tiempo real, actualizando logs en la BD periódicamente.
+    Retorna (returncode, stdout, stderr).
+    """
+    import logging
+    import select
+    logger = logging.getLogger(__name__)
+    
+    log_func(f"Ejecutando: {' '.join(cmd)}")
+    logger.info(f"[RPA] Comando: {' '.join(cmd)}")
+    
+    # Usar Popen para lectura en tiempo real
+    process = subprocess.Popen(
+        cmd,
+        cwd=str(backend_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        bufsize=1,
+        universal_newlines=True
+    )
+    
+    stdout_lines = []
+    stderr_lines = []
+    last_db_update = time.time()
+    
+    def update_logs_in_db(force=False):
+        """Actualiza los logs en la base de datos si han pasado 5 segundos o si es forzado."""
+        nonlocal last_db_update
+        current_time = time.time()
+        if force or (current_time - last_db_update >= 5):
+            all_logs = "\n".join(logs + stdout_lines + [f"STDERR: {line}" for line in stderr_lines])
+            try:
+                update_task(task_id, logs=all_logs[-50000:])  # Limitar a 50KB
+                last_db_update = current_time
+            except Exception as e:
+                logger.error(f"[RPA] Error actualizando logs en DB: {e}")
+    
+    # Leer stdout y stderr en tiempo real
+    try:
+        while process.poll() is None:
+            # Verificar si hay output disponible
+            ready, _, _ = select.select([process.stdout, process.stderr], [], [], 0.1)
+            
+            for stream in ready:
+                line = stream.readline()
+                if line:
+                    if stream is process.stdout:
+                        stdout_lines.append(line.rstrip())
+                        # Actualizar logs cada 10 líneas de output
+                        if len(stdout_lines) % 10 == 0:
+                            update_logs_in_db()
+                    else:
+                        stderr_lines.append(line.rstrip())
+            
+            # Actualizar logs periódicamente (cada 5 segundos)
+            update_logs_in_db()
+            
+            # Verificar timeout
+            if time.time() - last_db_update > timeout:
+                process.kill()
+                raise subprocess.TimeoutExpired(cmd, timeout)
+        
+        # Leer cualquier output restante
+        remaining_stdout, remaining_stderr = process.communicate(timeout=5)
+        if remaining_stdout:
+            stdout_lines.append(remaining_stdout)
+        if remaining_stderr:
+            stderr_lines.append(remaining_stderr)
+            
+    except subprocess.TimeoutExpired:
+        process.kill()
+        raise
+    except Exception as e:
+        process.kill()
+        raise RuntimeError(f"Error ejecutando RPA: {e}")
+    
+    # Actualizar logs finales
+    update_logs_in_db(force=True)
+    
+    stdout = "\n".join(stdout_lines)
+    stderr = "\n".join(stderr_lines)
+    
+    # Capturar logs finales
+    if stdout:
+        logs.append(stdout)
+    if stderr:
+        logs.append(f"STDERR: {stderr}")
+    
+    return process.returncode, stdout, stderr
+
+
 def _execute_rpa_command(cmd: list, backend_dir: Path, logs: list, log_func, timeout: int = 600) -> tuple:
     """
     Ejecuta el comando RPA y retorna (returncode, stdout, stderr).
+    Versión legacy - usa la versión en tiempo real si hay task_id disponible.
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -314,7 +411,7 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
         if has_session:
             log("Intentando con sesión existente...")
             cmd = base_cmd + ["--skip-login"]
-            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log)
+            returncode, stdout, stderr = _execute_rpa_command_realtime(cmd, backend_dir, task_id, logs, log)
             
             # Verificar si falló por sesión expirada
             if returncode != 0 and _is_session_expired(stdout, stderr):
@@ -329,13 +426,13 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
                 # Intento 2: Login completo con CAPTCHA
                 log("Iniciando login completo (puede tardar 30-120s)...")
                 cmd = base_cmd  # Sin --skip-login
-                returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+                returncode, stdout, stderr = _execute_rpa_command_realtime(cmd, backend_dir, task_id, logs, log, timeout=900)
             elif returncode != 0:
                 log(f"✗ Error no relacionado a sesión (código {returncode})")
         else:
             log("No hay sesión guardada, iniciando login completo...")
             cmd = base_cmd
-            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+            returncode, stdout, stderr = _execute_rpa_command_realtime(cmd, backend_dir, task_id, logs, log, timeout=900)
         
         log(f"RPA terminó con código: {returncode}")
         

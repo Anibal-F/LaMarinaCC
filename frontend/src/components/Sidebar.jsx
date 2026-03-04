@@ -300,18 +300,32 @@ export default function Sidebar() {
           ) : null}
         </button>
         {tallerExpanded ? (
-          <NavLink
-            to="/taller/autos-en-sitio"
-            className={({ isActive }) =>
-              `${navItemBase} ml-6 ${isActive ? "text-white" : "text-slate-400 hover:text-white"}`
-            }
-            onClick={() => {
-              if (isMobile) setMobileOpen(false);
-            }}
-          >
-            {showLabels ? <span className="text-sm font-medium">Autos en Sitio</span> : null}
-            <span className="material-symbols-outlined text-[18px] ml-auto">directions_car</span>
-          </NavLink>
+          <>
+            <NavLink
+              to="/taller/autos-en-sitio"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${isActive ? "text-white" : "text-slate-400 hover:text-white"}`
+              }
+              onClick={() => {
+                if (isMobile) setMobileOpen(false);
+              }}
+            >
+              {showLabels ? <span className="text-sm font-medium">Autos en Sitio</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">directions_car</span>
+            </NavLink>
+            <NavLink
+              to="/taller/areas-de-trabajo"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${isActive ? "text-white" : "text-slate-400 hover:text-white"}`
+              }
+              onClick={() => {
+                if (isMobile) setMobileOpen(false);
+              }}
+            >
+              {showLabels ? <span className="text-sm font-medium">Áreas de Trabajo</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">engineering</span>
+            </NavLink>
+          </>
         ) : null}
         <button
           className={`${navItemBase} ${navItemInactive}`}

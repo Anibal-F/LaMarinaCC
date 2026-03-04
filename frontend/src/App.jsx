@@ -23,6 +23,7 @@ import HistorialIngresos from "./pages/Reportes/HistorialIngresos.jsx";
 import ListadoVehiculosValuacion from "./pages/Valuacion/ListadoVehiculos.jsx";
 import ValuarVehiculo from "./pages/Valuacion/ValuarVehiculo.jsx";
 import Taller from "./pages/Taller/Taller.jsx";
+import AreasTrabajo from "./pages/Taller/AreasTrabajo.jsx";
 
 export default function App() {
   const [, setAuthPulse] = useState(0);
@@ -139,6 +140,10 @@ export default function App() {
       <Route
         path="/taller/autos-en-sitio"
         element={authenticated ? <Taller /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/taller/areas-de-trabajo"
+        element={authenticated ? <AreasTrabajo /> : <Navigate to="/login" replace />}
       />
       <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
     </Routes>

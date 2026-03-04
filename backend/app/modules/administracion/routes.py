@@ -213,7 +213,10 @@ def list_credenciales():
         conn.row_factory = dict_row
         rows = conn.execute(
             """
-            SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo, created_at, updated_at
+            SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo, 
+                   COALESCE(autosync, false) as autosync,
+                   COALESCE(synctime, 2) as synctime,
+                   created_at, updated_at
             FROM aseguradora_credenciales
             ORDER BY id ASC
             """
@@ -230,6 +233,8 @@ def create_credencial(payload: dict):
     password = payload.get("password")
     taller_id = (payload.get("taller_id") or "").strip() or None
     activo = payload.get("activo", True)
+    autosync = payload.get("autosync", False)
+    synctime = payload.get("synctime", 2)
 
     if not seguro:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seguro requerido")
@@ -243,11 +248,11 @@ def create_credencial(payload: dict):
     with get_connection() as conn:
         row = conn.execute(
             """
-            INSERT INTO aseguradora_credenciales (seguro, plataforma_url, usuario, password, taller_id, activo)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, created_at
+            INSERT INTO aseguradora_credenciales (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, created_at
             """,
-            (seguro, plataforma_url, usuario, password, taller_id, activo),
+            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime),
         ).fetchone()
 
     return {
@@ -258,14 +263,16 @@ def create_credencial(payload: dict):
         "password": row[4],
         "taller_id": row[5],
         "activo": row[6],
-        "created_at": row[7],
+        "autosync": row[7],
+        "synctime": row[8],
+        "created_at": row[9],
     }
 
 
 @router.put("/credenciales/{credencial_id}")
 def update_credencial(credencial_id: int, payload: dict):
     """Actualiza una credencial existente."""
-    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo"}
+    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo", "autosync", "synctime"}
     updates = {key: value for key, value in payload.items() if key in allowed}
 
     if not updates:
@@ -284,7 +291,7 @@ def update_credencial(credencial_id: int, payload: dict):
             UPDATE aseguradora_credenciales
             SET {fields}, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, created_at, updated_at
+            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, created_at, updated_at
             """,
             values,
         ).fetchone()
@@ -300,8 +307,10 @@ def update_credencial(credencial_id: int, payload: dict):
         "password": row[4],
         "taller_id": row[5],
         "activo": row[6],
-        "created_at": row[7],
-        "updated_at": row[8],
+        "autosync": row[7],
+        "synctime": row[8],
+        "created_at": row[9],
+        "updated_at": row[10],
     }
 
 

@@ -21,7 +21,9 @@ export default function AdminCredenciales() {
     usuario: "",
     password: "",
     taller_id: "",
-    activo: true
+    activo: true,
+    autosync: false,
+    synctime: 2
   });
 
   const fetchCredenciales = async () => {
@@ -100,7 +102,7 @@ export default function AdminCredenciales() {
     if (!form.usuario.trim()) {
       errors.usuario = "Usuario requerido";
     }
-    if (!form.password.trim()) {
+    if (!editingId && !form.password.trim()) {
       errors.password = "Contraseña requerida";
     }
 
@@ -111,6 +113,10 @@ export default function AdminCredenciales() {
 
     try {
       const payload = { ...form };
+      // Si estamos editando y no hay contraseña, no enviarla
+      if (editingId && !payload.password) {
+        delete payload.password;
+      }
 
       const response = await fetch(
         editingId
@@ -134,7 +140,9 @@ export default function AdminCredenciales() {
         usuario: "",
         password: "",
         taller_id: "",
-        activo: true
+        activo: true,
+        autosync: false,
+        synctime: 2
       });
       setFieldErrors({});
       setEditingId(null);
@@ -154,6 +162,18 @@ export default function AdminCredenciales() {
     { id: "all", label: "Todos" },
     { id: "active", label: "Activos" },
     { id: "inactive", label: "Inactivos" }
+  ];
+
+  // Opciones de tiempo de sincronización
+  const synctimeOptions = [
+    { value: 1, label: "Cada 1 hora" },
+    { value: 2, label: "Cada 2 horas" },
+    { value: 3, label: "Cada 3 horas" },
+    { value: 4, label: "Cada 4 horas" },
+    { value: 6, label: "Cada 6 horas" },
+    { value: 8, label: "Cada 8 horas" },
+    { value: 12, label: "Cada 12 horas" },
+    { value: 24, label: "Una vez al día" }
   ];
 
   return (
@@ -190,7 +210,9 @@ export default function AdminCredenciales() {
                     usuario: "",
                     password: "",
                     taller_id: "",
-                    activo: true
+                    activo: true,
+                    autosync: false,
+                    synctime: 2
                   });
                 }}
               >
@@ -249,7 +271,7 @@ export default function AdminCredenciales() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Contraseña *</label>
+                  <label className="text-xs text-slate-400 mb-1 block">Contraseña {editingId ? "(dejar vacío para no cambiar)" : "*"}</label>
                   <div className="relative">
                     <input
                       className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 pr-10 text-sm text-white"
@@ -291,6 +313,49 @@ export default function AdminCredenciales() {
                     checked={form.activo}
                     onChange={(event) => setForm({ ...form, activo: event.target.checked })}
                   />
+                </div>
+
+                {/* Configuración de Sincronización Automática */}
+                <div className="md:col-span-2 border-t border-border-dark pt-4 mt-2">
+                  <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">sync</span>
+                    Configuración de Sincronización Automática (RPA)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between bg-background-dark rounded-lg px-4 py-3">
+                      <div>
+                        <label className="text-sm text-white font-medium block">Sincronización Automática</label>
+                        <span className="text-xs text-slate-400">El RPA se ejecutará automáticamente</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, autosync: !form.autosync })}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          form.autosync ? 'bg-green-600' : 'bg-slate-600'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          form.autosync ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Frecuencia de Sincronización</label>
+                      <select
+                        className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
+                        value={form.synctime}
+                        onChange={(event) => setForm({ ...form, synctime: parseInt(event.target.value) })}
+                        disabled={!form.autosync}
+                      >
+                        {synctimeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="md:col-span-2 flex justify-end gap-3 mt-2">
@@ -352,6 +417,12 @@ export default function AdminCredenciales() {
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
                       ID Taller
                     </th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
+                      AutoSync
+                    </th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
+                      Intervalo
+                    </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
                       Estado
                     </th>
@@ -398,6 +469,25 @@ export default function AdminCredenciales() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{cred.taller_id || "-"}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          cred.autosync
+                            ? "bg-green-500/20 text-green-400"
+                            : "bg-slate-500/20 text-slate-400"
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${cred.autosync ? 'bg-green-400' : 'bg-slate-400'}`}></span>
+                          {cred.autosync ? "ON" : "OFF"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {cred.autosync ? (
+                          <span className="text-xs text-slate-300">
+                            {cred.synctime || 2}h
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -424,7 +514,9 @@ export default function AdminCredenciales() {
                                 usuario: cred.usuario || "",
                                 password: "",
                                 taller_id: cred.taller_id || "",
-                                activo: Boolean(cred.activo)
+                                activo: Boolean(cred.activo),
+                                autosync: Boolean(cred.autosync),
+                                synctime: cred.synctime || 2
                               });
                             }}
                           >
@@ -444,7 +536,7 @@ export default function AdminCredenciales() {
                   ))}
                   {filteredCredenciales.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>
+                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={9}>
                         No hay credenciales para mostrar.
                       </td>
                     </tr>

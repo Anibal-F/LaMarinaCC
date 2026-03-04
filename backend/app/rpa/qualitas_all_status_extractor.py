@@ -6,6 +6,7 @@ Terminadas, Entregadas, etc.) y extrae todas las órdenes de cada uno.
 """
 
 import asyncio
+import re
 from datetime import datetime
 from typing import List, Dict, Optional
 from playwright.async_api import Page
@@ -15,6 +16,51 @@ from app.rpa.qualitas_ordenes_extractor import (
     click_next_page_ordenes,
     parse_fecha
 )
+
+
+def get_table_id_from_status(status_name: str) -> str:
+    """
+    Obtiene el ID de la tabla correspondiente a un estatus.
+    
+    Args:
+        status_name: Nombre del estatus
+        
+    Returns:
+        ID de la tabla HTML
+    """
+    status_to_table = {
+        'asignados': 'tableasig',
+        'asignado por app': 'tablependientes',  # O puede ser otra tabla
+        'asignadoporapp': 'tablependientes',
+        'citados': 'tablecitados',
+        'transito': 'tabletransito',
+        'tránsito': 'tabletransito',
+        'piso': 'tablepiso',
+        'terminadas': 'tableterminadas',
+        'entregadas': 'tableentregadas',
+        'facturadas': 'tablefacturadas',
+        'pérdida total y pago de daños': 'tableperdidadapago',
+        'perdida total y pago de danos': 'tableperdidadapago',
+        'historico': 'tablehistorico',
+        'histórico': 'tablehistorico',
+        'historico facturados': 'tablehistoricofacturados',
+        'histórico facturados': 'tablehistoricofacturados',
+    }
+    
+    # Normalizar el nombre del estatus
+    status_key = status_name.lower().strip()
+    
+    # Buscar coincidencia exacta primero
+    if status_key in status_to_table:
+        return status_to_table[status_key]
+    
+    # Buscar coincidencia parcial
+    for key, table_id in status_to_table.items():
+        if key in status_key or status_key in key:
+            return table_id
+    
+    # Si no hay coincidencia, generar un ID genérico
+    return f"table{status_key.replace(' ', '')}"
 
 
 async def extract_ordenes_from_status_tab(
@@ -38,16 +84,24 @@ async def extract_ordenes_from_status_tab(
     
     print(f"\n[StatusExtractor] Extrayendo órdenes de: {status_name}")
     
+    # Obtener el ID de la tabla para este estatus
+    table_id = get_table_id_from_status(status_name)
+    print(f"[StatusExtractor] Usando tabla ID: {table_id}")
+    
     try:
         # Esperar a que la tabla cargue
-        await page.wait_for_selector('#tableasig, table[id*="asig"]', timeout=10000)
+        try:
+            await page.wait_for_selector(f'#{table_id}, table[id="{table_id}"]', timeout=5000)
+        except:
+            print(f"  [Warning] No se encontró tabla específica #{table_id}, buscando cualquier tabla...")
+        
         await asyncio.sleep(1)  # Pequeña espera para estabilidad
         
         while page_num <= max_pages:
             print(f"[StatusExtractor] {status_name} - Página {page_num}")
             
-            # Extraer órdenes de la página actual
-            ordenes_pagina = await extract_ordenes_from_page(page)
+            # Extraer órdenes de la página actual, pasando el ID de tabla
+            ordenes_pagina = await extract_ordenes_from_page(page, table_id)
             
             if ordenes_pagina:
                 # Agregar el estatus a cada orden
@@ -70,6 +124,8 @@ async def extract_ordenes_from_status_tab(
         
     except Exception as e:
         print(f"[StatusExtractor] Error extrayendo {status_name}: {e}")
+        import traceback
+        print(f"[StatusExtractor] Traceback: {traceback.format_exc()}")
     
     return ordenes
 
@@ -86,46 +142,159 @@ async def click_status_tab(page: Page, status_name: str) -> bool:
         True si se encontró y clickeó el tab
     """
     try:
-        # Los tabs suelen tener la forma: <a href="#asignados">Asignados(126)</a>
-        # Buscar por el texto o data-toggle="tab"
+        print(f"[TabNavigator] Buscando tab para: '{status_name}'")
         
-        # Primero intentar encontrar el enlace exacto por texto
-        tab_selectors = [
-            f'a:has-text("{status_name}")',
-            f'a[data-toggle="tab"]:has-text("{status_name}")',
-            f'li.nav-item a:has-text("{status_name}")',
+        # Estrategia 1: Buscar por href que contenga el nombre del estatus (sin espacios, minúsculas)
+        status_id = status_name.lower().replace(' ', '').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+        
+        href_selectors = [
+            f'a[href="#{status_id}"]',
+            f'a[href*="{status_id}"]',
+            f'a[href="#tab{status_id}"]',
+            f'a[href="#table{status_id}"]',
         ]
         
-        for selector in tab_selectors:
+        for selector in href_selectors:
             try:
                 tab = page.locator(selector).first
-                if await tab.count() > 0 and await tab.is_visible():
-                    await tab.click()
-                    print(f"[TabNavigator] Click en tab '{status_name}'")
-                    await asyncio.sleep(2)  # Esperar carga de la tabla
-                    return True
-            except:
+                count = await tab.count()
+                if count > 0:
+                    is_visible = await tab.is_visible()
+                    if is_visible:
+                        await tab.click()
+                        print(f"[TabNavigator] ✓ Click en tab '{status_name}' (selector: {selector})")
+                        await asyncio.sleep(2)
+                        return True
+            except Exception as e:
+                print(f"[TabNavigator] Selector {selector} falló: {e}")
                 continue
         
-        # Si no funciona, buscar en todos los nav-link
-        all_tabs = await page.locator('a[data-toggle="tab"]').all()
-        for tab in all_tabs:
-            try:
-                text = await tab.text_content()
-                if text and status_name.lower() in text.lower():
-                    await tab.click()
-                    print(f"[TabNavigator] Click en tab '{status_name}' (búsqueda alternativa)")
-                    await asyncio.sleep(2)
-                    return True
-            except:
-                continue
+        # Estrategia 2: Buscar en todos los enlaces con data-toggle="tab"
+        try:
+            all_tabs = await page.locator('a[data-toggle="tab"], .nav-tabs a, .nav-item a').all()
+            print(f"[TabNavigator] Encontrados {len(all_tabs)} tabs totales")
+            
+            for tab in all_tabs:
+                try:
+                    text = await tab.text_content()
+                    href = await tab.get_attribute('href') or ''
+                    
+                    if text:
+                        text_clean = text.strip().lower()
+                        status_clean = status_name.lower()
+                        
+                        # Comparar si el nombre del estatus está en el texto del tab
+                        if status_clean in text_clean or text_clean in status_clean:
+                            print(f"[TabNavigator] Match encontrado: texto='{text}', href='{href}'")
+                            await tab.click()
+                            print(f"[TabNavigator] ✓ Click en tab '{status_name}' (búsqueda alternativa)")
+                            await asyncio.sleep(2)
+                            return True
+                except Exception as e:
+                    continue
+        except Exception as e:
+            print(f"[TabNavigator] Error en búsqueda alternativa: {e}")
         
-        print(f"[TabNavigator] No se encontró tab para '{status_name}'")
+        # Estrategia 3: Buscar por onclick que contenga cargarDataTable
+        try:
+            onclick_tabs = await page.locator('a[onclick*="cargarDataTable"]').all()
+            for tab in onclick_tabs:
+                try:
+                    text = await tab.text_content()
+                    onclick = await tab.get_attribute('onclick') or ''
+                    
+                    if text and status_name.lower() in text.lower():
+                        print(f"[TabNavigator] Match en onclick: texto='{text}'")
+                        await tab.click()
+                        print(f"[TabNavigator] ✓ Click en tab '{status_name}' (onclick)")
+                        await asyncio.sleep(2)
+                        return True
+                except:
+                    continue
+        except:
+            pass
+        
+        print(f"[TabNavigator] ✗ No se encontró tab para '{status_name}'")
         return False
         
     except Exception as e:
         print(f"[TabNavigator] Error navegando a tab '{status_name}': {e}")
         return False
+
+
+async def _get_available_status_tabs(page: Page) -> List[str]:
+    """
+    Obtiene la lista de tabs de estatus disponibles en la página.
+    
+    Returns:
+        Lista de nombres de estatus
+    """
+    tabs = []
+    
+    try:
+        # Estrategia 1: Buscar todos los elementos con data-toggle="tab"
+        tab_elements = await page.locator('a[data-toggle="tab"]').all()
+        print(f"[GetTabs] Encontrados {len(tab_elements)} elementos con data-toggle='tab'")
+        
+        for tab in tab_elements:
+            try:
+                text = await tab.text_content()
+                href = await tab.get_attribute('href') or ''
+                onclick = await tab.get_attribute('onclick') or ''
+                
+                if text:
+                    text_clean = text.strip()
+                    # Extraer solo el nombre, sin el número entre paréntesis
+                    # Ej: "Asignados(126)" -> "Asignados"
+                    match = re.match(r'([^\(]+)', text_clean)
+                    if match:
+                        nombre = match.group(1).strip()
+                        if nombre and nombre not in tabs:
+                            tabs.append(nombre)
+                            print(f"[GetTabs] Tab encontrado: '{nombre}' (href={href}, onclick={onclick[:50]}...)")
+            except Exception as e:
+                print(f"[GetTabs] Error procesando tab: {e}")
+                continue
+        
+        # Estrategia 2: Si no encontramos tabs, buscar en .nav-link
+        if not tabs:
+            print("[GetTabs] Buscando con selector .nav-link...")
+            nav_links = await page.locator('.nav-link, .nav-item a').all()
+            for tab in nav_links:
+                try:
+                    text = await tab.text_content()
+                    if text:
+                        text_clean = text.strip()
+                        match = re.match(r'([^\(]+)', text_clean)
+                        if match:
+                            nombre = match.group(1).strip()
+                            if nombre and nombre not in tabs and len(nombre) > 2:
+                                tabs.append(nombre)
+                                print(f"[GetTabs] Tab encontrado (.nav-link): '{nombre}'")
+                except:
+                    continue
+        
+    except Exception as e:
+        print(f"[GetTabs] Error obteniendo tabs: {e}")
+    
+    # Si no encontramos tabs, usar lista por defecto basada en la imagen
+    if not tabs:
+        print("[GetTabs] ⚠ No se encontraron tabs dinámicos, usando lista por defecto")
+        tabs = [
+            "Asignados",
+            "Asignado por App",
+            "Citados", 
+            "Tránsito",
+            "Piso",
+            "Terminadas",
+            "Entregadas",
+            "Facturadas",
+            "Pérdida Total y Pago De Daños",
+            "Histórico",
+            "Histórico Facturados"
+        ]
+    
+    return tabs
 
 
 async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
@@ -145,8 +314,20 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     print("=" * 60)
     
     # Navegar a la página de órdenes/bandeja
+    print("[AllStatus] Navegando a BandejaQualitas...")
     await page.goto("https://proordersistem.com.mx/BandejaQualitas", wait_until="networkidle")
     await asyncio.sleep(3)
+    
+    # Debug: Guardar HTML para análisis
+    try:
+        html = await page.content()
+        print(f"[AllStatus] HTML de la página cargada ({len(html)} caracteres)")
+        # Buscar patrones de tabs en el HTML
+        import re
+        tab_patterns = re.findall(r'<a[^>]*data-toggle=["\']tab["\'][^>]*>([^<]+)</a>', html)
+        print(f"[AllStatus] Tabs encontrados en HTML: {tab_patterns}")
+    except Exception as e:
+        print(f"[AllStatus] Error analizando HTML: {e}")
     
     # Obtener lista de tabs disponibles
     tabs_disponibles = await _get_available_status_tabs(page)
@@ -156,6 +337,10 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     
     # Extraer órdenes de cada tab
     for status_name in tabs_disponibles:
+        print(f"\n{'='*40}")
+        print(f"Procesando: {status_name}")
+        print(f"{'='*40}")
+        
         # Hacer clic en el tab
         clicked = await click_status_tab(page, status_name)
         
@@ -165,6 +350,8 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
             if ordenes:
                 result[status_name] = ordenes
                 print(f"  ✓ {len(ordenes)} órdenes de '{status_name}'")
+            else:
+                print(f"  ⚠ No se encontraron órdenes en '{status_name}'")
         else:
             print(f"  ✗ No se pudo acceder a '{status_name}'")
         
@@ -176,59 +363,6 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     print("=" * 60)
     
     return result
-
-
-async def _get_available_status_tabs(page: Page) -> List[str]:
-    """
-    Obtiene la lista de tabs de estatus disponibles en la página.
-    
-    Returns:
-        Lista de nombres de estatus
-    """
-    tabs = []
-    
-    try:
-        # Buscar todos los elementos con data-toggle="tab"
-        tab_elements = await page.locator('a[data-toggle="tab"]').all()
-        
-        for tab in tab_elements:
-            try:
-                text = await tab.text_content()
-                if text:
-                    # Limpiar el texto (quitar números entre paréntesis)
-                    # Ej: "Asignados(126)" -> "Asignados"
-                    text_clean = text.strip()
-                    # Extraer solo el nombre, sin el número
-                    import re
-                    match = re.match(r'([^\(]+)', text_clean)
-                    if match:
-                        nombre = match.group(1).strip()
-                        if nombre:
-                            tabs.append(nombre)
-            except:
-                continue
-        
-    except Exception as e:
-        print(f"[GetTabs] Error obteniendo tabs: {e}")
-    
-    # Si no encontramos tabs, usar lista por defecto
-    if not tabs:
-        print("[GetTabs] Usando lista de estatus por defecto")
-        tabs = [
-            "Asignados",
-            "Asignado por App",
-            "Citados", 
-            "Tránsito",
-            "Piso",
-            "Terminadas",
-            "Entregadas",
-            "Facturadas",
-            "Pérdida Total y Pago De Daños",
-            "Histórico",
-            "Histórico Facturados"
-        ]
-    
-    return tabs
 
 
 def flatten_ordenes_by_status(ordenes_by_status: Dict[str, List[Dict]]) -> List[Dict]:

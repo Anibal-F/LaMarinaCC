@@ -13,46 +13,89 @@ from typing import List, Dict, Optional
 from playwright.async_api import Page
 
 
-async def extract_ordenes_from_page(page: Page) -> List[Dict]:
+async def extract_ordenes_from_page(page: Page, table_id: str = None) -> List[Dict]:
     """
     Extrae las órdenes de la página actual.
+    
+    Args:
+        page: Página de Playwright
+        table_id: ID específico de la tabla (opcional, ej: 'tableasig', 'tablependientes')
     
     Returns:
         Lista de dicts con los datos de cada orden
     """
     ordenes = []
     
-    # Múltiples selectores posibles para la tabla de asignados
-    selectors = [
-        '#tableasig tbody tr',
-        'table[id*="asig"] tbody tr',
+    # Si se especificó un ID de tabla específico, usarlo primero
+    if table_id:
+        specific_selectors = [
+            f'#{table_id} tbody tr',
+            f'table[id="{table_id}"] tbody tr',
+        ]
+    else:
+        specific_selectors = []
+    
+    # Múltiples selectores posibles para diferentes tablas de Qualitas
+    # Cada estatus tiene su propia tabla: tableasig, tablependientes, tablecitados, etc.
+    general_selectors = [
+        '#tableasig tbody tr',           # Asignados
+        '#tablependientes tbody tr',      # Pendientes/Asignado por App
+        '#tablecitados tbody tr',         # Citados
+        '#tabletransito tbody tr',        # Tránsito
+        '#tablepiso tbody tr',            # Piso
+        '#tableterminadas tbody tr',      # Terminadas
+        '#tableentregadas tbody tr',      # Entregadas
+        '#tablefacturadas tbody tr',      # Facturadas
+        '#tableperdidadapago tbody tr',   # Pérdida Total y Pago De Daños
+        '#tablehistorico tbody tr',       # Histórico
+        '#tablehistoricofacturados tbody tr', # Histórico Facturados
+        'table[id*="table"] tbody tr',   # Cualquier tabla con id que contenga "table"
         '.dataTable tbody tr',
         '.table-hover tbody tr',
         'table.table tbody tr',
-        '.table-responsive table tbody tr'
+        '.table-responsive table tbody tr',
+        'table tbody tr',                  # Último recurso: cualquier tabla
     ]
+    
+    # Combinar selectores específicos con generales
+    selectors = specific_selectors + general_selectors
     
     rows = []
     used_selector = None
     for selector in selectors:
         try:
-            await page.wait_for_selector(selector, timeout=3000)
-            rows = await page.locator(selector).all()
-            if rows:
-                used_selector = selector
-                print(f"  [Debug] Tabla encontrada con: {selector} ({len(rows)} filas)")
-                break
-        except:
+            # Verificar si el selector existe y es visible
+            locator = page.locator(selector)
+            count = await locator.count()
+            if count > 0:
+                # Verificar que las filas tengan contenido (no sean solo encabezados)
+                first_row = locator.first
+                text = await first_row.text_content()
+                if text and len(text.strip()) > 5:  # Evitar filas vacías o solo headers
+                    rows = await locator.all()
+                    if rows:
+                        used_selector = selector
+                        print(f"  [Debug] Tabla encontrada con: {selector} ({len(rows)} filas)")
+                        break
+        except Exception as e:
             continue
     
     if not rows:
         print("  [Warning] No se encontraron filas en la tabla")
         # Debug: guardar HTML para análisis
         try:
-            html = await page.content()
-            print(f"  [Debug] HTML parcial: {html[:500]}...")
-        except:
-            pass
+            # Buscar todas las tablas en la página
+            tables = await page.locator('table').all()
+            print(f"  [Debug] Tablas encontradas en página: {len(tables)}")
+            for i, table in enumerate(tables):
+                try:
+                    table_id = await table.get_attribute('id')
+                    row_count = await table.locator('tbody tr').count()
+                    print(f"    Tabla {i}: id={table_id}, filas={row_count}")
+                except:
+                    pass
+        except Exception as e:
+            print(f"  [Debug] Error analizando tablas: {e}")
         return []
     
     for i, row in enumerate(rows):

@@ -174,11 +174,11 @@ export default function AreasTrabajo() {
                 <div className="flex items-end justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-                      <span>GestiÛn de Taller</span>
+                      <span>Gesti√≥n de Taller</span>
                       <span className="material-symbols-outlined text-sm">chevron_right</span>
-                      <span className="text-primary font-semibold">¡reas de Trabajo</span>
+                      <span className="text-primary font-semibold">√Åreas de Trabajo</span>
                     </div>
-                    <h2 className="text-2xl font-bold text-white">¡reas de Trabajo</h2>
+                    <h2 className="text-2xl font-bold text-white">√Åreas de Trabajo</h2>
                   </div>
                   <div className="px-4 py-2 bg-surface-dark border border-border-dark rounded-lg flex items-center gap-4 text-xs">
                     <div className="flex items-center gap-2">

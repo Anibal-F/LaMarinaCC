@@ -322,7 +322,7 @@ export default function Sidebar() {
                 if (isMobile) setMobileOpen(false);
               }}
             >
-              {showLabels ? <span className="text-sm font-medium">¡reas de Trabajo</span> : null}
+              {showLabels ? <span className="text-sm font-medium">√Åreas de Trabajo</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">engineering</span>
             </NavLink>
           </>

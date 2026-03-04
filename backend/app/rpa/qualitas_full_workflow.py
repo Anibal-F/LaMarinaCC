@@ -375,18 +375,33 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
             except Exception as e:
                 print(f"[DB] ✗ Error guardando indicadores: {e}")
             
-            # Extraer órdenes asignadas
-            print("\n[4/4] EXTRAYENDO ÓRDENES ASIGNADAS")
+            # Extraer órdenes de TODOS los estatus
+            print("\n[4/4] EXTRAYENDO ÓRDENES DE TODOS LOS ESTATUS")
             try:
-                from app.rpa.qualitas_ordenes_extractor import extract_all_ordenes_asignadas, save_ordenes_to_db
-                ordenes = await extract_all_ordenes_asignadas(page)
-                if ordenes:
-                    inserted = save_ordenes_to_db(ordenes)
-                    print(f"[DB] ✓ {inserted} órdenes guardadas")
+                from app.rpa.qualitas_all_status_extractor import (
+                    extract_all_ordenes_all_status, 
+                    save_all_ordenes_to_db
+                )
+                
+                # Extraer órdenes de todos los tabs
+                ordenes_by_status = await extract_all_ordenes_all_status(page)
+                
+                if ordenes_by_status:
+                    # Guardar en BD y JSON
+                    total_ordenes = sum(len(ordenes) for ordenes in ordenes_by_status.values())
+                    inserted = await save_all_ordenes_to_db(ordenes_by_status)
+                    
+                    print(f"\n[DB] Resumen de órdenes extraídas:")
+                    for status_name, ordenes in ordenes_by_status.items():
+                        print(f"  • {status_name}: {len(ordenes)} órdenes")
+                    print(f"[DB] ✓ Total: {inserted} órdenes guardadas")
                 else:
-                    print("[Ordenes] No se encontraron órdenes")
+                    print("[Ordenes] No se encontraron órdenes en ningún estatus")
+                    
             except Exception as e:
                 print(f"[Ordenes] ✗ Error extrayendo órdenes: {e}")
+                import traceback
+                print(f"[Ordenes] Traceback: {traceback.format_exc()}")
             
             # Click en estatus específico si se solicitó
             if click_status:

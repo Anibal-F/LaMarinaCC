@@ -59,7 +59,9 @@ def get_credentials_by_seguro(seguro_name: str) -> dict | None:
             'usuario': str,
             'password': str,
             'taller_id': str | None,
-            'activo': bool
+            'activo': bool,
+            'autosync': bool,
+            'synctime': int
         }
     """
     if not DB_AVAILABLE:
@@ -70,7 +72,9 @@ def get_credentials_by_seguro(seguro_name: str) -> dict | None:
             conn.row_factory = dict_row
             row = conn.execute(
                 """
-                SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo
+                SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo,
+                       COALESCE(autosync, false) as autosync,
+                       COALESCE(synctime, 2) as synctime
                 FROM aseguradora_credenciales
                 WHERE seguro ILIKE %s AND activo = TRUE
                 LIMIT 1
@@ -101,7 +105,9 @@ def get_all_active_credentials() -> list[dict]:
             conn.row_factory = dict_row
             rows = conn.execute(
                 """
-                SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo
+                SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo,
+                       COALESCE(autosync, false) as autosync,
+                       COALESCE(synctime, 2) as synctime
                 FROM aseguradora_credenciales
                 WHERE activo = TRUE
                 ORDER BY id ASC
@@ -173,6 +179,77 @@ def setup_chubb_env() -> bool:
     Configura las variables de entorno de CHUBB desde la DB.
     """
     return update_env_from_db('CHUBB', 'CHUBB')
+
+
+# ============================================================================
+# FUNCIONES PARA CONFIGURACIÓN DE AUTOSYNC
+# ============================================================================
+
+def get_autosync_config(seguro_name: str) -> dict | None:
+    """
+    Obtiene la configuración de autosync para una aseguradora.
+    
+    Returns:
+        dict con { autosync: bool, synctime: int } o None
+    """
+    creds = get_credentials_by_seguro(seguro_name)
+    if creds:
+        return {
+            'autosync': creds.get('autosync', False),
+            'synctime': creds.get('synctime', 2)
+        }
+    return None
+
+
+def get_all_autosync_configs() -> list[dict]:
+    """
+    Obtiene la configuración de autosync para todas las aseguradoras activas.
+    
+    Returns:
+        Lista de dicts con { seguro, autosync, synctime }
+    """
+    creds = get_all_active_credentials()
+    return [
+        {
+            'seguro': c['seguro'],
+            'autosync': c.get('autosync', False),
+            'synctime': c.get('synctime', 2)
+        }
+        for c in creds
+    ]
+
+
+def update_autosync_config(seguro_name: str, autosync: bool, synctime: int) -> bool:
+    """
+    Actualiza la configuración de autosync para una aseguradora.
+    
+    Args:
+        seguro_name: Nombre del seguro
+        autosync: Habilitar/deshabilitar autosync
+        synctime: Tiempo en horas entre sincronizaciones
+    
+    Returns:
+        True si se actualizó correctamente
+    """
+    if not DB_AVAILABLE:
+        return False
+    
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE aseguradora_credenciales
+                SET autosync = %s, synctime = %s
+                WHERE seguro ILIKE %s
+                """,
+                (autosync, synctime, f"%{seguro_name}%")
+            )
+            conn.commit()
+            print(f"[CredentialsHelper] ✓ Configuración de autosync actualizada para: {seguro_name}")
+            return True
+    except Exception as e:
+        print(f"[CredentialsHelper] Error actualizando autosync: {e}")
+        return False
 
 
 if __name__ == "__main__":

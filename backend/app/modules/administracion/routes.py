@@ -22,6 +22,10 @@ router.include_router(chubb_router)
 from app.modules.administracion.rpa_queue import router as rpa_queue_router
 router.include_router(rpa_queue_router)
 
+# Importar y registrar rutas de autosync
+from app.modules.administracion.autosync_routes import router as autosync_router
+router.include_router(autosync_router)
+
 # Importar scheduler para iniciarlo automáticamente
 try:
     from app.modules.administracion import rpa_scheduler

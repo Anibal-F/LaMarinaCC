@@ -211,8 +211,8 @@ export default function Taller() {
         <Sidebar />
         <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
           <AppHeader
-            title="Log de Recepciones"
-            subtitle="Vehiculos recepcionados activos para seguimiento en taller."
+            title="Autos en Sitio"
+            subtitle="Vehiculos recepcionados activos dentro del modulo de taller."
             showSearch={false}
             actions={
               <>

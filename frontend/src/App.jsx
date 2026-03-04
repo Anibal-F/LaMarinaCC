@@ -132,6 +132,12 @@ export default function App() {
       />
       <Route
         path="/taller"
+        element={
+          authenticated ? <Navigate to="/taller/autos-en-sitio" replace /> : <Navigate to="/login" replace />
+        }
+      />
+      <Route
+        path="/taller/autos-en-sitio"
         element={authenticated ? <Taller /> : <Navigate to="/login" replace />}
       />
       <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />

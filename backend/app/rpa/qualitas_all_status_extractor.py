@@ -120,6 +120,63 @@ async def extract_ordenes_from_status_tab(
     return ordenes
 
 
+async def get_tab_element(page: Page, status_name: str):
+    """
+    Obtiene el elemento del tab correspondiente a un estatus.
+    
+    Args:
+        page: Página de Playwright
+        status_name: Nombre del estatus a buscar
+        
+    Returns:
+        Tupla (tab_element, tab_text) o (None, None) si no se encuentra
+    """
+    try:
+        # Estrategia 1: Buscar por href
+        status_id = status_name.lower().replace(' ', '').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+        
+        href_selectors = [
+            f'a[href="#{status_id}"]',
+            f'a[href*="{status_id}"]',
+            f'a[href="#tab{status_id}"]',
+            f'a[href="#table{status_id}"]',
+        ]
+        
+        for selector in href_selectors:
+            try:
+                tab = page.locator(selector).first
+                if await tab.count() > 0 and await tab.is_visible():
+                    text = await tab.text_content()
+                    return tab, text.strip() if text else status_name
+            except:
+                continue
+        
+        # Estrategia 2: Buscar en todos los enlaces
+        all_tabs = await page.locator('a[data-toggle="tab"], .nav-tabs a, .nav-item a').all()
+        for tab in all_tabs:
+            try:
+                text = await tab.text_content()
+                if text and status_name.lower() in text.strip().lower():
+                    return tab, text.strip()
+            except:
+                continue
+        
+        # Estrategia 3: Buscar por onclick
+        onclick_tabs = await page.locator('a[onclick*="cargarDataTable"]').all()
+        for tab in onclick_tabs:
+            try:
+                text = await tab.text_content()
+                if text and status_name.lower() in text.strip().lower():
+                    return tab, text.strip()
+            except:
+                continue
+        
+        return None, None
+    except Exception as e:
+        print(f"[GetTabElement] Error: {e}")
+        return None, None
+
+
 async def click_status_tab(page: Page, status_name: str) -> bool:
     """
     Hace clic en el tab de navegación correspondiente a un estatus.
@@ -287,6 +344,90 @@ async def _get_available_status_tabs(page: Page) -> List[str]:
     return tabs
 
 
+def get_db_connection():
+    """Obtiene una conexión a la base de datos."""
+    import psycopg
+    database_url = 'postgresql://LaMarinaCC:A355Fu584$@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require'
+    return psycopg.connect(database_url)
+
+
+def get_last_count_for_status(status_name: str) -> int:
+    """
+    Obtiene el último conteo de registros para un estatus.
+    
+    Args:
+        status_name: Nombre del estatus
+        
+    Returns:
+        Número de registros de la última extracción, o -1 si no hay datos
+    """
+    try:
+        with get_db_connection() as conn:
+            # Crear tabla si no existe
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS qualitas_extraccion_conteos (
+                    id SERIAL PRIMARY KEY,
+                    estatus VARCHAR(100) NOT NULL,
+                    total_registros INTEGER NOT NULL,
+                    fecha_extraccion TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE(estatus)
+                )
+            """)
+            
+            result = conn.execute(
+                "SELECT total_registros FROM qualitas_extraccion_conteos WHERE estatus = %s",
+                (status_name,)
+            ).fetchone()
+            
+            return result[0] if result else -1
+    except Exception as e:
+        print(f"  [CountCache] Error obteniendo conteo para {status_name}: {e}")
+        return -1
+
+
+def save_count_for_status(status_name: str, count: int):
+    """
+    Guarda el conteo de registros para un estatus.
+    
+    Args:
+        status_name: Nombre del estatus
+        count: Número de registros
+    """
+    try:
+        with get_db_connection() as conn:
+            conn.execute("""
+                INSERT INTO qualitas_extraccion_conteos (estatus, total_registros, fecha_extraccion)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (estatus) 
+                DO UPDATE SET total_registros = EXCLUDED.total_registros, 
+                              fecha_extraccion = EXCLUDED.fecha_extraccion
+            """, (status_name, count))
+            conn.commit()
+    except Exception as e:
+        print(f"  [CountCache] Error guardando conteo para {status_name}: {e}")
+
+
+def extract_count_from_tab_text(tab_text: str) -> int:
+    """
+    Extrae el número de registros del texto del tab.
+    Ej: "Asignados(128)" -> 128, "Tránsito(88)" -> 88
+    
+    Args:
+        tab_text: Texto del tab (ej: "Asignados(128)")
+        
+    Returns:
+        Número de registros, o -1 si no se pudo extraer
+    """
+    try:
+        # Buscar número entre paréntesis
+        match = re.search(r'\((\d+)\)', tab_text)
+        if match:
+            return int(match.group(1))
+        return -1
+    except Exception:
+        return -1
+
+
 async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fecha_extraccion: datetime) -> int:
     """
     Guarda órdenes de un estatus específico inmediatamente en la BD.
@@ -389,17 +530,28 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
         return 0
 
 
-async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
+async def extract_all_ordenes_all_status(page: Page, force_extract: bool = False) -> Dict[str, List[Dict]]:
     """
     Extrae órdenes de TODOS los estatus disponibles.
     Guarda inmediatamente después de extraer cada estatus.
+    
+    Args:
+        page: Página de Playwright
+        force_extract: Si es True, extrae todos los tabs ignorando la optimización de conteos
+        
+    Returns:
+        Dict con las órdenes extraídas por estatus
     """
     result = {}
     fecha_extraccion = datetime.now()
     total_guardadas = 0
+    tabs_skipped = 0
+    tabs_processed = 0
     
     print("\n" + "=" * 60)
     print("EXTRACCIÓN COMPLETA DE TODOS LOS ESTATUS")
+    if force_extract:
+        print("[MODO FORZADO] Ignorando optimización de conteos")
     print("=" * 60)
     
     # Navegar a la página de órdenes/bandeja
@@ -424,38 +576,89 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
         print(f"  • {tab}")
     
     # Extraer y guardar órdenes de cada tab INMEDIATAMENTE
+    # CON OPTIMIZACIÓN: comparar conteos antes de extraer
+    print("\n" + "-" * 40)
+    print("[OPTIMIZACIÓN] Comparando conteos con extracción anterior")
+    print("-" * 40)
+    
     for status_name in tabs_disponibles:
         print(f"\n{'='*40}")
         print(f"Procesando: {status_name}")
         print(f"{'='*40}")
         
         try:
-            # Hacer clic en el tab
-            clicked = await click_status_tab(page, status_name)
+            # OBTENER EL TAB Y SU TEXTO COMPLETO (con número de registros)
+            tab_element, tab_text = await get_tab_element(page, status_name)
             
-            if clicked:
-                try:
-                    # Extraer órdenes de este estatus
-                    ordenes = await extract_ordenes_from_status_tab(page, status_name)
-                    if ordenes:
-                        result[status_name] = ordenes
-                        print(f"  ✓ {len(ordenes)} órdenes extraídas de '{status_name}'")
-                        
-                        # GUARDAR INMEDIATAMENTE EN BD
-                        try:
-                            guardadas = await save_ordenes_to_db_immediate(ordenes, status_name, fecha_extraccion)
-                            total_guardadas += guardadas
-                            print(f"  ✓ {guardadas} órdenes guardadas en BD")
-                        except Exception as e:
-                            print(f"  ✗ Error guardando en BD: {e}")
-                    else:
-                        print(f"  ⚠ No se encontraron órdenes en '{status_name}'")
-                except Exception as e:
-                    print(f"  ✗ Error extrayendo '{status_name}': {e}")
-                    import traceback
-                    print(f"  [Traceback] {traceback.format_exc()}")
+            if not tab_element:
+                print(f"  ✗ No se pudo encontrar el tab para '{status_name}'")
+                continue
+            
+            # Extraer el conteo del texto del tab (ej: "Asignados(128)" -> 128)
+            current_count = extract_count_from_tab_text(tab_text)
+            
+            if current_count >= 0:
+                print(f"  [Count] Tab muestra: {current_count} registros")
+                
+                # Obtener el último conteo guardado
+                last_count = get_last_count_for_status(status_name)
+                print(f"  [Count] Última extracción: {last_count if last_count >= 0 else 'N/A'} registros")
+                
+                # Si el conteo es igual al anterior Y no estamos forzando, saltar este tab
+                if not force_extract and current_count == last_count and last_count >= 0:
+                    print(f"  ⏭️  SKIPPING: El conteo no ha cambiado desde la última extracción")
+                    print(f"      No es necesario extraer '{status_name}' nuevamente")
+                    tabs_skipped += 1
+                    continue
+                
+                if force_extract:
+                    print(f"  [Count] Modo forzado: extrayendo aunque el conteo sea igual")
+                else:
+                    print(f"  [Count] Conteo diferente o primera extracción, procediendo...")
             else:
-                print(f"  ✗ No se pudo acceder a '{status_name}'")
+                print(f"  [Count] No se pudo extraer conteo del tab, procediendo con extracción completa")
+            
+            # Hacer clic en el tab
+            try:
+                await tab_element.click()
+                print(f"[TabNavigator] ✓ Click en tab '{status_name}'")
+                await asyncio.sleep(2)
+            except Exception as e:
+                print(f"  ✗ Error haciendo click en tab: {e}")
+                continue
+            
+            # Extraer órdenes de este estatus
+            try:
+                ordenes = await extract_ordenes_from_status_tab(page, status_name)
+                
+                if ordenes:
+                    result[status_name] = ordenes
+                    actual_count = len(ordenes)
+                    print(f"  ✓ {actual_count} órdenes extraídas de '{status_name}'")
+                    tabs_processed += 1
+                    
+                    # GUARDAR INMEDIATAMENTE EN BD
+                    try:
+                        guardadas = await save_ordenes_to_db_immediate(ordenes, status_name, fecha_extraccion)
+                        total_guardadas += guardadas
+                        print(f"  ✓ {guardadas} órdenes guardadas en BD")
+                        
+                        # Guardar el conteo actual para la próxima comparación
+                        # Usar el conteo real extraído, no el del tab (puede haber diferencias)
+                        save_count_for_status(status_name, actual_count)
+                        print(f"  [Count] Conteo guardado para próxima comparación: {actual_count}")
+                    except Exception as e:
+                        print(f"  ✗ Error guardando en BD: {e}")
+                else:
+                    print(f"  ⚠ No se encontraron órdenes en '{status_name}'")
+                    tabs_processed += 1
+                    # Guardar conteo 0 para evitar reintentos innecesarios
+                    save_count_for_status(status_name, 0)
+            except Exception as e:
+                print(f"  ✗ Error extrayendo '{status_name}': {e}")
+                import traceback
+                print(f"  [Traceback] {traceback.format_exc()}")
+                
         except Exception as e:
             print(f"  ✗ Error CRÍTICO en '{status_name}': {e}")
             import traceback
@@ -467,6 +670,8 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     print("\n" + "=" * 60)
     total_extraidas = sum(len(ordenes) for ordenes in result.values())
     print(f"EXTRACCIÓN COMPLETADA")
+    print(f"  Tabs procesados: {tabs_processed}")
+    print(f"  Tabs omitidos (sin cambios): {tabs_skipped}")
     print(f"  Total extraídas: {total_extraidas}")
     print(f"  Total guardadas: {total_guardadas}")
     print("=" * 60)

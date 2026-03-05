@@ -403,6 +403,11 @@ def run_qualitas_task(task_id: str, params: Dict[str, Any]):
             "--use-db"
         ]
         
+        # Agregar --force-extract si está en los parámetros
+        if params.get('force_extract', False):
+            base_cmd.append("--force-extract")
+            log("Modo forzado: extrayendo todos los tabs (ignorando optimización)")
+        
         returncode = -1
         stdout = ""
         stderr = ""
@@ -677,19 +682,31 @@ async def list_tasks(limit: int = 20):
 
 
 @router.post("/qualitas/actualizar")
-async def queue_qualitas_update():
+async def queue_qualitas_update(force_extract: bool = False):
     """
     Encola una actualización de indicadores de Qualitas.
     Retorna inmediatamente con el ID de la tarea.
+    
+    Args:
+        force_extract: Si es True, extrae todos los tabs ignorando la optimización de conteos
     """
-    task_id = create_task(TaskType.QUALITAS_EXTRACT, {"auto_retry": True})
+    params = {"auto_retry": True}
+    if force_extract:
+        params["force_extract"] = True
+    
+    task_id = create_task(TaskType.QUALITAS_EXTRACT, params)
+    
+    message = "Tarea encolada. El RPA se ejecutará en background."
+    if force_extract:
+        message = "Tarea encolada (MODO FORZADO). Se extraerán todos los tabs ignorando optimización."
     
     return {
         "success": True,
-        "message": "Tarea encolada. El RPA se ejecutará en background.",
+        "message": message,
         "task_id": task_id,
         "status": "pending",
-        "check_status_url": f"/admin/rpa-queue/tasks/{task_id}"
+        "check_status_url": f"/admin/rpa-queue/tasks/{task_id}",
+        "force_extract": force_extract
     }
 
 

@@ -243,7 +243,8 @@ async def do_login(page, use_db: bool = True) -> bool:
 
 
 async def run_workflow(skip_login: bool = False, headless: bool = False, 
-                       save_json: bool = True, click_status: str = None, use_db: bool = True):
+                       save_json: bool = True, click_status: str = None, use_db: bool = True,
+                       force_extract: bool = False):
     """Ejecuta el workflow completo."""
     
     session_path = Path(__file__).resolve().parent / "sessions" / "qualitas_session.json"
@@ -383,8 +384,8 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                     save_all_ordenes_to_db
                 )
                 
-                # Extraer órdenes de todos los tabs
-                ordenes_by_status = await extract_all_ordenes_all_status(page)
+                # Extraer órdenes de todos los tabs (con optimización de conteos)
+                ordenes_by_status = await extract_all_ordenes_all_status(page, force_extract=force_extract)
                 
                 if ordenes_by_status:
                     from datetime import datetime
@@ -458,6 +459,7 @@ def main():
     parser.add_argument("--status", type=str, help="Estatus a explorar (ej: 'Asignados')")
     parser.add_argument("--use-db", action="store_true", default=True, help="Usar credenciales desde la base de datos (default)")
     parser.add_argument("--use-env", action="store_true", help="Usar credenciales desde archivo .envQualitas")
+    parser.add_argument("--force-extract", action="store_true", help="Forzar extracción completa ignorando optimización de conteos")
     args = parser.parse_args()
     
     # Determinar si usar DB o .env
@@ -477,7 +479,8 @@ def main():
             headless=args.headless,
             save_json=not args.no_save,
             click_status=args.status,
-            use_db=use_db
+            use_db=use_db,
+            force_extract=args.force_extract
         ))
     except KeyboardInterrupt:
         print("\n[Interrumpido]")

@@ -185,7 +185,8 @@ def parse_row_asignados(cell_texts: List[str], status_name: str) -> Optional[Dic
     vehiculo = cell_texts[6]
     anio = cell_texts[7]
     placas = cell_texts[8]
-    estatus = cell_texts[9] if len(cell_texts) > 9 else status_name
+    # NOTA: Ignorar la columna de estatus de la tabla, usar SIEMPRE el nombre del tab
+    # para evitar confusiones (ej: Histórico muestra "Asignado" en la columna)
     
     # Parsear siniestro y reporte
     siniestro, reporte = parse_siniestro_reporte(siniestro_reporte)
@@ -203,7 +204,7 @@ def parse_row_asignados(cell_texts: List[str], status_name: str) -> Optional[Dic
         'vehiculo': vehiculo.strip(),
         'anio': anio_int,
         'placas': placas.strip().upper(),
-        'estatus': estatus.strip() or status_name
+        'estatus': status_name  # SIEMPRE usar el nombre del tab
     }
 
 

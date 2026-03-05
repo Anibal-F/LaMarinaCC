@@ -177,6 +177,21 @@ export default function QualitasIndicators({ onRefresh }) {
     { key: 'Histórico', label: 'Histórico', icon: 'history', color: 'orange' },
     { key: 'Histórico Facturados', label: 'Hist. Facturados', icon: 'archive', color: 'brown' },
   ], []);
+  
+  // Mapeo de nombres de estatus para mostrar en tabs (nombres cortos)
+  const statusDisplayNames = {
+    'Asignados': 'Asignados',
+    'Asignado por App': 'Asignado App',
+    'Citados': 'Citados',
+    'Tránsito': 'Tránsito',
+    'Piso': 'Piso',
+    'Terminadas': 'Terminadas',
+    'Entregadas': 'Entregadas',
+    'Facturadas': 'Facturadas',
+    'Pérdida Total y Pago De Daños': 'Pérdida Total',
+    'Histórico': 'Histórico',
+    'Histórico Facturados': 'Hist. Facturados',
+  };
 
   const handleRefresh = async () => {
     try {

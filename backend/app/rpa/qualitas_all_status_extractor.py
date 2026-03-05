@@ -88,6 +88,20 @@ async def extract_ordenes_from_status_tab(
     table_id = get_table_id_from_status(status_name)
     print(f"[StatusExtractor] Usando tabla ID: {table_id}")
     
+    # Debug especial para Pérdida Total
+    if 'perdida' in status_name.lower():
+        print(f"  [Debug Pérdida Total] Buscando tablas alternativas...")
+        try:
+            all_tables = await page.locator('table[id]').all()
+            table_ids = []
+            for t in all_tables:
+                tid = await t.get_attribute('id')
+                if tid:
+                    table_ids.append(tid)
+            print(f"  [Debug Pérdida Total] Tablas encontradas: {table_ids}")
+        except Exception as e:
+            print(f"  [Debug Pérdida Total] Error listando tablas: {e}")
+    
     ordenes = []
     
     try:
@@ -194,6 +208,11 @@ async def click_status_tab(page: Page, status_name: str) -> bool:
         
         # Estrategia 1: Buscar por href que contenga el nombre del estatus (sin espacios, minúsculas)
         status_id = status_name.lower().replace(' ', '').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+        
+        # Debug especial para Pérdida Total
+        if 'perdida' in status_name.lower():
+            print(f"  [Debug Pérdida Total] status_id calculado: '{status_id}'")
+            print(f"  [Debug Pérdida Total] Buscando selectores con: {status_id}")
         
         href_selectors = [
             f'a[href="#{status_id}"]',

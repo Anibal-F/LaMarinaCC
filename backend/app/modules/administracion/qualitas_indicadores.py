@@ -566,3 +566,72 @@ async def debug_ordenes_estatus():
             "estatus_encontrados": len(estatus_list),
             "detalle": estatus_list
         }
+
+
+@router.get("/debug/verificar-tab-perdida")
+async def debug_verificar_tab_perdida():
+    """
+    Verifica específicamente qué pasa con el tab de Pérdida Total.
+    Este endpoint ejecuta una verificación rápida del portal de Qualitas.
+    """
+    from playwright.async_api import async_playwright
+    from app.rpa.qualitas_all_status_extractor import get_table_id_from_status
+    
+    table_id = get_table_id_from_status("Pérdida Total y Pago De Daños")
+    
+    result = {
+        "status_name": "Pérdida Total y Pago De Daños",
+        "table_id_calculado": table_id,
+        "verificacion": None,
+        "errores": []
+    }
+    
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+            
+            # Navegar al portal de Qualitas
+            await page.goto("https://talleres.qualitas.com.mx/ordenes.aspx", timeout=30000)
+            await asyncio.sleep(3)
+            
+            # Verificar si existe el tab
+            tab_selectors = [
+                'text="Pérdida Total"',
+                'text="Pago De Daños"',
+                '[id*="perdida"]',
+                '[id*="pago"]',
+            ]
+            
+            tab_info = {}
+            for selector in tab_selectors:
+                try:
+                    elements = await page.locator(selector).all()
+                    tab_info[selector] = len(elements)
+                    if elements:
+                        for i, el in enumerate(elements[:3]):
+                            text = await el.text_content()
+                            visible = await el.is_visible()
+                            tab_info[f"{selector}_{i}"] = {"text": text, "visible": visible}
+                except Exception as e:
+                    tab_info[selector] = f"Error: {str(e)[:50]}"
+            
+            result["verificacion"] = tab_info
+            
+            # Verificar tablas
+            tables = await page.locator('table[id^="table"]').all()
+            table_ids = []
+            for t in tables:
+                id_attr = await t.get_attribute('id')
+                if id_attr:
+                    table_ids.append(id_attr)
+            
+            result["tablas_encontradas"] = table_ids
+            
+            await browser.close()
+            
+    except Exception as e:
+        result["errores"].append(str(e))
+    
+    return result

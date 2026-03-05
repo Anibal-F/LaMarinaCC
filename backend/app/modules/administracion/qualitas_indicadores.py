@@ -482,8 +482,8 @@ async def get_estatus():
 # ÓRDENES ASIGNADAS
 # ============================================================================
 
-def get_latest_ordenes(limit: int = 500) -> list:
-    """Obtiene las últimas órdenes asignadas extraídas."""
+def get_latest_ordenes(limit: int = None) -> list:
+    """Obtiene todas las últimas órdenes asignadas extraídas."""
     ensure_table_exists()  # Asegura que existe la tabla de indicadores
     
     # Verificar si existe la tabla de órdenes
@@ -499,11 +499,19 @@ def get_latest_ordenes(limit: int = 500) -> list:
             return []
         
         conn.row_factory = dict_row
-        rows = conn.execute("""
-            SELECT * FROM v_qualitas_ordenes_recientes
-            ORDER BY fecha_asignacion DESC NULLS LAST
-            LIMIT %s
-        """, (limit,)).fetchall()
+        
+        # Sin límite por defecto para traer todas las órdenes
+        if limit:
+            rows = conn.execute("""
+                SELECT * FROM v_qualitas_ordenes_recientes
+                ORDER BY fecha_asignacion DESC NULLS LAST
+                LIMIT %s
+            """, (limit,)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT * FROM v_qualitas_ordenes_recientes
+                ORDER BY fecha_asignacion DESC NULLS LAST
+            """).fetchall()
         
         return [serialize_row(dict(row)) for row in rows]
 

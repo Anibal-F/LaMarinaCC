@@ -45,9 +45,9 @@ CREATE INDEX IF NOT EXISTS idx_qualitas_ordenes_estatus
 CREATE INDEX IF NOT EXISTS idx_qualitas_ordenes_placas 
     ON qualitas_ordenes_asignadas(placas);
 
--- Vista de últimas órdenes
+-- Vista de últimas órdenes (TODAS las órdenes de la última extracción por estatus)
 CREATE OR REPLACE VIEW v_qualitas_ordenes_recientes AS
-SELECT 
+SELECT DISTINCT ON (num_expediente)
     id,
     num_expediente,
     fecha_asignacion,
@@ -61,11 +61,7 @@ SELECT
     estatus,
     fecha_extraccion
 FROM qualitas_ordenes_asignadas
-WHERE fecha_extraccion = (
-    SELECT MAX(fecha_extraccion) 
-    FROM qualitas_ordenes_asignadas
-)
-ORDER BY fecha_asignacion DESC;
+ORDER BY num_expediente, fecha_extraccion DESC;
 
 -- Comentario de la tabla
 COMMENT ON TABLE qualitas_ordenes_asignadas IS 'Órdenes asignadas extraídas del portal de Qualitas';

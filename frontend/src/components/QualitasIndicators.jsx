@@ -163,14 +163,19 @@ export default function QualitasIndicators({ onRefresh }) {
     return counts;
   }, [ordenes]);
 
-  // Configuración de estatus para las tarjetas
+  // Configuración de estatus para las tarjetas (todos los posibles de Qualitas)
   const statusConfig = useMemo(() => [
     { key: 'Asignados', label: 'Asignados', icon: 'assignment_ind', color: 'blue' },
+    { key: 'Asignado por App', label: 'Asignado por App', icon: 'phone_android', color: 'cyan' },
+    { key: 'Citados', label: 'Citados', icon: 'event', color: 'teal' },
     { key: 'Tránsito', label: 'Tránsito', icon: 'local_shipping', color: 'amber' },
     { key: 'Piso', label: 'Piso', icon: 'garage', color: 'slate' },
     { key: 'Terminadas', label: 'Terminadas', icon: 'check_circle', color: 'green' },
     { key: 'Entregadas', label: 'Entregadas', icon: 'task_alt', color: 'purple' },
+    { key: 'Facturadas', label: 'Facturadas', icon: 'receipt', color: 'pink' },
+    { key: 'Pérdida Total y Pago De Daños', label: 'Pérdida Total', icon: 'car_crash', color: 'red' },
     { key: 'Histórico', label: 'Histórico', icon: 'history', color: 'orange' },
+    { key: 'Histórico Facturados', label: 'Hist. Facturados', icon: 'archive', color: 'brown' },
   ], []);
 
   const handleRefresh = async () => {

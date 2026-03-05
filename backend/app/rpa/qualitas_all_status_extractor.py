@@ -316,6 +316,32 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
         print(f"  [DB] Intentando guardar {len(ordenes)} órdenes de '{status_name}'...")
         
         with get_connection() as conn:
+            # Debug: Verificar conexión y esquema
+            try:
+                # Verificar en qué base de datos estamos
+                db_info = conn.execute("SELECT current_database(), current_schema()").fetchone()
+                print(f"    [DB Debug] Base de datos: {db_info[0]}, Esquema: {db_info[1]}")
+                
+                # Verificar si la tabla existe
+                table_check = conn.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'qualitas_ordenes_asignadas'
+                    )
+                """).fetchone()
+                print(f"    [DB Debug] ¿Tabla existe? {table_check[0]}")
+                
+                # Listar tablas disponibles
+                if not table_check[0]:
+                    tables = conn.execute("""
+                        SELECT table_name FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name LIKE '%qualitas%'
+                    """).fetchall()
+                    print(f"    [DB Debug] Tablas con 'qualitas': {[t[0] for t in tables]}")
+            except Exception as e:
+                print(f"    [DB Debug] Error verificando: {e}")
             for i, orden in enumerate(ordenes):
                 try:
                     num_exp = orden.get('num_expediente')

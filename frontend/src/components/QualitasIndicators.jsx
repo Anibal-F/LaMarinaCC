@@ -335,16 +335,35 @@ export default function QualitasIndicators({ onRefresh }) {
       return statusCounts[configKey];
     }
     
-    // Búsqueda case-insensitive y parcial
+    // Mapeo de claves del config a posibles variantes en BD
+    const statusAliases = {
+      'Asignados': ['Asignados', 'ASIGNADOS'],
+      'Asignado por App': ['Asignado por App', 'ASIGNADO POR APP'],
+      'Citados': ['Citados', 'CITADOS'],
+      'Tránsito': ['Tránsito', 'Transito', 'TRANSITO', 'TRÁNSITO'],
+      'Piso': ['Piso', 'PISO'],
+      'Terminadas': ['Terminadas', 'TERMINADAS'],
+      'Entregadas': ['Entregadas', 'ENTREGADAS'],
+      'Facturadas': ['Facturadas', 'FACTURADAS'],
+      'Pérdida Total y Pago De Daños': ['Pérdida Total y Pago De Daños', 'Perdida Total y Pago De Danos', 'PÉRDIDA TOTAL Y PAGO DE DAÑOS'],
+      'Histórico': ['Histórico', 'Historico', 'HISTORICO', 'HISTÓRICO'],
+      'Histórico Facturados': ['Histórico Facturados', 'Historico Facturados', 'HISTÓRICO FACTURADOS'],
+    };
+    
+    // Buscar en aliases
+    const aliases = statusAliases[configKey] || [configKey];
+    for (const alias of aliases) {
+      if (statusCounts[alias]) {
+        return statusCounts[alias];
+      }
+    }
+    
+    // Búsqueda case-insensitive exacta (no parcial para evitar falsos positivos)
     const configKeyLower = configKey.toLowerCase();
     for (const [estatus, count] of Object.entries(statusCounts)) {
       const estatusLower = estatus.toLowerCase();
-      // Coincidencia exacta ignorando case
+      // Solo coincidencia exacta ignorando case
       if (estatusLower === configKeyLower) {
-        return count;
-      }
-      // Coincidencia parcial (para 'Pérdida Total' vs 'Pérdida Total y Pago De Daños')
-      if (estatusLower.includes(configKeyLower) || configKeyLower.includes(estatusLower)) {
         return count;
       }
     }

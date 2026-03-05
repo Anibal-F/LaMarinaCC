@@ -103,10 +103,36 @@ async def extract_ordenes_from_status_tab(
         # Extraer órdenes usando el extractor v2 que maneja su propia paginación
         ordenes = await extract_ordenes_from_table(page, table_id, status_name)
         
-        # Agregar el estatus a cada orden (por si no lo tiene)
+        # NORMALIZAR: Siempre usar el nombre del tab como estatus (para consistencia)
+        # Mapeo de normalización para estatus similares
+        status_normalization = {
+            'asignado': 'Asignados',
+            'asignados': 'Asignados',
+            'en tránsito': 'Tránsito',
+            'transito': 'Tránsito',
+            'tránsito': 'Tránsito',
+            'en piso': 'Piso',
+            'terminado': 'Terminadas',
+            'terminada': 'Terminadas',
+            'entregado': 'Entregadas',
+            'facturado': 'Facturadas',
+            'histórico': 'Histórico',
+            'historico': 'Histórico',
+        }
+        
         for orden in ordenes:
-            if 'estatus' not in orden or not orden['estatus']:
+            # Normalizar estatus
+            estatus_raw = (orden.get('estatus') or status_name).strip()
+            estatus_lower = estatus_raw.lower()
+            
+            # Buscar en mapeo de normalización
+            if estatus_lower in status_normalization:
+                orden['estatus'] = status_normalization[estatus_lower]
+            elif status_name:  # Fallback al nombre del tab
                 orden['estatus'] = status_name
+            else:
+                orden['estatus'] = estatus_raw
+                
             if 'fecha_extraccion' not in orden:
                 orden['fecha_extraccion'] = datetime.now().isoformat()
         

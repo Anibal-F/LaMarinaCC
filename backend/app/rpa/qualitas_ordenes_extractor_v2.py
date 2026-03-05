@@ -29,12 +29,28 @@ async def extract_ordenes_from_table(
     table_structure = await detect_table_structure(page, table_id)
     print(f"  [ExtractorV2] Estructura detectada para {status_name}: {table_structure}")
     
+    max_retries = 3
+    
     while page_num <= max_pages:
         print(f"  [ExtractorV2] {status_name} - Página {page_num}")
         
-        rows = await get_table_rows(page, table_id)
+        retry_count = 0
+        rows = []
+        
+        # Intentar obtener filas con reintentos
+        while retry_count < max_retries and not rows:
+            try:
+                rows = await get_table_rows(page, table_id)
+                if not rows:
+                    retry_count += 1
+                    await asyncio.sleep(1)
+            except Exception as e:
+                print(f"    [Retry {retry_count}] Error obteniendo filas: {e}")
+                retry_count += 1
+                await asyncio.sleep(1)
+        
         if not rows:
-            print(f"  [ExtractorV2] No se encontraron filas en página {page_num}")
+            print(f"  [ExtractorV2] No se encontraron filas en página {page_num} después de {max_retries} intentos")
             break
         
         page_ordenes = []
@@ -79,9 +95,13 @@ async def extract_ordenes_from_table(
             print(f"    ⚠ No se encontraron órdenes en página {page_num}")
         
         # Intentar ir a la siguiente página
-        has_next = await click_next_page_ordenes(page, table_id)
-        if not has_next:
-            print(f"  [ExtractorV2] {status_name} - No hay más páginas")
+        try:
+            has_next = await click_next_page_ordenes(page, table_id)
+            if not has_next:
+                print(f"  [ExtractorV2] {status_name} - No hay más páginas")
+                break
+        except Exception as e:
+            print(f"  [ExtractorV2] {status_name} - Error en paginación: {e}")
             break
         
         page_num += 1

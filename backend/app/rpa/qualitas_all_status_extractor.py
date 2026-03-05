@@ -72,6 +72,7 @@ async def extract_ordenes_from_status_tab(
 ) -> List[Dict]:
     """
     Extrae órdenes de un tab de estatus específico.
+    Usa extract_ordenes_from_table que ya maneja la paginación internamente.
     
     Args:
         page: Página de Playwright
@@ -81,51 +82,38 @@ async def extract_ordenes_from_status_tab(
     Returns:
         Lista de órdenes con el campo 'estatus' poblado
     """
-    ordenes = []
-    page_num = 1
-    
     print(f"\n[StatusExtractor] Extrayendo órdenes de: {status_name}")
     
     # Obtener el ID de la tabla para este estatus
     table_id = get_table_id_from_status(status_name)
     print(f"[StatusExtractor] Usando tabla ID: {table_id}")
     
+    ordenes = []
+    
     try:
         # Esperar a que la tabla cargue
         try:
-            await page.wait_for_selector(f'#{table_id}, table[id="{table_id}"]', timeout=5000)
+            await page.wait_for_selector(f'#{table_id}, table[id="{table_id}"]', timeout=10000)
+            print(f"  ✓ Tabla #{table_id} encontrada")
         except:
-            print(f"  [Warning] No se encontró tabla específica #{table_id}, buscando cualquier tabla...")
+            print(f"  [Warning] No se encontró tabla específica #{table_id}, intentando extraer de todas formas...")
         
-        await asyncio.sleep(1)  # Pequeña espera para estabilidad
+        await asyncio.sleep(2)  # Espera para estabilidad
         
-        while page_num <= max_pages:
-            print(f"[StatusExtractor] {status_name} - Página {page_num}")
-            
-            # Extraer órdenes de la página actual, usando el nuevo extractor
-            ordenes_pagina = await extract_ordenes_from_table(page, table_id, status_name)
-            
-            if ordenes_pagina:
-                # Agregar el estatus a cada orden
-                for orden in ordenes_pagina:
-                    orden['estatus'] = status_name
-                    orden['fecha_extraccion'] = datetime.now().isoformat()
-                
-                ordenes.extend(ordenes_pagina)
-                print(f"  ✓ {len(ordenes_pagina)} órdenes extraídas")
-            
-            # Intentar ir a la siguiente página
-            has_next = await click_next_page_ordenes(page, table_id)
-            if not has_next:
-                print(f"[StatusExtractor] {status_name} - No hay más páginas")
-                break
-            
-            page_num += 1
+        # Extraer órdenes usando el extractor v2 que maneja su propia paginación
+        ordenes = await extract_ordenes_from_table(page, table_id, status_name)
         
-        print(f"[StatusExtractor] {status_name} - Total: {len(ordenes)} órdenes en {page_num} páginas")
+        # Agregar el estatus a cada orden (por si no lo tiene)
+        for orden in ordenes:
+            if 'estatus' not in orden or not orden['estatus']:
+                orden['estatus'] = status_name
+            if 'fecha_extraccion' not in orden:
+                orden['fecha_extraccion'] = datetime.now().isoformat()
+        
+        print(f"[StatusExtractor] {status_name} - Total: {len(ordenes)} órdenes extraídas")
         
     except Exception as e:
-        print(f"[StatusExtractor] Error extrayendo {status_name}: {e}")
+        print(f"[StatusExtractor] ERROR extrayendo {status_name}: {e}")
         import traceback
         print(f"[StatusExtractor] Traceback: {traceback.format_exc()}")
     
@@ -441,26 +429,40 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
         print(f"Procesando: {status_name}")
         print(f"{'='*40}")
         
-        # Hacer clic en el tab
-        clicked = await click_status_tab(page, status_name)
-        
-        if clicked:
-            # Extraer órdenes de este estatus
-            ordenes = await extract_ordenes_from_status_tab(page, status_name)
-            if ordenes:
-                result[status_name] = ordenes
-                print(f"  ✓ {len(ordenes)} órdenes extraídas de '{status_name}'")
-                
-                # GUARDAR INMEDIATAMENTE EN BD
-                guardadas = await save_ordenes_to_db_immediate(ordenes, status_name, fecha_extraccion)
-                total_guardadas += guardadas
-                print(f"  ✓ {guardadas} órdenes guardadas en BD")
+        try:
+            # Hacer clic en el tab
+            clicked = await click_status_tab(page, status_name)
+            
+            if clicked:
+                try:
+                    # Extraer órdenes de este estatus
+                    ordenes = await extract_ordenes_from_status_tab(page, status_name)
+                    if ordenes:
+                        result[status_name] = ordenes
+                        print(f"  ✓ {len(ordenes)} órdenes extraídas de '{status_name}'")
+                        
+                        # GUARDAR INMEDIATAMENTE EN BD
+                        try:
+                            guardadas = await save_ordenes_to_db_immediate(ordenes, status_name, fecha_extraccion)
+                            total_guardadas += guardadas
+                            print(f"  ✓ {guardadas} órdenes guardadas en BD")
+                        except Exception as e:
+                            print(f"  ✗ Error guardando en BD: {e}")
+                    else:
+                        print(f"  ⚠ No se encontraron órdenes en '{status_name}'")
+                except Exception as e:
+                    print(f"  ✗ Error extrayendo '{status_name}': {e}")
+                    import traceback
+                    print(f"  [Traceback] {traceback.format_exc()}")
             else:
-                print(f"  ⚠ No se encontraron órdenes en '{status_name}'")
-        else:
-            print(f"  ✗ No se pudo acceder a '{status_name}'")
+                print(f"  ✗ No se pudo acceder a '{status_name}'")
+        except Exception as e:
+            print(f"  ✗ Error CRÍTICO en '{status_name}': {e}")
+            import traceback
+            print(f"  [Traceback] {traceback.format_exc()}")
+            print(f"  ⚠ Continuando con el siguiente estatus...")
         
-        await asyncio.sleep(0.5)  # Pequeña pausa entre tabs
+        await asyncio.sleep(1)  # Pausa entre tabs para estabilidad
     
     print("\n" + "=" * 60)
     total_extraidas = sum(len(ordenes) for ordenes in result.values())

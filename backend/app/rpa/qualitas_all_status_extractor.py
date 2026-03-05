@@ -308,16 +308,25 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
     
     inserted = 0
     errores = 0
+    errores_detalle = []
     
     try:
         from app.core.db import get_connection
         
+        print(f"  [DB] Intentando guardar {len(ordenes)} órdenes de '{status_name}'...")
+        
         with get_connection() as conn:
-            for orden in ordenes:
+            for i, orden in enumerate(ordenes):
                 try:
                     num_exp = orden.get('num_expediente')
                     if not num_exp or len(str(num_exp).strip()) < 3:
+                        print(f"    [Warning] Orden {i}: num_expediente inválido '{num_exp}'")
+                        errores += 1
                         continue
+                    
+                    # Debug: mostrar datos de la primera orden
+                    if i == 0:
+                        print(f"    [Debug] Primera orden: num_exp={num_exp}, estatus={orden.get('estatus')}")
                     
                     conn.execute("""
                         INSERT INTO qualitas_ordenes_asignadas 
@@ -339,17 +348,27 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         fecha_extraccion
                     ))
                     inserted += 1
-                except Exception:
+                    
+                except Exception as e:
                     errores += 1
+                    if len(errores_detalle) < 3:
+                        errores_detalle.append(f"Orden {i} ({num_exp}): {str(e)[:100]}")
             
             conn.commit()
             
         print(f"  [DB] {status_name}: {inserted}/{len(ordenes)} órdenes guardadas" + 
               (f" ({errores} errores)" if errores > 0 else ""))
+        
+        if errores_detalle:
+            for err in errores_detalle:
+                print(f"    [Error] {err}")
+                
         return inserted
         
     except Exception as e:
-        print(f"  [DB] Error guardando {status_name}: {e}")
+        print(f"  [DB] ✗ Error general guardando {status_name}: {e}")
+        import traceback
+        print(f"  [DB] Traceback: {traceback.format_exc()}")
         return 0
 
 

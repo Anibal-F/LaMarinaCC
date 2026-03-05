@@ -65,7 +65,8 @@ class TwoCaptchaProvider(CaptchaProvider):
         self,
         site_key: str,
         page_url: str,
-        invisible: bool = False
+        invisible: bool = False,
+        max_retries: int = 2
     ) -> CaptchaSolution:
         """
         Resuelve reCAPTCHA v2 usando 2captcha.
@@ -74,6 +75,7 @@ class TwoCaptchaProvider(CaptchaProvider):
             site_key: El data-sitekey del widget reCAPTCHA
             page_url: URL de la página donde está el reCAPTCHA
             invisible: True si es reCAPTCHA invisible
+            max_retries: Número de reintentos si es UNSOLVABLE
             
         Returns:
             CaptchaSolution con el token g-recaptcha-response
@@ -87,69 +89,99 @@ class TwoCaptchaProvider(CaptchaProvider):
             "Accept": "application/json",
         }
         
-        async with aiohttp.ClientSession(headers=headers) as session:
-            # Paso 1: Enviar el CAPTCHA para resolver
-            submit_url = f"{self.API_BASE}/in.php"
-            payload = {
-                "key": self.api_key,
-                "method": "userrecaptcha",
-                "googlekey": site_key,
-                "pageurl": page_url,
-                "json": 1,
-                "invisible": 1 if invisible else 0,
-            }
-            
-            async with session.post(submit_url, data=payload) as resp:
-                result = await resp.json()
-                
-            if result.get("status") != 1:
-                error_code = result.get("request", "unknown")
-                raise RuntimeError(f"2captcha error: {error_code}")
-            
-            captcha_id = result["request"]
-            print(f"[2captcha] CAPTCHA enviado, ID: {captcha_id}")
-            
-            # Paso 2: Poll por el resultado
-            result_url = f"{self.API_BASE}/res.php"
-            elapsed = 0
-            
-            while elapsed < self.MAX_WAIT_TIME:
-                await asyncio.sleep(self.POLL_INTERVAL)
-                elapsed += self.POLL_INTERVAL
-                
-                params = {
+        retry_count = 0
+        
+        while retry_count <= max_retries:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                # Paso 1: Enviar el CAPTCHA para resolver
+                submit_url = f"{self.API_BASE}/in.php"
+                payload = {
                     "key": self.api_key,
-                    "action": "get",
-                    "id": captcha_id,
+                    "method": "userrecaptcha",
+                    "googlekey": site_key,
+                    "pageurl": page_url,
                     "json": 1,
+                    "invisible": 1 if invisible else 0,
                 }
                 
-                async with session.get(result_url, params=params) as resp:
+                async with session.post(submit_url, data=payload) as resp:
                     result = await resp.json()
-                
-                status = result.get("status")
-                
-                if status == 1:
-                    # Resuelto!
-                    token = result["request"]
-                    solve_time = time.monotonic() - start_time
-                    print(f"[2captcha] Resuelto en {solve_time:.1f}s")
                     
-                    return CaptchaSolution(
-                        token=token,
-                        cost=0.003,  # ~$2.99/1000
-                        solve_time_seconds=solve_time,
-                        provider="2captcha"
-                    )
+                if result.get("status") != 1:
+                    error_code = result.get("request", "unknown")
+                    raise RuntimeError(f"2captcha error: {error_code}")
                 
-                elif result.get("request") == "CAPCHA_NOT_READY":
-                    print(f"[2captcha] Esperando... ({elapsed}s)")
-                    continue
-                else:
-                    error = result.get("request", "unknown")
-                    raise RuntimeError(f"2captcha error: {error}")
-            
-            raise TimeoutError(f"2captcha timeout después de {self.MAX_WAIT_TIME}s")
+                captcha_id = result["request"]
+                print(f"[2captcha] CAPTCHA enviado, ID: {captcha_id} (intento {retry_count + 1}/{max_retries + 1})")
+                
+                # Paso 2: Poll por el resultado
+                result_url = f"{self.API_BASE}/res.php"
+                elapsed = 0
+                
+                while elapsed < self.MAX_WAIT_TIME:
+                    await asyncio.sleep(self.POLL_INTERVAL)
+                    elapsed += self.POLL_INTERVAL
+                    
+                    params = {
+                        "key": self.api_key,
+                        "action": "get",
+                        "id": captcha_id,
+                        "json": 1,
+                    }
+                    
+                    async with session.get(result_url, params=params) as resp:
+                        result = await resp.json()
+                    
+                    status = result.get("status")
+                    
+                    if status == 1:
+                        # Resuelto!
+                        token = result["request"]
+                        solve_time = time.monotonic() - start_time
+                        print(f"[2captcha] ✓ Resuelto en {solve_time:.1f}s")
+                        
+                        return CaptchaSolution(
+                            token=token,
+                            cost=0.003 * (retry_count + 1),  # Costo acumulado por reintentos
+                            solve_time_seconds=solve_time,
+                            provider="2captcha"
+                        )
+                    
+                    elif result.get("request") == "CAPCHA_NOT_READY":
+                        print(f"[2captcha] Esperando... ({elapsed}s)")
+                        continue
+                    elif result.get("request") == "ERROR_CAPTCHA_UNSOLVABLE":
+                        error = result.get("request", "unknown")
+                        print(f"[2captcha] ⚠ CAPTCHA marcado como UNSOLVABLE")
+                        
+                        if retry_count < max_retries:
+                            retry_count += 1
+                            wait_time = retry_count * 10  # Backoff: 10s, 20s
+                            print(f"[2captcha] Reintentando en {wait_time}s... (intento {retry_count + 1}/{max_retries + 1})")
+                            await asyncio.sleep(wait_time)
+                            break  # Salir del poll loop y reintentar
+                        else:
+                            raise RuntimeError(
+                                f"2captcha error: {error}. "
+                                f"El CAPTCHA no pudo ser resuelto después de {max_retries + 1} intentos. "
+                                f"Posibles causas: sitekey incorrecta, protección anti-bot del sitio, "
+                                f"o problema temporal con el servicio."
+                            )
+                    else:
+                        error = result.get("request", "unknown")
+                        raise RuntimeError(f"2captcha error: {error}")
+                
+                # Si llegamos aquí por timeout, verificar si necesitamos reintentar
+                if elapsed >= self.MAX_WAIT_TIME:
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        print(f"[2captcha] Timeout, reintentando... (intento {retry_count + 1}/{max_retries + 1})")
+                        await asyncio.sleep(5)
+                        continue
+                    else:
+                        raise TimeoutError(f"2captcha timeout después de {self.MAX_WAIT_TIME}s y {max_retries + 1} intentos")
+        
+        raise RuntimeError("Max retries exceeded")
 
 
 class AntiCaptchaProvider(CaptchaProvider):
@@ -264,23 +296,28 @@ def get_captcha_provider(provider_name: Optional[str] = None) -> CaptchaProvider
 
 async def solve_qualitas_captcha(
     page_url: str = "https://proordersistem.com.mx/",
-    site_key: Optional[str] = None
+    site_key: Optional[str] = None,
+    max_retries: int = 2
 ) -> CaptchaSolution:
     """
     Resuelve el reCAPTCHA de Qualitas automáticamente.
     
-    Si no se proporciona site_key, intenta detectarlo automáticamente
-    o usa el conocido para el sitio.
+    Args:
+        page_url: URL de la página con el reCAPTCHA
+        site_key: Sitekey de reCAPTCHA (si es None, usa la variable de entorno)
+        max_retries: Número de reintentos si es UNSOLVABLE
+        
+    Returns:
+        CaptchaSolution con el token
     """
-    # Site key para proordersistem.com.mx (puede cambiar, idealmente extraerlo dinámicamente)
-    # Este es un ejemplo, deberías verificar el sitekey real inspeccionando el HTML
+    # Si no se proporciona site_key, usar variable de entorno
     if site_key is None:
         site_key = os.getenv("QUALITAS_RECAPTCHA_SITE_KEY", "")
         if not site_key:
             raise ValueError(
-                "QUALITAS_RECAPTCHA_SITE_KEY no configurada. "
-                "Inspecciona el HTML del reCAPTCHA para obtener el data-sitekey."
+                "QUALITAS_RECAPTCHA_SITE_KEY no configurada y no se proporcionó site_key. "
+                "La sitekey debe extraerse dinámicamente de la página o configurarse en .env"
             )
     
     provider = get_captcha_provider()
-    return await provider.solve_recaptcha_v2(site_key, page_url)
+    return await provider.solve_recaptcha_v2(site_key, page_url, max_retries=max_retries)

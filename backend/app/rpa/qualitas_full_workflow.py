@@ -202,13 +202,56 @@ async def inject_recaptcha_token(page, token: str):
     await asyncio.sleep(2)
 
 
+async def extract_recaptcha_sitekey(page) -> str:
+    """
+    Extrae la sitekey de reCAPTCHA de la página.
+    Busca en múltiples lugares: data-sitekey, scripts, etc.
+    """
+    # Intentar obtener del elemento reCAPTCHA
+    site_key = await page.evaluate("""
+        () => {
+            // Buscar en el elemento con data-sitekey
+            const elem = document.querySelector('[data-sitekey]');
+            if (elem) return elem.getAttribute('data-sitekey');
+            
+            // Buscar en iframes de reCAPTCHA
+            const iframe = document.querySelector('iframe[src*="recaptcha"]');
+            if (iframe) {
+                const match = iframe.src.match(/k=([^&]+)/);
+                if (match) return match[1];
+            }
+            
+            // Buscar en scripts
+            const scripts = document.querySelectorAll('script');
+            for (const script of scripts) {
+                const text = script.textContent || '';
+                const match = text.match(/sitekey["\']?\s*[:=]\s*["\']([^"\']+)/);
+                if (match) return match[1];
+            }
+            
+            return null;
+        }
+    """)
+    
+    if site_key:
+        print(f"[reCAPTCHA] Sitekey extraída dinámicamente: {site_key[:20]}...")
+        return site_key
+    
+    # Fallback a variable de entorno
+    env_site_key = os.getenv("QUALITAS_RECAPTCHA_SITE_KEY")
+    if env_site_key:
+        print(f"[reCAPTCHA] Usando sitekey de variable de entorno")
+        return env_site_key
+    
+    raise ValueError("No se pudo obtener la sitekey de reCAPTCHA")
+
+
 async def do_login(page, use_db: bool = True) -> bool:
     """Realiza el login automático."""
     login_url = get_credential("QUALITAS_LOGIN_URL", use_db) or "https://proordersistem.com.mx/"
     user = get_credential("QUALITAS_USER", use_db)
     password = get_credential("QUALITAS_PASSWORD", use_db)
     taller_id = get_credential("QUALITAS_TALLER_ID", use_db)
-    site_key = os.getenv("QUALITAS_RECAPTCHA_SITE_KEY")  # Esta solo está en .env por seguridad
     
     if not user or not password:
         print("[Login] ✗ Error: No se encontraron credenciales de QUALITAS")
@@ -218,6 +261,13 @@ async def do_login(page, use_db: bool = True) -> bool:
     print("[Login] Navegando...")
     await page.goto(login_url, wait_until="domcontentloaded")
     await asyncio.sleep(2)
+    
+    # Extraer sitekey dinámicamente
+    try:
+        site_key = await extract_recaptcha_sitekey(page)
+    except Exception as e:
+        print(f"[Login] ✗ Error obteniendo sitekey: {e}")
+        return False
     
     print("[Login] Llenando credenciales...")
     await page.fill('input[placeholder="Email"]', user)

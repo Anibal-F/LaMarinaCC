@@ -423,40 +423,64 @@ async def save_all_ordenes_to_db(ordenes_by_status: Dict[str, List[Dict]]) -> in
     print(f"[SaveAll] ✓ {len(all_ordenes)} órdenes guardadas en: {output_path}")
     
     # Intentar guardar en BD
+    errores = []
+    duplicados = 0
+    
     try:
         from app.core.db import get_connection
         
+        print(f"[SaveAll] Intentando guardar {len(all_ordenes)} órdenes en BD...")
+        
         with get_connection() as conn:
-            for orden in all_ordenes:
+            for i, orden in enumerate(all_ordenes):
                 try:
-                    conn.execute("""
+                    # Validar datos mínimos
+                    num_exp = orden.get('num_expediente')
+                    if not num_exp or len(str(num_exp).strip()) < 3:
+                        print(f"  [Warning] Orden {i}: num_expediente inválido '{num_exp}', saltando...")
+                        continue
+                    
+                    result = conn.execute("""
                         INSERT INTO qualitas_ordenes_asignadas 
                         (num_expediente, fecha_asignacion, poliza, siniestro, reporte, 
                          riesgo, vehiculo, anio, placas, estatus, fecha_extraccion)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
+                        RETURNING id
                     """, (
-                        orden.get('num_expediente'),
+                        str(num_exp).strip()[:50],
                         orden.get('fecha_asignacion'),
-                        orden.get('poliza'),
-                        orden.get('siniestro'),
-                        orden.get('reporte'),
-                        orden.get('riesgo'),
-                        orden.get('vehiculo'),
+                        str(orden.get('poliza', ''))[:100],
+                        str(orden.get('siniestro', ''))[:100],
+                        str(orden.get('reporte', ''))[:100],
+                        str(orden.get('riesgo', ''))[:50],
+                        str(orden.get('vehiculo', ''))[:500],
                         orden.get('anio'),
-                        orden.get('placas'),
-                        orden.get('estatus'),
+                        str(orden.get('placas', ''))[:20],
+                        str(orden.get('estatus', 'Desconocido'))[:50],
                         fecha_extraccion
                     ))
-                    total_inserted += 1
+                    
+                    if result.rowcount > 0:
+                        total_inserted += 1
+                    else:
+                        duplicados += 1
+                        
                 except Exception as e:
-                    # Silenciar errores individuales
-                    pass
+                    errores.append(f"Orden {i} ({num_exp}): {str(e)[:100]}")
+                    if len(errores) <= 5:  # Mostrar solo los primeros 5 errores
+                        print(f"  [Error BD] Orden {i}: {e}")
             
             conn.commit()
-            print(f"[SaveAll] ✓ {total_inserted} órdenes guardadas en base de datos")
-            
+            print(f"[SaveAll] ✓ {total_inserted} órdenes insertadas")
+            if duplicados > 0:
+                print(f"[SaveAll] ⚠ {duplicados} órdenes duplicadas (omitidas)")
+            if errores:
+                print(f"[SaveAll] ✗ {len(errores)} errores totales")
+                
     except Exception as e:
-        print(f"[SaveAll] Nota: No se pudieron guardar en BD: {e}")
+        print(f"[SaveAll] ✗ Error general guardando en BD: {e}")
+        import traceback
+        print(f"[SaveAll] Traceback: {traceback.format_exc()}")
     
     return total_inserted

@@ -387,14 +387,24 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                 ordenes_by_status = await extract_all_ordenes_all_status(page)
                 
                 if ordenes_by_status:
+                    # Debug: Mostrar muestra de órdenes antes de guardar
+                    print("\n[Debug] Muestra de órdenes extraídas:")
+                    for status_name, ordenes in ordenes_by_status.items()[:3]:  # Primeros 3 estatus
+                        if ordenes:
+                            print(f"  {status_name}:")
+                            for orden in ordenes[:2]:  # Primeras 2 órdenes
+                                print(f"    - {orden.get('num_expediente')} | {orden.get('estatus')} | {orden.get('vehiculo', 'N/A')[:30]}...")
+                    
                     # Guardar en BD y JSON
                     total_ordenes = sum(len(ordenes) for ordenes in ordenes_by_status.values())
+                    print(f"\n[DB] Total de órdenes a guardar: {total_ordenes}")
+                    
                     inserted = await save_all_ordenes_to_db(ordenes_by_status)
                     
-                    print(f"\n[DB] Resumen de órdenes extraídas:")
+                    print(f"\n[DB] Resumen final:")
                     for status_name, ordenes in ordenes_by_status.items():
-                        print(f"  • {status_name}: {len(ordenes)} órdenes")
-                    print(f"[DB] ✓ Total: {inserted} órdenes guardadas")
+                        print(f"  • {status_name}: {len(ordenes)} extraídas")
+                    print(f"[DB] ✓ {inserted} de {total_ordenes} órdenes guardadas en BD")
                 else:
                     print("[Ordenes] No se encontraron órdenes en ningún estatus")
                     

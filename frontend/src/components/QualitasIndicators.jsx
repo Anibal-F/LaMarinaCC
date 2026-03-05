@@ -160,6 +160,11 @@ export default function QualitasIndicators({ onRefresh }) {
       const estatus = orden.estatus?.trim() || 'Sin Estatus';
       counts[estatus] = (counts[estatus] || 0) + 1;
     });
+    
+    // Debug: mostrar conteos en consola
+    console.log('[QualitasIndicators] Conteos por estatus:', counts);
+    console.log('[QualitasIndicators] Total órdenes:', ordenes.length);
+    
     return counts;
   }, [ordenes]);
 
@@ -323,9 +328,32 @@ export default function QualitasIndicators({ onRefresh }) {
     return "~1-3 minutos (resolviendo CAPTCHA)";
   };
 
+  // Función para encontrar el conteo de un estatus (búsqueda flexible)
+  const getStatusCount = (configKey) => {
+    // Búsqueda exacta primero
+    if (statusCounts[configKey]) {
+      return statusCounts[configKey];
+    }
+    
+    // Búsqueda case-insensitive y parcial
+    const configKeyLower = configKey.toLowerCase();
+    for (const [estatus, count] of Object.entries(statusCounts)) {
+      const estatusLower = estatus.toLowerCase();
+      // Coincidencia exacta ignorando case
+      if (estatusLower === configKeyLower) {
+        return count;
+      }
+      // Coincidencia parcial (para 'Pérdida Total' vs 'Pérdida Total y Pago De Daños')
+      if (estatusLower.includes(configKeyLower) || configKeyLower.includes(estatusLower)) {
+        return count;
+      }
+    }
+    return 0;
+  };
+
   // Renderizar una tarjeta de indicador por estatus
   const renderStatusCard = (config, isActive, onClick) => {
-    const value = statusCounts[config.key] || 0;
+    const value = getStatusCount(config.key) || 0;
     const colorClasses = {
       blue: { border: 'border-blue-500', ring: 'ring-blue-500/30', text: 'text-blue-500', hover: 'hover:border-blue-500/50', bg: 'bg-blue-500/20' },
       amber: { border: 'border-alert-amber', ring: 'ring-alert-amber/30', text: 'text-alert-amber', hover: 'hover:border-alert-amber/50', bg: 'bg-alert-amber/20' },
@@ -370,7 +398,7 @@ export default function QualitasIndicators({ onRefresh }) {
   // Filtrar solo estatus con datos > 0
   const estatusConDatos = useMemo(() => {
     return statusConfig.filter(config => {
-      const value = statusCounts[config.key];
+      const value = getStatusCount(config.key);
       return value && value > 0;
     });
   }, [statusConfig, statusCounts]);

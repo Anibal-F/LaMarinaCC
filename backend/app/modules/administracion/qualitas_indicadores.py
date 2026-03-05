@@ -534,3 +534,35 @@ async def get_ordenes_asignadas():
         "total": len(ordenes),
         "fecha_extraccion": ordenes[0].get('fecha_extraccion') if ordenes else None
     }
+
+
+@router.get("/debug/ordenes-estatus")
+async def debug_ordenes_estatus():
+    """
+    Endpoint de debug para ver qué estatus hay realmente en la BD.
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        
+        # Obtener conteos por estatus
+        rows = conn.execute("""
+            SELECT 
+                estatus,
+                COUNT(*) as total,
+                LENGTH(estatus) as longitud,
+                MIN(num_expediente) as ejemplo_expediente
+            FROM qualitas_ordenes_asignadas
+            GROUP BY estatus
+            ORDER BY total DESC
+        """).fetchall()
+        
+        estatus_list = [dict(row) for row in rows]
+        
+        # Total general
+        total = conn.execute("SELECT COUNT(*) FROM qualitas_ordenes_asignadas").fetchone()[0]
+        
+        return {
+            "total_ordenes": total,
+            "estatus_encontrados": len(estatus_list),
+            "detalle": estatus_list
+        }

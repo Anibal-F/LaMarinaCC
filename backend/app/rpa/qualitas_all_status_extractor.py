@@ -299,17 +299,68 @@ async def _get_available_status_tabs(page: Page) -> List[str]:
     return tabs
 
 
+async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fecha_extraccion: datetime) -> int:
+    """
+    Guarda órdenes de un estatus específico inmediatamente en la BD.
+    """
+    if not ordenes:
+        return 0
+    
+    inserted = 0
+    errores = 0
+    
+    try:
+        from app.core.db import get_connection
+        
+        with get_connection() as conn:
+            for orden in ordenes:
+                try:
+                    num_exp = orden.get('num_expediente')
+                    if not num_exp or len(str(num_exp).strip()) < 3:
+                        continue
+                    
+                    conn.execute("""
+                        INSERT INTO qualitas_ordenes_asignadas 
+                        (num_expediente, fecha_asignacion, poliza, siniestro, reporte, 
+                         riesgo, vehiculo, anio, placas, estatus, fecha_extraccion)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
+                    """, (
+                        str(num_exp).strip()[:50],
+                        orden.get('fecha_asignacion'),
+                        str(orden.get('poliza', ''))[:100],
+                        str(orden.get('siniestro', ''))[:100],
+                        str(orden.get('reporte', ''))[:100],
+                        str(orden.get('riesgo', ''))[:50],
+                        str(orden.get('vehiculo', ''))[:500],
+                        orden.get('anio'),
+                        str(orden.get('placas', ''))[:20],
+                        str(orden.get('estatus', status_name))[:50],
+                        fecha_extraccion
+                    ))
+                    inserted += 1
+                except Exception:
+                    errores += 1
+            
+            conn.commit()
+            
+        print(f"  [DB] {status_name}: {inserted}/{len(ordenes)} órdenes guardadas" + 
+              (f" ({errores} errores)" if errores > 0 else ""))
+        return inserted
+        
+    except Exception as e:
+        print(f"  [DB] Error guardando {status_name}: {e}")
+        return 0
+
+
 async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     """
     Extrae órdenes de TODOS los estatus disponibles.
-    
-    Args:
-        page: Página de Playwright ya logueada y en el dashboard
-        
-    Returns:
-        Dict con key=nombre_estatus y value=lista_de_ordenes
+    Guarda inmediatamente después de extraer cada estatus.
     """
     result = {}
+    fecha_extraccion = datetime.now()
+    total_guardadas = 0
     
     print("\n" + "=" * 60)
     print("EXTRACCIÓN COMPLETA DE TODOS LOS ESTATUS")
@@ -324,7 +375,6 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     try:
         html = await page.content()
         print(f"[AllStatus] HTML de la página cargada ({len(html)} caracteres)")
-        # Buscar patrones de tabs en el HTML
         import re
         tab_patterns = re.findall(r'<a[^>]*data-toggle=["\']tab["\'][^>]*>([^<]+)</a>', html)
         print(f"[AllStatus] Tabs encontrados en HTML: {tab_patterns}")
@@ -337,7 +387,7 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
     for tab in tabs_disponibles:
         print(f"  • {tab}")
     
-    # Extraer órdenes de cada tab
+    # Extraer y guardar órdenes de cada tab INMEDIATAMENTE
     for status_name in tabs_disponibles:
         print(f"\n{'='*40}")
         print(f"Procesando: {status_name}")
@@ -351,17 +401,24 @@ async def extract_all_ordenes_all_status(page: Page) -> Dict[str, List[Dict]]:
             ordenes = await extract_ordenes_from_status_tab(page, status_name)
             if ordenes:
                 result[status_name] = ordenes
-                print(f"  ✓ {len(ordenes)} órdenes de '{status_name}'")
+                print(f"  ✓ {len(ordenes)} órdenes extraídas de '{status_name}'")
+                
+                # GUARDAR INMEDIATAMENTE EN BD
+                guardadas = await save_ordenes_to_db_immediate(ordenes, status_name, fecha_extraccion)
+                total_guardadas += guardadas
+                print(f"  ✓ {guardadas} órdenes guardadas en BD")
             else:
                 print(f"  ⚠ No se encontraron órdenes en '{status_name}'")
         else:
             print(f"  ✗ No se pudo acceder a '{status_name}'")
         
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)  # Pequeña pausa entre tabs
     
     print("\n" + "=" * 60)
-    total_ordenes = sum(len(ordenes) for ordenes in result.values())
-    print(f"EXTRACCIÓN COMPLETADA - Total: {total_ordenes} órdenes")
+    total_extraidas = sum(len(ordenes) for ordenes in result.values())
+    print(f"EXTRACCIÓN COMPLETADA")
+    print(f"  Total extraídas: {total_extraidas}")
+    print(f"  Total guardadas: {total_guardadas}")
     print("=" * 60)
     
     return result
@@ -385,20 +442,22 @@ def flatten_ordenes_by_status(ordenes_by_status: Dict[str, List[Dict]]) -> List[
     return all_ordenes
 
 
-async def save_all_ordenes_to_db(ordenes_by_status: Dict[str, List[Dict]]) -> int:
+async def save_all_ordenes_to_db(ordenes_by_status: Dict[str, List[Dict]], fecha_extraccion: datetime = None) -> int:
     """
-    Guarda todas las órdenes de todos los estatus en la base de datos.
+    Guarda el JSON final con todas las órdenes.
+    NOTA: Las órdenes ya se guardaron en BD durante la extracción.
     
     Args:
         ordenes_by_status: Dict con key=estatus, value=lista_de_ordenes
+        fecha_extraccion: Fecha de extracción (opcional)
         
     Returns:
-        Número total de órdenes insertadas
+        Número total de órdenes
     """
     from pathlib import Path
     
-    fecha_extraccion = datetime.now()
-    total_inserted = 0
+    if fecha_extraccion is None:
+        fecha_extraccion = datetime.now()
     
     # Aplanar todas las órdenes
     all_ordenes = flatten_ordenes_by_status(ordenes_by_status)
@@ -407,7 +466,7 @@ async def save_all_ordenes_to_db(ordenes_by_status: Dict[str, List[Dict]]) -> in
         print("[SaveAll] No hay órdenes para guardar")
         return 0
     
-    # Guardar en JSON primero
+    # Guardar en JSON de respaldo
     output_path = Path(__file__).parent / "data" / f"qualitas_all_ordenes_{fecha_extraccion.strftime('%Y%m%d_%H%M%S')}.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -420,67 +479,7 @@ async def save_all_ordenes_to_db(ordenes_by_status: Dict[str, List[Dict]]) -> in
             'ordenes': all_ordenes
         }, f, indent=2, ensure_ascii=False)
     
-    print(f"[SaveAll] ✓ {len(all_ordenes)} órdenes guardadas en: {output_path}")
+    print(f"[SaveAll] ✓ JSON de respaldo guardado: {output_path}")
+    print(f"[SaveAll] Total de órdenes procesadas: {len(all_ordenes)}")
     
-    # Intentar guardar en BD
-    errores = []
-    duplicados = 0
-    
-    try:
-        from app.core.db import get_connection
-        
-        print(f"[SaveAll] Intentando guardar {len(all_ordenes)} órdenes en BD...")
-        
-        with get_connection() as conn:
-            for i, orden in enumerate(all_ordenes):
-                try:
-                    # Validar datos mínimos
-                    num_exp = orden.get('num_expediente')
-                    if not num_exp or len(str(num_exp).strip()) < 3:
-                        print(f"  [Warning] Orden {i}: num_expediente inválido '{num_exp}', saltando...")
-                        continue
-                    
-                    result = conn.execute("""
-                        INSERT INTO qualitas_ordenes_asignadas 
-                        (num_expediente, fecha_asignacion, poliza, siniestro, reporte, 
-                         riesgo, vehiculo, anio, placas, estatus, fecha_extraccion)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
-                        RETURNING id
-                    """, (
-                        str(num_exp).strip()[:50],
-                        orden.get('fecha_asignacion'),
-                        str(orden.get('poliza', ''))[:100],
-                        str(orden.get('siniestro', ''))[:100],
-                        str(orden.get('reporte', ''))[:100],
-                        str(orden.get('riesgo', ''))[:50],
-                        str(orden.get('vehiculo', ''))[:500],
-                        orden.get('anio'),
-                        str(orden.get('placas', ''))[:20],
-                        str(orden.get('estatus', 'Desconocido'))[:50],
-                        fecha_extraccion
-                    ))
-                    
-                    if result.rowcount > 0:
-                        total_inserted += 1
-                    else:
-                        duplicados += 1
-                        
-                except Exception as e:
-                    errores.append(f"Orden {i} ({num_exp}): {str(e)[:100]}")
-                    if len(errores) <= 5:  # Mostrar solo los primeros 5 errores
-                        print(f"  [Error BD] Orden {i}: {e}")
-            
-            conn.commit()
-            print(f"[SaveAll] ✓ {total_inserted} órdenes insertadas")
-            if duplicados > 0:
-                print(f"[SaveAll] ⚠ {duplicados} órdenes duplicadas (omitidas)")
-            if errores:
-                print(f"[SaveAll] ✗ {len(errores)} errores totales")
-                
-    except Exception as e:
-        print(f"[SaveAll] ✗ Error general guardando en BD: {e}")
-        import traceback
-        print(f"[SaveAll] Traceback: {traceback.format_exc()}")
-    
-    return total_inserted
+    return len(all_ordenes)

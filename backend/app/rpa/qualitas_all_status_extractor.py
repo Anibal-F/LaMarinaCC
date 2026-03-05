@@ -600,11 +600,19 @@ async def extract_all_ordenes_all_status(page: Page, force_extract: bool = False
             if current_count >= 0:
                 print(f"  [Count] Tab muestra: {current_count} registros")
                 
+                # OPTIMIZACIÓN 1: Saltar tabs con 0 registros
+                if current_count == 0:
+                    print(f"  ⏭️  SKIPPING: Tab '{status_name}' tiene 0 registros")
+                    tabs_skipped += 1
+                    # Guardar conteo 0 para mantener consistencia
+                    save_count_for_status(status_name, 0)
+                    continue
+                
                 # Obtener el último conteo guardado
                 last_count = get_last_count_for_status(status_name)
                 print(f"  [Count] Última extracción: {last_count if last_count >= 0 else 'N/A'} registros")
                 
-                # Si el conteo es igual al anterior Y no estamos forzando, saltar este tab
+                # OPTIMIZACIÓN 2: Si el conteo es igual al anterior Y no estamos forzando, saltar este tab
                 if not force_extract and current_count == last_count and last_count >= 0:
                     print(f"  ⏭️  SKIPPING: El conteo no ha cambiado desde la última extracción")
                     print(f"      No es necesario extraer '{status_name}' nuevamente")
@@ -620,11 +628,27 @@ async def extract_all_ordenes_all_status(page: Page, force_extract: bool = False
             
             # Hacer clic en el tab
             try:
+                # Verificar que el tab sea visible antes de intentar clic
+                is_visible = await tab_element.is_visible()
+                is_enabled = await tab_element.is_enabled()
+                
+                if not is_visible:
+                    print(f"  ⚠ Tab '{status_name}' no es visible, saltando...")
+                    tabs_skipped += 1
+                    continue
+                    
+                if not is_enabled:
+                    print(f"  ⚠ Tab '{status_name}' está deshabilitado, saltando...")
+                    tabs_skipped += 1
+                    continue
+                
                 await tab_element.click()
                 print(f"[TabNavigator] ✓ Click en tab '{status_name}'")
                 await asyncio.sleep(2)
             except Exception as e:
-                print(f"  ✗ Error haciendo click en tab: {e}")
+                print(f"  ✗ Error haciendo click en tab '{status_name}': {e}")
+                print(f"  ⚠ Saltando a siguiente estatus...")
+                tabs_skipped += 1
                 continue
             
             # Extraer órdenes de este estatus

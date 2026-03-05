@@ -311,14 +311,16 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
     errores_detalle = []
     
     try:
-        from app.core.db import get_connection
+        import psycopg
+        
+        # Forzar conexión a la BD correcta (postgres, no lamarinacc)
+        database_url = 'postgresql://LaMarinaCC:A355Fu584$@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require'
         
         print(f"  [DB] Intentando guardar {len(ordenes)} órdenes de '{status_name}'...")
         
-        with get_connection() as conn:
+        with psycopg.connect(database_url, autocommit=True) as conn:
             # Debug: Verificar conexión y esquema
             try:
-                # Verificar en qué base de datos estamos
                 db_info = conn.execute("SELECT current_database(), current_schema()").fetchone()
                 print(f"    [DB Debug] Base de datos: {db_info[0]}, Esquema: {db_info[1]}")
                 
@@ -332,7 +334,6 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                 """).fetchone()
                 print(f"    [DB Debug] ¿Tabla existe? {table_check[0]}")
                 
-                # Listar tablas disponibles
                 if not table_check[0]:
                     tables = conn.execute("""
                         SELECT table_name FROM information_schema.tables 
@@ -340,6 +341,8 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         AND table_name LIKE '%qualitas%'
                     """).fetchall()
                     print(f"    [DB Debug] Tablas con 'qualitas': {[t[0] for t in tables]}")
+                    print(f"    [DB Debug] ERROR: La tabla no existe en postgres!")
+                    return 0
             except Exception as e:
                 print(f"    [DB Debug] Error verificando: {e}")
             for i, orden in enumerate(ordenes):

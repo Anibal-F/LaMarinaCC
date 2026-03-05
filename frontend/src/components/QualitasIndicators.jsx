@@ -23,6 +23,12 @@ export default function QualitasIndicators({ onRefresh }) {
   // Estado para filtro de órdenes
   const [filtroEstatus, setFiltroEstatus] = useState('');
   
+  // Trigger para recargar tabla de órdenes
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  // Órdenes para calcular indicadores por estatus
+  const [ordenes, setOrdenes] = useState([]);
+  
   // Estado del scheduler automático
   const [schedulerEnabled, setSchedulerEnabled] = useState(true);
   const [togglingScheduler, setTogglingScheduler] = useState(false);
@@ -32,6 +38,7 @@ export default function QualitasIndicators({ onRefresh }) {
     fetchIndicadores();
     fetchEstatus();
     fetchSchedulerStatus();
+    fetchOrdenes();
   }, []);
   
   // Obtener estado del scheduler
@@ -128,6 +135,44 @@ export default function QualitasIndicators({ onRefresh }) {
     }
   };
 
+  const fetchOrdenes = async () => {
+    try {
+      const response = await fetch(getApiUrl() + '/admin/qualitas/ordenes-asignadas');
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          setOrdenes([]);
+        }
+        return;
+      }
+      
+      const data = await response.json();
+      setOrdenes(data.ordenes || []);
+    } catch (err) {
+      console.error("Error fetching ordenes:", err);
+    }
+  };
+
+  // Calcular conteos por estatus desde las órdenes
+  const statusCounts = useMemo(() => {
+    const counts = {};
+    ordenes.forEach(orden => {
+      const estatus = orden.estatus?.trim() || 'Sin Estatus';
+      counts[estatus] = (counts[estatus] || 0) + 1;
+    });
+    return counts;
+  }, [ordenes]);
+
+  // Configuración de estatus para las tarjetas
+  const statusConfig = useMemo(() => [
+    { key: 'Asignados', label: 'Asignados', icon: 'assignment_ind', color: 'blue' },
+    { key: 'Tránsito', label: 'Tránsito', icon: 'local_shipping', color: 'amber' },
+    { key: 'Piso', label: 'Piso', icon: 'garage', color: 'slate' },
+    { key: 'Terminadas', label: 'Terminadas', icon: 'check_circle', color: 'green' },
+    { key: 'Entregadas', label: 'Entregadas', icon: 'task_alt', color: 'purple' },
+    { key: 'Histórico', label: 'Histórico', icon: 'history', color: 'orange' },
+  ], []);
+
   const handleRefresh = async () => {
     try {
       setUpdating(true);
@@ -192,9 +237,11 @@ export default function QualitasIndicators({ onRefresh }) {
         setUpdating(false);
         if (onRefresh) onRefresh(false);
         
-        // Recargar indicadores
+        // Recargar indicadores y tabla de órdenes
         await fetchIndicadores();
         await fetchEstatus();
+        await fetchOrdenes();  // Recargar órdenes para actualizar indicadores
+        setRefreshTrigger(prev => prev + 1);  // Forzar recarga de la tabla
         
         // Mostrar logs automáticamente al completar
         if (task.logs) {
@@ -256,117 +303,9 @@ export default function QualitasIndicators({ onRefresh }) {
     return "~1-3 minutos (resolviendo CAPTCHA)";
   };
 
-  // Definir todos los indicadores posibles con sus configuraciones
-  const allIndicadoresConfig = useMemo(() => [
-    { 
-      key: 'asignados', 
-      label: 'Asignados', 
-      icon: 'assignment_ind', 
-      color: 'blue',
-      description: 'Mostrando todas las órdenes'
-    },
-    { 
-      key: 'revisar_valuacion', 
-      label: 'Pendiente Valuación', 
-      icon: 'pending_actions', 
-      color: 'amber',
-      filterValue: 'Revisar Valuación',
-      description: 'Por revisar valuación'
-    },
-    { 
-      key: 'complemento_autorizado', 
-      label: 'Complemento Autorizado', 
-      icon: 'check_circle', 
-      color: 'green',
-      filterValue: 'Complemento Autorizado',
-      group: 'complementos'
-    },
-    { 
-      key: 'complemento_solicitado', 
-      label: 'Complemento Solicitado', 
-      icon: 'schedule', 
-      color: 'amber',
-      filterValue: 'Complemento Solicitado',
-      group: 'complementos'
-    },
-    { 
-      key: 'complemento_rechazado', 
-      label: 'Complemento Rechazado', 
-      icon: 'cancel', 
-      color: 'red',
-      filterValue: 'Complemento Rechazado',
-      group: 'complementos'
-    },
-    { 
-      key: 'pago_danos', 
-      label: 'Pago de Daños', 
-      icon: 'payments', 
-      color: 'purple',
-      filterValue: 'Pago de Daños'
-    },
-    { 
-      key: 'perdida_total', 
-      label: 'Pérdida Total', 
-      icon: 'car_crash', 
-      color: 'red',
-      filterValue: 'Pérdida Total'
-    },
-    { 
-      key: 'dano_menor_deducible', 
-      label: 'Daño Menor a Deducible', 
-      icon: 'minor_crash', 
-      color: 'slate',
-      filterValue: 'Daño Menor a Deducible'
-    },
-    { 
-      key: 'pendiente_terminar', 
-      label: 'Pendiente de Terminar', 
-      icon: 'construction', 
-      color: 'orange',
-      filterValue: 'Pendiente de terminar'
-    }
-  ], []);
-
-  // Filtrar solo indicadores con datos > 0
-  const indicadoresConDatos = useMemo(() => {
-    if (!indicadores) return [];
-    
-    return allIndicadoresConfig.filter(config => {
-      const value = indicadores[config.key];
-      return value && value > 0;
-    });
-  }, [indicadores, allIndicadoresConfig]);
-
-  // Separar indicadores individuales de los grupos
-  const { individuales, complementos } = useMemo(() => {
-    const ind = [];
-    const comp = [];
-    
-    indicadoresConDatos.forEach(config => {
-      if (config.group === 'complementos') {
-        comp.push(config);
-      } else {
-        ind.push(config);
-      }
-    });
-    
-    return { individuales: ind, complementos: comp };
-  }, [indicadoresConDatos]);
-
-  // Verificar si hay complementos para mostrar la tarjeta agrupada
-  const hasComplementos = complementos.length > 0;
-
-  // Calcular total de complementos
-  const totalComplementos = useMemo(() => {
-    if (!indicadores) return 0;
-    return (indicadores.complemento_autorizado || 0) + 
-           (indicadores.complemento_solicitado || 0) + 
-           (indicadores.complemento_rechazado || 0);
-  }, [indicadores]);
-
-  // Renderizar una tarjeta de indicador individual
-  const renderIndicadorCard = (config, isActive, onClick) => {
-    const value = indicadores?.[config.key] || 0;
+  // Renderizar una tarjeta de indicador por estatus
+  const renderStatusCard = (config, isActive, onClick) => {
+    const value = statusCounts[config.key] || 0;
     const colorClasses = {
       blue: { border: 'border-blue-500', ring: 'ring-blue-500/30', text: 'text-blue-500', hover: 'hover:border-blue-500/50', bg: 'bg-blue-500/20' },
       amber: { border: 'border-alert-amber', ring: 'ring-alert-amber/30', text: 'text-alert-amber', hover: 'hover:border-alert-amber/50', bg: 'bg-alert-amber/20' },
@@ -401,12 +340,20 @@ export default function QualitasIndicators({ onRefresh }) {
             {formatNumber(value)}
           </span>
         </div>
-        {config.description && (
-          <p className="text-[10px] text-slate-500 mt-1">{config.description}</p>
-        )}
+        <p className="text-[10px] text-slate-500 mt-1">
+          {isActive ? 'Mostrando órdenes' : 'Clic para filtrar'}
+        </p>
       </div>
     );
   };
+
+  // Filtrar solo estatus con datos > 0
+  const estatusConDatos = useMemo(() => {
+    return statusConfig.filter(config => {
+      const value = statusCounts[config.key];
+      return value && value > 0;
+    });
+  }, [statusConfig, statusCounts]);
 
   if (loading) {
     return (
@@ -566,107 +513,71 @@ export default function QualitasIndicators({ onRefresh }) {
         </div>
       )}
 
-      {/* Indicadores - Grid dinámico */}
-      {indicadores && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {/* Tarjeta "Todos" - siempre visible si hay asignados */}
-          {indicadores.asignados > 0 && renderIndicadorCard(
-            { 
-              key: 'asignados', 
-              label: 'Asignados', 
-              icon: 'assignment_ind', 
-              color: 'blue',
-              description: filtroEstatus === '' ? 'Mostrando todas las órdenes' : 'Clic para ver todas'
-            },
-            filtroEstatus === '',
-            () => setFiltroEstatus('')
-          )}
-
-          {/* Indicadores individuales con datos (excepto asignados y complementos) */}
-          {individuales.filter(i => i.key !== 'asignados').map(config => 
-            renderIndicadorCard(
-              config,
-              filtroEstatus === config.filterValue,
-              () => setFiltroEstatus(filtroEstatus === config.filterValue ? '' : config.filterValue)
-            )
-          )}
-
-          {/* Tarjeta de Complementos (solo si hay complementos) */}
-          {hasComplementos && (
-            <div className="bg-surface-dark border border-border-dark p-5 rounded-xl hover:border-purple-500/50 transition-all group">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Complementos
-                </span>
-                <span className="material-symbols-outlined text-purple-500 text-xl group-hover:scale-110 transition-transform">
-                  add_circle
-                </span>
-              </div>
-              
-              {/* Grid de complementos con datos */}
-              <div className={`grid gap-2 ${complementos.length === 1 ? 'grid-cols-1' : complementos.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                {complementos.map(config => {
-                  const colorClasses = {
-                    green: 'bg-alert-green/10 hover:bg-alert-green/20 text-alert-green ring-alert-green',
-                    amber: 'bg-alert-amber/10 hover:bg-alert-amber/20 text-alert-amber ring-alert-amber',
-                    red: 'bg-alert-red/10 hover:bg-alert-red/20 text-alert-red ring-alert-red'
-                  };
-                  const isActive = filtroEstatus === config.filterValue;
-                  
-                  return (
-                    <div 
-                      key={config.key}
-                      onClick={() => setFiltroEstatus(filtroEstatus === config.filterValue ? '' : config.filterValue)}
-                      className={`text-center p-2 rounded-lg cursor-pointer transition-all ${
-                        isActive
-                          ? `${colorClasses[config.color].split(' ')[0]} ring-1 ${colorClasses[config.color].split(' ')[3]}`
-                          : colorClasses[config.color]
-                      }`}
-                    >
-                      <span className={`text-lg font-bold ${colorClasses[config.color].split(' ')[2]} block`}>
-                        {formatNumber(indicadores[config.key])}
-                      </span>
-                      <span className="text-[9px] text-slate-400 uppercase">{config.label.replace('Complemento ', '')}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {/* Total */}
-              <div className="mt-3 pt-2 border-t border-border-dark flex justify-between items-center">
-                <span className="text-[10px] text-slate-400">Total Complementos</span>
-                <span className="text-sm font-bold text-white">
-                  {formatNumber(totalComplementos)}
-                </span>
-              </div>
+      {/* Indicadores - Grid dinámico por estatus */}
+      {ordenes.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {/* Tarjeta "Todos" - muestra el total de órdenes */}
+          <div 
+            onClick={() => setFiltroEstatus('')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstatus === '' 
+                ? 'border-blue-500 ring-2 ring-blue-500/30' 
+                : 'border-border-dark hover:border-blue-500/50'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Total Órdenes
+              </span>
+              <span className="material-symbols-outlined text-blue-500 text-xl group-hover:scale-110 transition-transform">
+                inventory_2
+              </span>
             </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-extrabold text-white tracking-tight">
+                {formatNumber(ordenes.length)}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {filtroEstatus === '' ? 'Mostrando todas' : 'Clic para ver todas'}
+            </p>
+          </div>
+
+          {/* Tarjetas por estatus con datos */}
+          {estatusConDatos.map(config => 
+            renderStatusCard(
+              config,
+              filtroEstatus === config.key,
+              () => setFiltroEstatus(filtroEstatus === config.key ? '' : config.key)
+            )
           )}
         </div>
       )}
 
       {/* Estado vacío */}
-      {!indicadores && !loading && !error && !updating && (
+      {ordenes.length === 0 && !loading && !error && !updating && (
         <div className="bg-surface-dark border border-border-dark border-dashed rounded-xl p-8 text-center">
           <span className="material-symbols-outlined text-4xl text-slate-600 mb-2">
             analytics
           </span>
-          <p className="text-sm text-slate-400 mb-4">No hay indicadores de Qualitas disponibles</p>
+          <p className="text-sm text-slate-400 mb-4">No hay órdenes de Qualitas disponibles</p>
           <button
             onClick={handleRefresh}
             disabled={updating}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all"
           >
-            {updating ? 'Obteniendo datos...' : 'Obtener Indicadores'}
+            {updating ? 'Obteniendo datos...' : 'Obtener Órdenes'}
           </button>
         </div>
       )}
 
       {/* Tabla de Órdenes Asignadas */}
-      {indicadores && !loading && (
+      {(ordenes.length > 0 || indicadores) && !loading && (
         <QualitasOrdenesAsignadas 
           fechaExtraccion={indicadores?.fecha_extraccion}
           filtroEstatusInicial={filtroEstatus}
           onFiltroChange={setFiltroEstatus}
+          refreshTrigger={refreshTrigger}
         />
       )}
     </div>

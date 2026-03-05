@@ -12,7 +12,7 @@ const getApiUrl = () => {
 // Configuración de navegación automática
 const AUTO_NAVIGATION_DELAY = 10000; // 10 segundos entre cambios de página/tab
 
-export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatusInicial = '', onFiltroChange }) {
+export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatusInicial = '', onFiltroChange, refreshTrigger = 0 }) {
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,7 +35,7 @@ export default function QualitasOrdenesAsignadas({ fechaExtraccion, filtroEstatu
 
   useEffect(() => {
     fetchOrdenes();
-  }, [fechaExtraccion]);
+  }, [fechaExtraccion, refreshTrigger]);
 
   const fetchOrdenes = async () => {
     try {

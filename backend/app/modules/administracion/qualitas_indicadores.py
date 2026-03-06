@@ -500,16 +500,17 @@ def get_latest_ordenes(limit: int = None) -> list:
         
         conn.row_factory = dict_row
         
-        # Sin límite por defecto para traer todas las órdenes
+        # Usar tabla directamente (no la vista) para mostrar TODAS las órdenes
+        # sin filtrar por DISTINCT ON
         if limit:
             rows = conn.execute("""
-                SELECT * FROM v_qualitas_ordenes_recientes
+                SELECT * FROM qualitas_ordenes_asignadas
                 ORDER BY fecha_asignacion DESC NULLS LAST
                 LIMIT %s
             """, (limit,)).fetchall()
         else:
             rows = conn.execute("""
-                SELECT * FROM v_qualitas_ordenes_recientes
+                SELECT * FROM qualitas_ordenes_asignadas
                 ORDER BY fecha_asignacion DESC NULLS LAST
             """).fetchall()
         

@@ -332,32 +332,32 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
         print("=" * 60)
         
         async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=headless,
-            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
-        )
-        
-        # Contexto
-        if skip_login and session_path.exists():
-            print("[Workflow] Usando sesión existente...")
-            context = await browser.new_context(storage_state=str(session_path))
-        else:
-            print("[Workflow] Creando nuevo contexto...")
-            context = await browser.new_context(viewport={"width": 1920, "height": 1080})
-        
-        page = await context.new_page()
-        
-        # Stealth
-        stealth = Stealth(navigator_languages_override=('es-MX', 'es'))
-        await stealth.apply_stealth_async(page)
-        
-        try:
-            # Login si es necesario
-            if not skip_login or not session_path.exists():
-                print("\n[1/4] LOGIN AUTOMÁTICO")
-                success = await do_login(page, use_db=use_db)
-                if not success:
-                    raise RuntimeError("Login fallido")
+            browser = await p.chromium.launch(
+                headless=headless,
+                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+            )
+            
+            # Contexto
+            if skip_login and session_path.exists():
+                print("[Workflow] Usando sesión existente...")
+                context = await browser.new_context(storage_state=str(session_path))
+            else:
+                print("[Workflow] Creando nuevo contexto...")
+                context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+            
+            page = await context.new_page()
+            
+            # Stealth
+            stealth = Stealth(navigator_languages_override=('es-MX', 'es'))
+            await stealth.apply_stealth_async(page)
+            
+            try:
+                # Login si es necesario
+                if not skip_login or not session_path.exists():
+                    print("\n[1/4] LOGIN AUTOMÁTICO")
+                    success = await do_login(page, use_db=use_db)
+                    if not success:
+                        raise RuntimeError("Login fallido")
                 
                 # Guardar sesión
                 storage = await context.storage_state()

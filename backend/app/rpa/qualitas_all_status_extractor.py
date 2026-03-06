@@ -564,7 +564,13 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         (num_expediente, fecha_asignacion, poliza, siniestro, reporte, 
                          riesgo, vehiculo, anio, placas, estatus, fecha_extraccion)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
+                        ON CONFLICT (num_expediente, fecha_extraccion) 
+                        DO UPDATE SET 
+                            estatus = EXCLUDED.estatus,
+                            fecha_asignacion = EXCLUDED.fecha_asignacion,
+                            vehiculo = EXCLUDED.vehiculo,
+                            placas = EXCLUDED.placas,
+                            updated_at = NOW()
                     """, (
                         str(num_exp).strip()[:50],
                         orden.get('fecha_asignacion'),
@@ -578,11 +584,7 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         str(orden.get('estatus', status_name))[:50],
                         fecha_extraccion
                     ))
-                    if result.rowcount > 0:
-                        inserted += 1
-                    else:
-                        print(f"    [Warning] Orden {i}: INSERT no afectó filas (posible duplicado)")
-                        errores += 1
+                    inserted += 1
                     
                 except Exception as e:
                     errores += 1

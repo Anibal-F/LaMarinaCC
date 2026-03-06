@@ -559,7 +559,7 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                     if i == 0:
                         print(f"    [Debug] Primera orden: num_exp={num_exp}, estatus={orden.get('estatus')}")
                     
-                    conn.execute("""
+                    result = conn.execute("""
                         INSERT INTO qualitas_ordenes_asignadas 
                         (num_expediente, fecha_asignacion, poliza, siniestro, reporte, 
                          riesgo, vehiculo, anio, placas, estatus, fecha_extraccion)
@@ -578,7 +578,11 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         str(orden.get('estatus', status_name))[:50],
                         fecha_extraccion
                     ))
-                    inserted += 1
+                    if result.rowcount > 0:
+                        inserted += 1
+                    else:
+                        print(f"    [Warning] Orden {i}: INSERT no afectó filas (posible duplicado)")
+                        errores += 1
                     
                 except Exception as e:
                     errores += 1

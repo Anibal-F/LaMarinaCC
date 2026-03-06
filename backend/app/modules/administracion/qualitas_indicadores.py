@@ -500,6 +500,18 @@ def get_latest_ordenes(limit: int = None) -> list:
         
         conn.row_factory = dict_row
         
+        # DEBUG: Contar registros totales y por estatus
+        debug_counts = conn.execute("""
+            SELECT estatus, COUNT(*) as count 
+            FROM qualitas_ordenes_asignadas 
+            GROUP BY estatus
+            ORDER BY estatus
+        """).fetchall()
+        print(f"[DEBUG get_latest_ordenes] Counts por estatus: {dict(debug_counts)}")
+        
+        total_count = conn.execute("SELECT COUNT(*) FROM qualitas_ordenes_asignadas").fetchone()[0]
+        print(f"[DEBUG get_latest_ordenes] Total registros en tabla: {total_count}")
+        
         # Usar tabla directamente (no la vista) para mostrar TODAS las órdenes
         # sin filtrar por DISTINCT ON
         if limit:
@@ -513,6 +525,8 @@ def get_latest_ordenes(limit: int = None) -> list:
                 SELECT * FROM qualitas_ordenes_asignadas
                 ORDER BY fecha_asignacion DESC NULLS LAST
             """).fetchall()
+        
+        print(f"[DEBUG get_latest_ordenes] Registros devueltos: {len(rows)}")
         
         return [serialize_row(dict(row)) for row in rows]
 

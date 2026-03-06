@@ -32,7 +32,7 @@ def get_table_id_from_status(status_name: str) -> str:
     """
     status_to_table = {
         'asignados': 'tableasig',
-        'asignado por app': 'tablependientes',  # O puede ser otra tabla
+        'asignado por app': 'tablependientes',
         'asignadoporapp': 'tablependientes',
         'citados': 'tablecitados',
         'transito': 'tabletransito',
@@ -63,6 +63,47 @@ def get_table_id_from_status(status_name: str) -> str:
     
     # Si no hay coincidencia, generar un ID genérico
     return f"table{status_key.replace(' ', '')}"
+
+
+def get_href_id_from_status(status_name: str) -> str:
+    """
+    Obtiene el ID del href/tab correspondiente a un estatus.
+    Este puede ser diferente al ID de la tabla.
+    
+    Args:
+        status_name: Nombre del estatus
+        
+    Returns:
+        ID para el href del tab (sin el #)
+    """
+    # Mapeo específico de nombres de estatus a IDs de href
+    status_to_href = {
+        'asignados': 'asignados',
+        'asignado por app': 'pendientes',
+        'citados': 'citados',
+        'tránsito': 'transito',
+        'piso': 'piso',
+        'terminadas': 'terminadas',
+        'entregadas': 'entregadas',
+        'facturadas': 'facturadas',
+        'pérdida total y pago de daños': 'perdidapago',  # ← Corregido
+        'histórico': 'historico',
+        'histórico facturados': 'historicofacturados',
+    }
+    
+    status_key = status_name.lower().strip()
+    
+    # Buscar coincidencia exacta
+    if status_key in status_to_href:
+        return status_to_href[status_key]
+    
+    # Buscar coincidencia parcial
+    for key, href_id in status_to_href.items():
+        if key in status_key or status_key in key:
+            return href_id
+    
+    # Fallback: normalizar como antes
+    return status_key.replace(' ', '').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
 
 
 async def extract_ordenes_from_status_tab(
@@ -147,14 +188,13 @@ async def get_tab_element(page: Page, status_name: str):
         Tupla (tab_element, tab_text) o (None, None) si no se encuentra
     """
     try:
-        # Estrategia 1: Buscar por href
-        status_id = status_name.lower().replace(' ', '').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+        # Usar el mapeo correcto de href ID
+        href_id = get_href_id_from_status(status_name)
         
+        # Estrategia 1: Buscar por href exacto
         href_selectors = [
-            f'a[href="#{status_id}"]',
-            f'a[href*="{status_id}"]',
-            f'a[href="#tab{status_id}"]',
-            f'a[href="#table{status_id}"]',
+            f'a[href="#{href_id}"]',
+            f'a[href*="{href_id}"]',
         ]
         
         for selector in href_selectors:
@@ -166,19 +206,20 @@ async def get_tab_element(page: Page, status_name: str):
             except:
                 continue
         
-        # Estrategia 2: Buscar en todos los enlaces
+        # Estrategia 2: Buscar por onclick que contenga el ID de tabla
+        table_id = get_table_id_from_status(status_name)
+        onclick_selector = f'a[onclick*="{table_id}"]'
+        try:
+            tab = page.locator(onclick_selector).first
+            if await tab.count() > 0 and await tab.is_visible():
+                text = await tab.text_content()
+                return tab, text.strip() if text else status_name
+        except:
+            pass
+        
+        # Estrategia 3: Buscar en todos los enlaces por texto
         all_tabs = await page.locator('a[data-toggle="tab"], .nav-tabs a, .nav-item a').all()
         for tab in all_tabs:
-            try:
-                text = await tab.text_content()
-                if text and status_name.lower() in text.strip().lower():
-                    return tab, text.strip()
-            except:
-                continue
-        
-        # Estrategia 3: Buscar por onclick
-        onclick_tabs = await page.locator('a[onclick*="cargarDataTable"]').all()
-        for tab in onclick_tabs:
             try:
                 text = await tab.text_content()
                 if text and status_name.lower() in text.strip().lower():
@@ -206,19 +247,16 @@ async def click_status_tab(page: Page, status_name: str) -> bool:
     try:
         print(f"[TabNavigator] Buscando tab para: '{status_name}'")
         
-        # Estrategia 1: Buscar por href que contenga el nombre del estatus (sin espacios, minúsculas)
-        status_id = status_name.lower().replace(' ', '').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+        # Usar el mapeo correcto de href ID
+        href_id = get_href_id_from_status(status_name)
+        table_id = get_table_id_from_status(status_name)
         
-        # Debug especial para Pérdida Total
-        if 'perdida' in status_name.lower():
-            print(f"  [Debug Pérdida Total] status_id calculado: '{status_id}'")
-            print(f"  [Debug Pérdida Total] Buscando selectores con: {status_id}")
+        print(f"[TabNavigator] href_id calculado: '{href_id}', table_id: '{table_id}'")
         
+        # Estrategia 1: Buscar por href exacto usando el mapeo correcto
         href_selectors = [
-            f'a[href="#{status_id}"]',
-            f'a[href*="{status_id}"]',
-            f'a[href="#tab{status_id}"]',
-            f'a[href="#table{status_id}"]',
+            f'a[href="#{href_id}"]',
+            f'a[href*="{href_id}"]',
         ]
         
         for selector in href_selectors:
@@ -235,6 +273,21 @@ async def click_status_tab(page: Page, status_name: str) -> bool:
             except Exception as e:
                 print(f"[TabNavigator] Selector {selector} falló: {e}")
                 continue
+        
+        # Estrategia 1b: Buscar por onclick que contenga el table_id
+        onclick_selector = f'a[onclick*="{table_id}"]'
+        try:
+            tab = page.locator(onclick_selector).first
+            count = await tab.count()
+            if count > 0:
+                is_visible = await tab.is_visible()
+                if is_visible:
+                    await tab.click()
+                    print(f"[TabNavigator] ✓ Click en tab '{status_name}' (onclick: {onclick_selector})")
+                    await asyncio.sleep(2)
+                    return True
+        except Exception as e:
+            print(f"[TabNavigator] Selector onclick {onclick_selector} falló: {e}")
         
         # Estrategia 2: Buscar en todos los enlaces con data-toggle="tab"
         try:

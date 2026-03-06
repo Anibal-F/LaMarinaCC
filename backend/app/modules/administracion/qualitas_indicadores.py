@@ -507,9 +507,11 @@ def get_latest_ordenes(limit: int = None) -> list:
             GROUP BY estatus
             ORDER BY estatus
         """).fetchall()
-        print(f"[DEBUG get_latest_ordenes] Counts por estatus: {dict(debug_counts)}")
+        counts_dict = {row['estatus']: row['count'] for row in debug_counts}
+        print(f"[DEBUG get_latest_ordenes] Counts por estatus: {counts_dict}")
         
-        total_count = conn.execute("SELECT COUNT(*) FROM qualitas_ordenes_asignadas").fetchone()[0]
+        total_result = conn.execute("SELECT COUNT(*) as total FROM qualitas_ordenes_asignadas").fetchone()
+        total_count = total_result['total'] if total_result else 0
         print(f"[DEBUG get_latest_ordenes] Total registros en tabla: {total_count}")
         
         # Usar tabla directamente (no la vista) para mostrar TODAS las órdenes

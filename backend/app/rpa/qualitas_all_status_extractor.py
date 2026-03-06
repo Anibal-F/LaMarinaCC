@@ -559,6 +559,12 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
             except Exception as e:
                 print(f"    [Warning] Error borrando órdenes anteriores: {e}")
             
+            # Verificar si hay duplicados en las órdenes a insertar
+            num_exps = [o.get('num_expediente') for o in ordenes if o.get('num_expediente')]
+            dupes_in_batch = len(num_exps) - len(set(num_exps))
+            if dupes_in_batch > 0:
+                print(f"    [Warning] Hay {dupes_in_batch} expedientes duplicados en el batch de {status_name}")
+            
             for i, orden in enumerate(ordenes):
                 try:
                     num_exp = orden.get('num_expediente')
@@ -567,9 +573,9 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         errores += 1
                         continue
                     
-                    # Debug: mostrar datos de la primera orden
-                    if i == 0:
-                        print(f"    [Debug] Primera orden: num_exp={num_exp}, estatus={orden.get('estatus')}")
+                    # Debug: mostrar datos de las primeras 3 órdenes y cada 20
+                    if i < 3 or i % 20 == 0:
+                        print(f"    [Debug] Orden {i}: num_exp={num_exp}, estatus={orden.get('estatus')}")
                     
                     result = conn.execute("""
                         INSERT INTO qualitas_ordenes_asignadas 
@@ -596,11 +602,18 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                         str(orden.get('estatus', status_name))[:50],
                         fecha_extraccion
                     ))
-                    inserted += 1
+                    
+                    # Verificar si realmente se insertó/actualizó
+                    if result.rowcount > 0:
+                        inserted += 1
+                    else:
+                        print(f"    [Warning] Orden {i} ({num_exp}): No se insertó ni actualizó")
+                        errores += 1
                     
                 except Exception as e:
                     errores += 1
-                    if len(errores_detalle) < 3:
+                    print(f"    [Error] Orden {i} ({num_exp}): {str(e)[:150]}")
+                    if len(errores_detalle) < 5:
                         errores_detalle.append(f"Orden {i} ({num_exp}): {str(e)[:100]}")
             
             conn.commit()

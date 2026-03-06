@@ -17,8 +17,6 @@ import argparse
 import asyncio
 import json
 import os
-import sys
-import fcntl
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,28 +25,6 @@ from playwright_stealth import Stealth
 
 from app.rpa.qualitas_extractor import QualitasExtractor, DashboardData
 from app.rpa.qualitas_modal_handler import handle_qualitas_modal
-
-
-# Lock file para evitar ejecuciones simultáneas
-LOCK_FILE = Path("/tmp/qualitas_rpa.lock")
-
-def acquire_lock():
-    """Adquiere el lock para evitar ejecuciones simultáneas."""
-    try:
-        lock_fd = open(LOCK_FILE, 'w')
-        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        print("[Lock] ✓ Lock adquirido - ejecución única")
-        return lock_fd
-    except IOError:
-        print("[Lock] ✗ Otra instancia del RPA ya está en ejecución. Saliendo...")
-        sys.exit(1)
-
-def release_lock(lock_fd):
-    """Libera el lock."""
-    if lock_fd:
-        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
-        lock_fd.close()
-        print("[Lock] ✓ Lock liberado")
 
 
 # Cargar variables de entorno (fallback)
@@ -321,43 +297,39 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                        force_extract: bool = False):
     """Ejecuta el workflow completo."""
     
-    # Adquirir lock para evitar ejecuciones simultáneas
-    lock_fd = acquire_lock()
+    session_path = Path(__file__).resolve().parent / "sessions" / "qualitas_session.json"
     
-    try:
-        session_path = Path(__file__).resolve().parent / "sessions" / "qualitas_session.json"
+    print("=" * 60)
+    print("QUALITAS - WORKFLOW COMPLETO")
+    print("=" * 60)
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=headless,
+            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+        )
         
-        print("=" * 60)
-        print("QUALITAS - WORKFLOW COMPLETO")
-        print("=" * 60)
+        # Contexto
+        if skip_login and session_path.exists():
+            print("[Workflow] Usando sesión existente...")
+            context = await browser.new_context(storage_state=str(session_path))
+        else:
+            print("[Workflow] Creando nuevo contexto...")
+            context = await browser.new_context(viewport={"width": 1920, "height": 1080})
         
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=headless,
-                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
-            )
-            
-            # Contexto
-            if skip_login and session_path.exists():
-                print("[Workflow] Usando sesión existente...")
-                context = await browser.new_context(storage_state=str(session_path))
-            else:
-                print("[Workflow] Creando nuevo contexto...")
-                context = await browser.new_context(viewport={"width": 1920, "height": 1080})
-            
-            page = await context.new_page()
-            
-            # Stealth
-            stealth = Stealth(navigator_languages_override=('es-MX', 'es'))
-            await stealth.apply_stealth_async(page)
-            
-            try:
-                # Login si es necesario
-                if not skip_login or not session_path.exists():
-                    print("\n[1/4] LOGIN AUTOMÁTICO")
-                    success = await do_login(page, use_db=use_db)
-                    if not success:
-                        raise RuntimeError("Login fallido")
+        page = await context.new_page()
+        
+        # Stealth
+        stealth = Stealth(navigator_languages_override=('es-MX', 'es'))
+        await stealth.apply_stealth_async(page)
+        
+        try:
+            # Login si es necesario
+            if not skip_login or not session_path.exists():
+                print("\n[1/4] LOGIN AUTOMÁTICO")
+                success = await do_login(page, use_db=use_db)
+                if not success:
+                    raise RuntimeError("Login fallido")
                 
                 # Guardar sesión
                 storage = await context.storage_state()
@@ -527,8 +499,6 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
         finally:
             await context.close()
             await browser.close()
-            # Liberar lock al terminar
-            release_lock(lock_fd)
 
 
 def main():

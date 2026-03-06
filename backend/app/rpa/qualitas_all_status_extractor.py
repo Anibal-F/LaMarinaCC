@@ -578,11 +578,23 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
             except Exception as e:
                 print(f"    [Warning] Error borrando órdenes anteriores: {e}")
             
-            # Verificar si hay duplicados en las órdenes a insertar
-            num_exps = [o.get('num_expediente') for o in ordenes if o.get('num_expediente')]
-            dupes_in_batch = len(num_exps) - len(set(num_exps))
-            if dupes_in_batch > 0:
-                print(f"    [Warning] Hay {dupes_in_batch} expedientes duplicados en el batch de {status_name}")
+            # Deduplicar órdenes por num_expediente (mantener la primera ocurrencia)
+            seen_exps = set()
+            ordenes_unicas = []
+            duplicados = []
+            for o in ordenes:
+                exp = o.get('num_expediente')
+                if exp and exp in seen_exps:
+                    duplicados.append(exp)
+                else:
+                    if exp:
+                        seen_exps.add(exp)
+                    ordenes_unicas.append(o)
+            
+            if duplicados:
+                print(f"    [Warning] {len(duplicados)} órdenes duplicadas eliminadas: {duplicados[:5]}...")
+                print(f"    [Info] Procesando {len(ordenes_unicas)} órdenes únicas de {len(ordenes)} total")
+                ordenes = ordenes_unicas
             
             for i, orden in enumerate(ordenes):
                 try:

@@ -362,6 +362,12 @@ async def _get_available_status_tabs(page: Page) -> List[str]:
                 href = await tab.get_attribute('href') or ''
                 onclick = await tab.get_attribute('onclick') or ''
                 
+                # Verificar si el tab está oculto (display: none)
+                display_style = await tab.evaluate('el => window.getComputedStyle(el).display')
+                if display_style == 'none':
+                    print(f"[GetTabs] Tab ignorado (display:none): '{text.strip()[:50]}'" if text else "[GetTabs] Tab ignorado (display:none)")
+                    continue
+                
                 if text:
                     text_clean = text.strip()
                     # Extraer solo el nombre, sin el número entre paréntesis
@@ -369,6 +375,10 @@ async def _get_available_status_tabs(page: Page) -> List[str]:
                     match = re.match(r'([^\(]+)', text_clean)
                     if match:
                         nombre = match.group(1).strip()
+                        # Omitir tabs específicos que son de BD interna
+                        if nombre.lower() in ['asignados carril exprés', 'asignados carril expres']:
+                            print(f"[GetTabs] Tab omitido (BD interna): '{nombre}'")
+                            continue
                         if nombre and nombre not in tabs:
                             tabs.append(nombre)
                             print(f"[GetTabs] Tab encontrado: '{nombre}' (href={href}, onclick={onclick[:50]}...)")
@@ -382,12 +392,21 @@ async def _get_available_status_tabs(page: Page) -> List[str]:
             nav_links = await page.locator('.nav-link, .nav-item a').all()
             for tab in nav_links:
                 try:
+                    # Verificar si el tab está oculto
+                    display_style = await tab.evaluate('el => window.getComputedStyle(el).display')
+                    if display_style == 'none':
+                        continue
+                    
                     text = await tab.text_content()
                     if text:
                         text_clean = text.strip()
                         match = re.match(r'([^\(]+)', text_clean)
                         if match:
                             nombre = match.group(1).strip()
+                            # Omitir tabs de BD interna
+                            if nombre.lower() in ['asignados carril exprés', 'asignados carril expres']:
+                                print(f"[GetTabs] Tab omitido (.nav-link, BD interna): '{nombre}'")
+                                continue
                             if nombre and nombre not in tabs and len(nombre) > 2:
                                 tabs.append(nombre)
                                 print(f"[GetTabs] Tab encontrado (.nav-link): '{nombre}'")
@@ -521,7 +540,7 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
         
         print(f"  [DB] Intentando guardar {len(ordenes)} órdenes de '{status_name}'...")
         
-        with psycopg.connect(database_url, autocommit=True) as conn:
+        with psycopg.connect(database_url) as conn:
             # Debug: Verificar conexión y esquema
             try:
                 db_info = conn.execute("SELECT current_database(), current_schema()").fetchone()
@@ -618,8 +637,23 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
             
             conn.commit()
             
+            # VERIFICACIÓN POST-GUARDADO: Contar cuántos registros quedaron realmente
+            count_result = conn.execute(
+                "SELECT COUNT(*) FROM qualitas_ordenes_asignadas WHERE estatus = %s",
+                (status_name,)
+            ).fetchone()
+            count_in_db = count_result[0] if count_result else 0
+            
+            # Contar también por fecha de extracción
+            count_fecha = conn.execute(
+                "SELECT COUNT(*) FROM qualitas_ordenes_asignadas WHERE estatus = %s AND fecha_extraccion = %s",
+                (status_name, fecha_extraccion)
+            ).fetchone()
+            count_fecha_db = count_fecha[0] if count_fecha else 0
+            
         print(f"  [DB] {status_name}: {inserted}/{len(ordenes)} órdenes guardadas" + 
               (f" ({errores} errores)" if errores > 0 else ""))
+        print(f"  [DB] {status_name}: VERIFICACIÓN BD - Total: {count_in_db}, Con fecha_extraccion={fecha_extraccion}: {count_fecha_db}")
         
         if errores_detalle:
             for err in errores_detalle:

@@ -17,6 +17,8 @@ import argparse
 import asyncio
 import json
 import os
+import sys
+import fcntl
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,6 +27,28 @@ from playwright_stealth import Stealth
 
 from app.rpa.qualitas_extractor import QualitasExtractor, DashboardData
 from app.rpa.qualitas_modal_handler import handle_qualitas_modal
+
+
+# Lock file para evitar ejecuciones simultáneas
+LOCK_FILE = Path("/tmp/qualitas_rpa.lock")
+
+def acquire_lock():
+    """Adquiere el lock para evitar ejecuciones simultáneas."""
+    try:
+        lock_fd = open(LOCK_FILE, 'w')
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print("[Lock] ✓ Lock adquirido - ejecución única")
+        return lock_fd
+    except IOError:
+        print("[Lock] ✗ Otra instancia del RPA ya está en ejecución. Saliendo...")
+        sys.exit(1)
+
+def release_lock(lock_fd):
+    """Libera el lock."""
+    if lock_fd:
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+        lock_fd.close()
+        print("[Lock] ✓ Lock liberado")
 
 
 # Cargar variables de entorno (fallback)
@@ -297,13 +321,17 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
                        force_extract: bool = False):
     """Ejecuta el workflow completo."""
     
-    session_path = Path(__file__).resolve().parent / "sessions" / "qualitas_session.json"
+    # Adquirir lock para evitar ejecuciones simultáneas
+    lock_fd = acquire_lock()
     
-    print("=" * 60)
-    print("QUALITAS - WORKFLOW COMPLETO")
-    print("=" * 60)
-    
-    async with async_playwright() as p:
+    try:
+        session_path = Path(__file__).resolve().parent / "sessions" / "qualitas_session.json"
+        
+        print("=" * 60)
+        print("QUALITAS - WORKFLOW COMPLETO")
+        print("=" * 60)
+        
+        async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=headless,
             args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
@@ -499,6 +527,8 @@ async def run_workflow(skip_login: bool = False, headless: bool = False,
         finally:
             await context.close()
             await browser.close()
+            # Liberar lock al terminar
+            release_lock(lock_fd)
 
 
 def main():

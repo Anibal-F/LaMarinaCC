@@ -639,17 +639,17 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
             
             # VERIFICACIÓN POST-GUARDADO: Contar cuántos registros quedaron realmente
             count_result = conn.execute(
-                "SELECT COUNT(*) FROM qualitas_ordenes_asignadas WHERE estatus = %s",
+                "SELECT COUNT(*) as cnt FROM qualitas_ordenes_asignadas WHERE estatus = %s",
                 (status_name,)
             ).fetchone()
-            count_in_db = count_result[0] if count_result else 0
+            count_in_db = count_result.cnt if count_result else 0
             
             # Contar también por fecha de extracción
             count_fecha = conn.execute(
-                "SELECT COUNT(*) FROM qualitas_ordenes_asignadas WHERE estatus = %s AND fecha_extraccion = %s",
+                "SELECT COUNT(*) as cnt FROM qualitas_ordenes_asignadas WHERE estatus = %s AND fecha_extraccion = %s",
                 (status_name, fecha_extraccion)
             ).fetchone()
-            count_fecha_db = count_fecha[0] if count_fecha else 0
+            count_fecha_db = count_fecha.cnt if count_fecha else 0
             
         print(f"  [DB] {status_name}: {inserted}/{len(ordenes)} órdenes guardadas" + 
               (f" ({errores} errores)" if errores > 0 else ""))

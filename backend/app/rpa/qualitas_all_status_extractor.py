@@ -504,6 +504,7 @@ def extract_count_from_tab_text(tab_text: str) -> int:
 async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fecha_extraccion: datetime) -> int:
     """
     Guarda órdenes de un estatus específico inmediatamente en la BD.
+    Borra primero las órdenes anteriores del mismo estatus para evitar acumulación.
     """
     if not ordenes:
         return 0
@@ -547,6 +548,17 @@ async def save_ordenes_to_db_immediate(ordenes: List[Dict], status_name: str, fe
                     return 0
             except Exception as e:
                 print(f"    [DB Debug] Error verificando: {e}")
+            
+            # BORRAR órdenes anteriores del mismo estatus para evitar acumulación
+            try:
+                delete_result = conn.execute(
+                    "DELETE FROM qualitas_ordenes_asignadas WHERE estatus = %s",
+                    (status_name,)
+                )
+                print(f"    [DB] Borradas {delete_result.rowcount} órdenes anteriores de '{status_name}'")
+            except Exception as e:
+                print(f"    [Warning] Error borrando órdenes anteriores: {e}")
+            
             for i, orden in enumerate(ordenes):
                 try:
                     num_exp = orden.get('num_expediente')

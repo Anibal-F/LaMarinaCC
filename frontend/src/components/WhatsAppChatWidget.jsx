@@ -194,6 +194,7 @@ export default function WhatsAppChatWidget() {
   if (typeof document === "undefined") return null;
 
   const activeConversation = conversations.find((item) => item.wa_id === activeWaId);
+  const activeDisplayName = activeConversation?.contact_name || activeWaId;
 
   const widget = (
     <>
@@ -237,7 +238,11 @@ export default function WhatsAppChatWidget() {
               <h3 className="text-sm font-bold text-white">WhatsApp</h3>
             )}
             <div className="flex items-center gap-2">
-              {view === "chat" && activeWaId ? <p className="text-xs text-slate-400">{activeWaId}</p> : null}
+              {view === "chat" && activeWaId ? (
+                <p className="text-xs text-slate-400 truncate max-w-44" title={activeWaId}>
+                  {activeDisplayName}
+                </p>
+              ) : null}
               <button
                 type="button"
                 className="text-slate-400 hover:text-white"
@@ -293,9 +298,12 @@ export default function WhatsAppChatWidget() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm text-white font-semibold truncate">{item.wa_id}</p>
+                            <p className="text-sm text-white font-semibold truncate">
+                              {item.contact_name || item.wa_id}
+                            </p>
                             <p className="text-[11px] text-slate-500 whitespace-nowrap">{formatTime(item.last_at)}</p>
                           </div>
+                          <p className="text-xs text-slate-500 truncate">{item.wa_id}</p>
                           <p className="text-xs text-slate-400 truncate">{item.last_text || "Sin mensajes"}</p>
                         </div>
                         {hasUnread(item) ? <span className="h-2.5 w-2.5 rounded-full bg-[#25D366] mt-2" /> : null}

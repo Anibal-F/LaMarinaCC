@@ -53,6 +53,69 @@ def _normalize_whatsapp_phone(value: str) -> str:
     return digits
 
 
+def _phone_match_tokens(wa_id: str) -> tuple[str, str]:
+    digits = re.sub(r"\D+", "", wa_id or "")
+    last10 = digits[-10:] if len(digits) >= 10 else digits
+    return digits, last10
+
+
+def _resolve_contact_name(conn, wa_id: str) -> str:
+    full_digits, last10 = _phone_match_tokens(wa_id)
+    if not full_digits:
+        return wa_id
+
+    phone_sql = "regexp_replace(COALESCE(tel_cliente, ''), '[^0-9]', '', 'g')"
+
+    cliente = conn.execute(
+        f"""
+        SELECT nb_cliente
+        FROM clientes
+        WHERE tel_cliente IS NOT NULL
+          AND ({phone_sql} = %s OR RIGHT({phone_sql}, 10) = %s)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (full_digits, last10),
+    ).fetchone()
+    cliente_name = cliente.get("nb_cliente") if isinstance(cliente, dict) else (cliente[0] if cliente else None)
+    if cliente_name:
+        return str(cliente_name).strip() or wa_id
+
+    orden = conn.execute(
+        f"""
+        SELECT nb_cliente
+        FROM orden_admision
+        WHERE tel_cliente IS NOT NULL
+          AND ({phone_sql} = %s OR RIGHT({phone_sql}, 10) = %s)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (full_digits, last10),
+    ).fetchone()
+    orden_name = orden.get("nb_cliente") if isinstance(orden, dict) else (orden[0] if orden else None)
+    if orden_name:
+        return str(orden_name).strip() or wa_id
+
+    recepcion = conn.execute(
+        f"""
+        SELECT nb_cliente
+        FROM recepciones
+        WHERE tel_cliente IS NOT NULL
+          AND ({phone_sql} = %s OR RIGHT({phone_sql}, 10) = %s)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (full_digits, last10),
+    ).fetchone()
+    recepcion_name = (
+        recepcion.get("nb_cliente") if isinstance(recepcion, dict) else (recepcion[0] if recepcion else None)
+    )
+    if recepcion_name:
+        return str(recepcion_name).strip() or wa_id
+
+    return wa_id
+
+
 def _resolve_auto_reply(user_text: str) -> str:
     normalized = _normalize_trigger(user_text)
     if "donde se encuentran ubicados" in normalized or "ubicacion" in normalized:
@@ -364,6 +427,8 @@ def list_whatsapp_conversations(limit: int = 50):
             ORDER BY wa_id, created_at DESC
             """
         ).fetchall()
+        for row in rows:
+            row["contact_name"] = _resolve_contact_name(conn, str(row.get("wa_id") or ""))
     rows_sorted = sorted(
         rows,
         key=lambda item: (item.get("last_at").timestamp() if item.get("last_at") else 0),

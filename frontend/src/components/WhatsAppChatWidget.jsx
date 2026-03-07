@@ -2,12 +2,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const POLL_MS = 8000;
+const PHONE_INPUT_PATTERN = /^[\d+\s\-()]*$/;
 
 const formatTime = (value) => {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+};
+
+const formatPhoneForInput = (digitsValue) => {
+  const digits = String(digitsValue || "").replace(/\D+/g, "");
+  if (!digits) return "";
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  if (digits.length <= 10) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+
+  const prefix = digits.slice(0, -10);
+  const local = digits.slice(-10);
+  return `+${prefix} ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
 };
 
 const MediaPreview = ({ item, apiBase }) => {
@@ -45,7 +58,6 @@ export default function WhatsAppChatWidget() {
   const [activeWaId, setActiveWaId] = useState("");
   const [messages, setMessages] = useState([]);
   const [newChatWaId, setNewChatWaId] = useState("");
-  const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [clientesCatalogo, setClientesCatalogo] = useState([]);
   const [messageText, setMessageText] = useState("");
@@ -80,16 +92,29 @@ export default function WhatsAppChatWidget() {
   }, [conversations, searchQuery]);
 
   const filteredClientesCatalogo = useMemo(() => {
-    const query = clientSearchQuery.trim().toLowerCase();
-    if (!query) return clientesCatalogo.slice(0, 50);
+    const query = newChatWaId.trim().toLowerCase();
+    const queryDigits = query.replace(/\D+/g, "");
+    if (!query) return clientesCatalogo.slice(0, 30);
     return clientesCatalogo
       .filter((item) => {
         const name = String(item.nb_cliente || "").toLowerCase();
         const phone = String(item.tel_cliente || "").toLowerCase();
-        return name.includes(query) || phone.includes(query);
+        const phoneDigits = phone.replace(/\D+/g, "");
+        return name.includes(query) || phone.includes(query) || (queryDigits && phoneDigits.includes(queryDigits));
       })
-      .slice(0, 50);
-  }, [clientesCatalogo, clientSearchQuery]);
+      .slice(0, 30);
+  }, [clientesCatalogo, newChatWaId]);
+
+  const openQuickChat = async () => {
+    const digits = String(newChatWaId || "").replace(/\D+/g, "");
+    if (digits.length < 10) {
+      setError("Captura un celular válido (10+ dígitos) o selecciona un cliente.");
+      return;
+    }
+    setError("");
+    setClientDropdownOpen(false);
+    await openConversation(digits);
+  };
 
   const hasUnread = (item) => {
     if (item.last_direction !== "in") return false;
@@ -295,10 +320,10 @@ export default function WhatsAppChatWidget() {
 
       {open ? (
         <div
-          className="fixed w-[380px] max-w-[calc(100vw-1.5rem)] h-[72vh] rounded-xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col"
+          className="fixed w-[380px] max-w-[calc(100vw-1.5rem)] h-[72vh] rounded-xl border border-primary/35 bg-gradient-to-b from-[#212B3A] to-[#1B2330] shadow-2xl shadow-black/55 overflow-hidden flex flex-col"
           style={{ position: "fixed", right: "1.5rem", bottom: "6rem", left: "auto", zIndex: 119 }}
         >
-          <div className="px-4 py-3 border-b border-border-dark flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-primary/20 bg-[#273446] flex items-center justify-between">
             {view === "chat" ? (
               <button
                 type="button"
@@ -329,52 +354,55 @@ export default function WhatsAppChatWidget() {
 
           {view === "list" ? (
             <>
-              <div className="p-3 border-b border-border-dark space-y-2">
+              <div className="p-3 border-b border-primary/20 space-y-2">
                 <input
-                  className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#121A25] border border-primary/20 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-400"
                   placeholder="Buscar chat..."
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                 />
-                <div className="flex gap-2">
+                <div className="flex gap-2 relative" ref={clientDropdownRef}>
                   <input
-                    className="flex-1 bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white"
-                    placeholder="Nuevo wa_id (ej. 526691234567)"
+                    className="flex-1 bg-[#121A25] border border-primary/20 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                    placeholder="Nuevo chat: cliente o celular (ej. 6691234567)"
                     value={newChatWaId}
-                    onChange={(event) => setNewChatWaId(event.target.value)}
+                    onFocus={() => setClientDropdownOpen(true)}
+                    onChange={(event) => {
+                      const rawValue = event.target.value;
+                      if (PHONE_INPUT_PATTERN.test(rawValue)) {
+                        const digits = rawValue.replace(/\D+/g, "");
+                        setNewChatWaId(formatPhoneForInput(digits));
+                      } else {
+                        setNewChatWaId(rawValue);
+                      }
+                      setClientDropdownOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        openQuickChat();
+                      }
+                    }}
                   />
                   <button
                     type="button"
                     className="px-3 rounded-lg bg-primary text-white text-xs font-semibold"
-                    onClick={() => openConversation(newChatWaId.trim())}
+                    onClick={openQuickChat}
                   >
                     Abrir
                   </button>
-                </div>
-                <div className="relative" ref={clientDropdownRef}>
-                  <input
-                    className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-slate-200"
-                    placeholder="Buscar cliente por nombre o celular..."
-                    value={clientSearchQuery}
-                    onFocus={() => setClientDropdownOpen(true)}
-                    onChange={(event) => {
-                      setClientSearchQuery(event.target.value);
-                      setClientDropdownOpen(true);
-                    }}
-                  />
                   {clientDropdownOpen ? (
-                    <div className="absolute z-[130] mt-1 w-full max-h-48 overflow-y-auto custom-scrollbar rounded-lg border border-border-dark bg-surface-dark shadow-xl">
+                    <div className="absolute z-[130] top-[2.65rem] w-[calc(100%-4.5rem)] max-h-48 overflow-y-auto custom-scrollbar rounded-lg border border-primary/20 bg-[#1F2A39] shadow-xl">
                       {filteredClientesCatalogo.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias.</p>
+                        <p className="px-3 py-2 text-xs text-slate-400">Sin coincidencias en clientes. Puedes abrir con el número capturado.</p>
                       ) : (
                         filteredClientesCatalogo.map((item) => (
                           <button
                             key={item.id}
                             type="button"
-                            className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-background-dark/70"
+                            className="w-full text-left px-3 py-2 text-xs text-slate-100 hover:bg-[#121A25]"
                             onClick={() => {
                               setNewChatWaId(String(item.tel_cliente || ""));
-                              setClientSearchQuery(`${item.nb_cliente} · ${item.tel_cliente}`);
                               setClientDropdownOpen(false);
                             }}
                           >
@@ -398,7 +426,7 @@ export default function WhatsAppChatWidget() {
                       key={item.wa_id}
                       type="button"
                       onClick={() => openConversation(item.wa_id)}
-                      className="w-full text-left px-3 py-3 border-b border-border-dark/60 hover:bg-background-dark/40"
+                      className="w-full text-left px-3 py-3 border-b border-primary/10 hover:bg-[#151E2A]"
                     >
                       <div className="flex items-start gap-3">
                         <div className="h-10 w-10 rounded-full bg-background-dark border border-border-dark flex items-center justify-center text-slate-300 text-sm font-semibold">

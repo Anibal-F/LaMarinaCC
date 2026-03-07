@@ -331,7 +331,17 @@ def list_whatsapp_messages(wa_id: str, limit: int = 100):
         conn.row_factory = dict_row
         rows = conn.execute(
             """
-            SELECT id, wa_id, direction, message_type, text_body, message_id, status, created_at
+            SELECT
+                id,
+                wa_id,
+                direction,
+                message_type,
+                text_body,
+                message_id,
+                status,
+                created_at,
+                raw_payload->>'media_link' AS media_link,
+                raw_payload->>'file_name' AS file_name
             FROM whatsapp_chat_messages
             WHERE wa_id = %s
             ORDER BY created_at ASC

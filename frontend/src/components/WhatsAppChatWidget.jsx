@@ -9,6 +9,43 @@ const formatTime = (value) => {
   return date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 };
 
+const MediaPreview = ({ item }) => {
+  const link = item.media_link;
+  if (!link) return null;
+  if (item.message_type === "image") {
+    return (
+      <a href={link} target="_blank" rel="noopener noreferrer" className="block mt-2">
+        <img src={link} alt={item.file_name || "Imagen"} className="max-h-48 rounded-md border border-border-dark" />
+      </a>
+    );
+  }
+  if (item.message_type === "video") {
+    return (
+      <video
+        controls
+        src={link}
+        className="mt-2 max-h-56 w-full rounded-md border border-border-dark"
+      />
+    );
+  }
+  if (item.message_type === "audio") {
+    return <audio controls src={link} className="mt-2 w-full" />;
+  }
+  if (item.message_type === "document") {
+    return (
+      <a
+        href={link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 inline-flex text-[11px] text-primary hover:text-white"
+      >
+        Abrir documento
+      </a>
+    );
+  }
+  return null;
+};
+
 export default function WhatsAppChatWidget() {
   const [open, setOpen] = useState(false);
   const [conversations, setConversations] = useState([]);
@@ -249,6 +286,7 @@ export default function WhatsAppChatWidget() {
                   }`}
                 >
                   <p>{item.text_body || `[${item.message_type}]`}</p>
+                  <MediaPreview item={item} />
                   <p className="mt-1 text-[10px] text-slate-400">
                     {formatTime(item.created_at)} {item.status ? `· ${item.status}` : ""}
                   </p>

@@ -1070,8 +1070,10 @@ def _sync_cliente(conn, nb_cliente: Optional[str], tel_cliente: Optional[str], e
             VALUES (%s, %s, %s)
             ON CONFLICT (tel_cliente) DO UPDATE
             SET
-                nb_cliente = EXCLUDED.nb_cliente,
-                email_cliente = COALESCE(EXCLUDED.email_cliente, clientes.email_cliente)
+                -- Preserve existing owner name for this phone; only backfill if empty.
+                nb_cliente = COALESCE(NULLIF(clientes.nb_cliente, ''), EXCLUDED.nb_cliente),
+                -- Backfill email when DB value is empty/null.
+                email_cliente = COALESCE(NULLIF(clientes.email_cliente, ''), EXCLUDED.email_cliente)
             """,
             (nombre, tel, email),
         )

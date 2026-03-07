@@ -53,6 +53,10 @@ def _normalize_whatsapp_phone(value: str) -> str:
     return digits
 
 
+def _sanitize_phone_digits(value: str) -> str:
+    return re.sub(r"\D+", "", str(value or ""))
+
+
 def _phone_match_tokens(wa_id: str) -> tuple[str, str]:
     digits = re.sub(r"\D+", "", wa_id or "")
     last10 = digits[-10:] if len(digits) >= 10 else digits
@@ -441,6 +445,10 @@ def list_whatsapp_conversations(limit: int = 50):
 def list_whatsapp_messages(wa_id: str, limit: int = 100):
     if not wa_id.strip():
         raise HTTPException(status_code=400, detail="wa_id requerido")
+    wa_id_digits = _sanitize_phone_digits(wa_id)
+    if not wa_id_digits:
+        raise HTTPException(status_code=400, detail="wa_id invalido")
+    _, last10 = _phone_match_tokens(wa_id_digits)
     safe_limit = max(1, min(limit, 500))
     with get_connection() as conn:
         _ensure_whatsapp_chat_tables(conn)
@@ -460,11 +468,11 @@ def list_whatsapp_messages(wa_id: str, limit: int = 100):
                 raw_payload->>'file_name' AS file_name,
                 raw_payload->>'media_id' AS media_id
             FROM whatsapp_chat_messages
-            WHERE wa_id = %s
+            WHERE RIGHT(regexp_replace(COALESCE(wa_id, ''), '[^0-9]', '', 'g'), 10) = %s
             ORDER BY created_at ASC
             LIMIT %s
             """,
-            (wa_id.strip(), safe_limit),
+            (last10, safe_limit),
         ).fetchall()
     for row in rows:
         if not row.get("media_link") and row.get("media_id"):
@@ -495,9 +503,10 @@ def get_whatsapp_chat_media(media_id: str):
 
 @app.post("/whatsapp/chat/messages")
 def send_whatsapp_chat_message(payload: WhatsAppChatSendRequest):
+    wa_id_for_store = _sanitize_phone_digits(payload.wa_id)
     wa_id = _normalize_whatsapp_phone(payload.wa_id)
     text = payload.text.strip()
-    if not wa_id:
+    if not wa_id or not wa_id_for_store:
         raise HTTPException(status_code=400, detail="wa_id requerido")
     if not text:
         raise HTTPException(status_code=400, detail="text requerido")
@@ -511,7 +520,7 @@ def send_whatsapp_chat_message(payload: WhatsAppChatSendRequest):
         _ensure_whatsapp_chat_tables(conn)
         _insert_whatsapp_chat_message(
             conn,
-            wa_id=wa_id,
+            wa_id=wa_id_for_store,
             direction="out",
             message_type="text",
             text_body=text,
@@ -519,7 +528,13 @@ def send_whatsapp_chat_message(payload: WhatsAppChatSendRequest):
             status_name="submitted",
             raw_payload=meta_response,
         )
-    return {"ok": True, "wa_id": wa_id, "message_id": message_id, "meta_response": meta_response}
+    return {
+        "ok": True,
+        "wa_id": wa_id_for_store,
+        "to_phone": wa_id,
+        "message_id": message_id,
+        "meta_response": meta_response,
+    }
 
 
 @app.post("/whatsapp/chat/messages/media")
@@ -529,8 +544,9 @@ async def send_whatsapp_chat_media_message(
     caption: str = Form(default=""),
     file: UploadFile = File(...),
 ):
+    wa_id_for_store = _sanitize_phone_digits(wa_id)
     normalized_wa_id = _normalize_whatsapp_phone(wa_id)
-    if not normalized_wa_id:
+    if not normalized_wa_id or not wa_id_for_store:
         raise HTTPException(status_code=400, detail="wa_id requerido")
     if not file.filename:
         raise HTTPException(status_code=400, detail="Archivo requerido")
@@ -575,7 +591,7 @@ async def send_whatsapp_chat_media_message(
         _ensure_whatsapp_chat_tables(conn)
         _insert_whatsapp_chat_message(
             conn,
-            wa_id=normalized_wa_id,
+            wa_id=wa_id_for_store,
             direction="out",
             message_type=media_type,
             text_body=preview_text,
@@ -589,7 +605,8 @@ async def send_whatsapp_chat_media_message(
         )
     return {
         "ok": True,
-        "wa_id": normalized_wa_id,
+        "wa_id": wa_id_for_store,
+        "to_phone": normalized_wa_id,
         "message_id": message_id,
         "media_type": media_type,
         "media_link": media_link,

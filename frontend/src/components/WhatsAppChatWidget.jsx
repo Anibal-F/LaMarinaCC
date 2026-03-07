@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const POLL_MS = 8000;
 
@@ -200,7 +201,9 @@ export default function WhatsAppChatWidget() {
     }
   };
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  const widget = (
     <>
       <button
         type="button"
@@ -347,4 +350,6 @@ export default function WhatsAppChatWidget() {
       ) : null}
     </>
   );
+
+  return createPortal(widget, document.body);
 }

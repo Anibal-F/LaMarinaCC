@@ -7,8 +7,8 @@ import re
 import time
 from typing import Any, Optional
 import unicodedata
-from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.etree import ElementTree as ET
@@ -1028,6 +1028,84 @@ def _safe_pdf_text(value: Optional[object]) -> str:
     return text if text else "-"
 
 
+def _safe_template_text(value: Optional[object], fallback: str = "N/D") -> str:
+    text = str(value or "").strip()
+    return text if text else fallback
+
+
+def _normalize_whatsapp_phone(value: str) -> str:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    # Meta Cloud API accepts Mexico as 52 + 10 digits.
+    if len(digits) == 13 and digits.startswith("521"):
+        return f"52{digits[3:]}"
+    if len(digits) == 10:
+        return f"52{digits}"
+    return digits
+
+
+def _send_whatsapp_template_message(
+    *,
+    to_phone: str,
+    template_name: str,
+    language_code: str,
+    body_params: list[str],
+) -> dict[str, Any]:
+    if not settings.whatsapp_phone_number_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="WHATSAPP_PHONE_NUMBER_ID no configurado en backend.",
+        )
+    if not settings.whatsapp_access_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="WHATSAPP_ACCESS_TOKEN no configurado en backend.",
+        )
+
+    endpoint = (
+        f"{settings.whatsapp_graph_api_base_url.rstrip('/')}/"
+        f"{settings.whatsapp_api_version}/{settings.whatsapp_phone_number_id}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": item} for item in body_params],
+                }
+            ],
+        },
+    }
+    data = json.dumps(payload).encode("utf-8")
+    request = Request(
+        endpoint,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {settings.whatsapp_access_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw_body = response.read().decode("utf-8")
+            return json.loads(raw_body) if raw_body else {}
+    except HTTPError as exc:
+        raw_error = exc.read().decode("utf-8", errors="ignore")
+        detail = raw_error or str(exc)
+        raise RuntimeError(f"Meta API error ({exc.code}): {detail}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
+
+
 def _fit_text_single_line(text: str, max_width: float, font_name: str, font_size: int) -> str:
     value = (text or "").strip()
     if not value:
@@ -1370,6 +1448,8 @@ def list_registros():
                 "nb_cliente": row.get("nb_cliente"),
                 "tel_cliente": row.get("tel_cliente"),
                 "vehiculo": vehiculo,
+                "vehiculo_marca": row.get("vehiculo_marca"),
+                "vehiculo_modelo": row.get("vehiculo_modelo"),
                 "vehiculo_tipo": row.get("vehiculo_tipo"),
                 "vehiculo_anio": row.get("vehiculo_anio"),
                 "color": row.get("vehiculo_color"),
@@ -2020,6 +2100,10 @@ class RecepcionUpdate(BaseModel):
     fecha_entrega: Optional[datetime] = None
 
 
+class WhatsAppRecepcionSendRequest(BaseModel):
+    phones: list[str]
+
+
 def _next_recepcion_folio(conn) -> str:
     row = conn.execute(
         """
@@ -2079,6 +2163,89 @@ def get_registro(recepcion_id: int):
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
     return row
+
+
+@router.post("/registros/{recepcion_id}/whatsapp-template")
+def send_recepcion_whatsapp_template(recepcion_id: int, payload: WhatsAppRecepcionSendRequest):
+    normalized_phones = []
+    for raw in payload.phones:
+        normalized = _normalize_whatsapp_phone(raw)
+        if normalized:
+            normalized_phones.append(normalized)
+    unique_phones = sorted(set(normalized_phones))
+    if not unique_phones:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Captura al menos un número de teléfono válido.",
+        )
+
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        row = conn.execute(
+            """
+            SELECT
+                id,
+                nb_cliente,
+                vehiculo_marca,
+                vehiculo_modelo,
+                vehiculo_anio
+            FROM recepciones
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (recepcion_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
+
+    body_params = [
+        _safe_template_text(row.get("nb_cliente")),
+        _safe_template_text(row.get("vehiculo_marca")),
+        _safe_template_text(row.get("vehiculo_modelo")),
+        _safe_template_text(row.get("vehiculo_anio")),
+    ]
+
+    results = []
+    sent_count = 0
+    for phone in unique_phones:
+        try:
+            meta_response = _send_whatsapp_template_message(
+                to_phone=phone,
+                template_name=settings.whatsapp_template_recepcion,
+                language_code=settings.whatsapp_template_language,
+                body_params=body_params,
+            )
+            results.append(
+                {
+                    "phone": phone,
+                    "status": "sent",
+                    "meta_response": meta_response,
+                }
+            )
+            sent_count += 1
+        except Exception as exc:
+            results.append(
+                {
+                    "phone": phone,
+                    "status": "error",
+                    "error": str(exc),
+                }
+            )
+
+    return {
+        "template": settings.whatsapp_template_recepcion,
+        "language": settings.whatsapp_template_language,
+        "params": {
+            "cliente": body_params[0],
+            "marca": body_params[1],
+            "modelo": body_params[2],
+            "anio": body_params[3],
+        },
+        "total": len(unique_phones),
+        "sent": sent_count,
+        "failed": len(unique_phones) - sent_count,
+        "results": results,
+    }
 
 
 @router.get("/registros/{recepcion_id}/pdf")

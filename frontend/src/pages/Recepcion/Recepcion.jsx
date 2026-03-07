@@ -28,6 +28,7 @@ export default function Recepcion() {
   const [query, setQuery] = useState("");
   const [activeStatus, setActiveStatus] = useState("Todos");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [mediaModal, setMediaModal] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -36,6 +37,7 @@ export default function Recepcion() {
   const [openingPdfId, setOpeningPdfId] = useState(null);
   const [pdfModal, setPdfModal] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -139,20 +141,12 @@ export default function Recepcion() {
 
   const normalizePhone = (value) => String(value || "").replace(/\D+/g, "");
 
-  const buildWhatsappPreview = (record) => {
-    const folio = record?.folio_recep || "-";
-    const cliente = record?.nb_cliente || "-";
-    const vehiculo = record?.vehiculo || "-";
-    const placas = record?.placas || "-";
-    const fecha = record?.fecha_recep || "-";
-    return `Hola ${cliente}, te compartimos tu comprobante de recepción.
-
-Folio: ${folio}
-Vehículo: ${vehiculo}
-Placas: ${placas}
-Fecha ingreso: ${fecha}
-
-Si tienes dudas, responde a este mensaje.`;
+  const getTemplateVariables = (record) => {
+    const cliente = String(record?.nb_cliente || "").trim() || "N/D";
+    const marca = String(record?.vehiculo_marca || "").trim() || "N/D";
+    const modelo = String(record?.vehiculo_modelo || "").trim() || "N/D";
+    const anio = String(record?.vehiculo_anio || "").trim() || "N/D";
+    return { cliente, marca, modelo, anio };
   };
 
   const openWhatsAppModal = (record) => {
@@ -160,13 +154,13 @@ Si tienes dudas, responde a este mensaje.`;
       record,
       primaryPhone: normalizePhone(record?.tel_cliente),
       extraPhones: [""],
-      message: buildWhatsappPreview(record),
       error: ""
     });
   };
 
-  const sendWhatsAppMessage = () => {
+  const sendWhatsAppMessage = async () => {
     if (!whatsAppModal) return;
+    setNotice("");
     const phoneList = [
       normalizePhone(whatsAppModal.primaryPhone),
       ...whatsAppModal.extraPhones.map((value) => normalizePhone(value))
@@ -179,11 +173,32 @@ Si tienes dudas, responde a este mensaje.`;
       }));
       return;
     }
-    const text = encodeURIComponent(whatsAppModal.message || "");
-    uniquePhones.forEach((phone) => {
-      window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener,noreferrer");
-    });
-    setWhatsAppModal(null);
+    try {
+      setSendingWhatsApp(true);
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/recepcion/registros/${whatsAppModal.record.id}/whatsapp-template`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phones: uniquePhones })
+        }
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.detail || "No se pudo enviar el template por WhatsApp.");
+      }
+      setNotice(
+        `WhatsApp enviado. Exitosos: ${data?.sent ?? 0}, fallidos: ${data?.failed ?? 0}.`
+      );
+      setWhatsAppModal(null);
+    } catch (err) {
+      setWhatsAppModal((prev) => ({
+        ...prev,
+        error: err.message || "No se pudo enviar el template por WhatsApp."
+      }));
+    } finally {
+      setSendingWhatsApp(false);
+    }
   };
 
   const openMedia = async (record, mediaType) => {
@@ -280,6 +295,10 @@ Si tienes dudas, responde a este mensaje.`;
     });
   }, [records, query, activeStatus]);
 
+  const whatsAppTemplateVars = whatsAppModal
+    ? getTemplateVariables(whatsAppModal.record)
+    : null;
+
   useEffect(() => {
     return () => {
       if (pdfModal?.objectUrl) {
@@ -350,6 +369,7 @@ Si tienes dudas, responde a este mensaje.`;
             </div>
 
             {error ? <p className="text-sm text-alert-red">{error}</p> : null}
+            {notice ? <p className="text-sm text-alert-green">{notice}</p> : null}
 
             <div className="overflow-hidden bg-surface-dark border border-border-dark rounded-xl">
               <table className="min-w-full text-left border-collapse">
@@ -751,14 +771,32 @@ Si tienes dudas, responde a este mensaje.`;
             <div className="p-5 space-y-4">
               <div className="rounded-lg border border-border-dark bg-background-dark/40 p-3">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-primary">
-                  Template: recepcion_pdf_v1
+                  Template: recepcion_automovil
                 </p>
                 <p className="text-xs text-slate-300 mt-2">
                   Variables detectadas:{" "}
                   <span className="text-white font-semibold">
-                    Cliente, Folio, Vehículo, Placas, Fecha ingreso
+                    Nombre cliente, Marca, Modelo, Año
                   </span>
                 </p>
+                <div className="mt-3 text-xs text-slate-300 space-y-1">
+                  <p>
+                    <span className="text-slate-500">1.</span>{" "}
+                    {whatsAppTemplateVars?.cliente}
+                  </p>
+                  <p>
+                    <span className="text-slate-500">2.</span>{" "}
+                    {whatsAppTemplateVars?.marca}
+                  </p>
+                  <p>
+                    <span className="text-slate-500">3.</span>{" "}
+                    {whatsAppTemplateVars?.modelo}
+                  </p>
+                  <p>
+                    <span className="text-slate-500">4.</span>{" "}
+                    {whatsAppTemplateVars?.anio}
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -835,21 +873,6 @@ Si tienes dudas, responde a este mensaje.`;
                 ))}
               </div>
 
-              <label className="space-y-1.5 block">
-                <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                  Mensaje (preview)
-                </span>
-                <textarea
-                  className="w-full min-h-36 bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-primary"
-                  value={whatsAppModal.message}
-                  onChange={(e) =>
-                    setWhatsAppModal((prev) => ({
-                      ...prev,
-                      message: e.target.value
-                    }))
-                  }
-                />
-              </label>
               {whatsAppModal.error ? (
                 <p className="text-sm text-alert-red">{whatsAppModal.error}</p>
               ) : null}
@@ -859,15 +882,17 @@ Si tienes dudas, responde a este mensaje.`;
                 type="button"
                 className="px-3 py-2 rounded-lg border border-border-dark text-slate-300 hover:text-white"
                 onClick={() => setWhatsAppModal(null)}
+                disabled={sendingWhatsApp}
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 font-semibold"
+                className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 font-semibold disabled:opacity-60"
                 onClick={sendWhatsAppMessage}
+                disabled={sendingWhatsApp}
               >
-                Enviar
+                {sendingWhatsApp ? "Enviando..." : "Enviar"}
               </button>
             </div>
           </div>

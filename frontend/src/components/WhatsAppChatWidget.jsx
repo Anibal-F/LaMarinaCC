@@ -45,6 +45,7 @@ export default function WhatsAppChatWidget() {
   const [activeWaId, setActiveWaId] = useState("");
   const [messages, setMessages] = useState([]);
   const [newChatWaId, setNewChatWaId] = useState("");
+  const [clientesCatalogo, setClientesCatalogo] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
@@ -110,6 +111,19 @@ export default function WhatsAppChatWidget() {
     }
   };
 
+  const loadClientesCatalogo = async () => {
+    if (!open) return;
+    try {
+      const response = await fetch(`${apiBase}/clientes`);
+      if (!response.ok) return;
+      const data = await response.json();
+      const withPhone = (data || []).filter((item) => String(item?.tel_cliente || "").trim());
+      setClientesCatalogo(withPhone);
+    } catch {
+      // silent: catalog is optional helper for starting chat
+    }
+  };
+
   const loadMessages = async (waId) => {
     if (!open || !waId) return;
     try {
@@ -137,6 +151,7 @@ export default function WhatsAppChatWidget() {
   useEffect(() => {
     if (!open) return;
     loadConversations();
+    loadClientesCatalogo();
   }, [open]);
 
   useEffect(() => {
@@ -278,6 +293,24 @@ export default function WhatsAppChatWidget() {
                     Abrir
                   </button>
                 </div>
+                <select
+                  className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-slate-200"
+                  value=""
+                  onChange={(event) => {
+                    const selected = clientesCatalogo.find(
+                      (item) => String(item.id) === event.target.value
+                    );
+                    if (!selected) return;
+                    setNewChatWaId(String(selected.tel_cliente || ""));
+                  }}
+                >
+                  <option value="">Seleccionar cliente del catálogo...</option>
+                  {clientesCatalogo.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nb_cliente} · {item.tel_cliente}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar">

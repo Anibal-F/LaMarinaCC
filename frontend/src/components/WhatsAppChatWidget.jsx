@@ -9,8 +9,10 @@ const formatTime = (value) => {
   return date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 };
 
-const MediaPreview = ({ item }) => {
-  const link = item.media_link;
+const MediaPreview = ({ item, apiBase }) => {
+  const rawLink = item.media_link;
+  const link =
+    rawLink && !/^https?:\/\//i.test(rawLink) ? `${apiBase}${rawLink}` : rawLink;
   if (!link) return null;
   if (item.message_type === "image") {
     return (
@@ -286,7 +288,7 @@ export default function WhatsAppChatWidget() {
                   }`}
                 >
                   <p>{item.text_body || `[${item.message_type}]`}</p>
-                  <MediaPreview item={item} />
+                  <MediaPreview item={item} apiBase={apiBase} />
                   <p className="mt-1 text-[10px] text-slate-400">
                     {formatTime(item.created_at)} {item.status ? `· ${item.status}` : ""}
                   </p>

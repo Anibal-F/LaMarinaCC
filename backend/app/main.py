@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from pydantic import BaseModel
 from psycopg.rows import dict_row
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
@@ -131,6 +131,44 @@ def _send_whatsapp_media_message(
         raise RuntimeError(f"Meta API error ({exc.code}): {details or str(exc)}") from exc
     except URLError as exc:
         raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
+
+
+def _fetch_whatsapp_media_info(media_id: str) -> dict:
+    endpoint = (
+        f"{settings.whatsapp_graph_api_base_url.rstrip('/')}/"
+        f"{settings.whatsapp_api_version}/{media_id}"
+    )
+    request = UrlRequest(
+        endpoint,
+        headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Meta API media error ({exc.code}): {details or str(exc)}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
+
+
+def _download_whatsapp_media(media_url: str) -> tuple[bytes, str]:
+    request = UrlRequest(
+        media_url,
+        headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            content_type = response.headers.get("Content-Type", "application/octet-stream")
+            return response.read(), content_type
+    except HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Meta API download error ({exc.code}): {details or str(exc)}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"No se pudo descargar media de Meta: {exc}") from exc
 
 
 def _detect_media_type(filename: str, content_type: str) -> str:
@@ -341,7 +379,8 @@ def list_whatsapp_messages(wa_id: str, limit: int = 100):
                 status,
                 created_at,
                 raw_payload->>'media_link' AS media_link,
-                raw_payload->>'file_name' AS file_name
+                raw_payload->>'file_name' AS file_name,
+                raw_payload->>'media_id' AS media_id
             FROM whatsapp_chat_messages
             WHERE wa_id = %s
             ORDER BY created_at ASC
@@ -349,7 +388,31 @@ def list_whatsapp_messages(wa_id: str, limit: int = 100):
             """,
             (wa_id.strip(), safe_limit),
         ).fetchall()
+    for row in rows:
+        if not row.get("media_link") and row.get("media_id"):
+            row["media_link"] = f"{settings.whatsapp_pdf_public_base_url.rstrip('/')}/whatsapp/chat/media/{row['media_id']}"
+            if not settings.whatsapp_pdf_public_base_url:
+                row["media_link"] = f"/whatsapp/chat/media/{row['media_id']}"
     return rows
+
+
+@app.get("/whatsapp/chat/media/{media_id}")
+def get_whatsapp_chat_media(media_id: str):
+    if not media_id.strip():
+        raise HTTPException(status_code=400, detail="media_id requerido")
+    if not settings.whatsapp_access_token:
+        raise HTTPException(status_code=503, detail="WHATSAPP_ACCESS_TOKEN no configurado en backend.")
+    try:
+        info = _fetch_whatsapp_media_info(media_id.strip())
+        media_url = str(info.get("url") or "").strip()
+        if not media_url:
+            raise HTTPException(status_code=404, detail="Media no disponible en Meta.")
+        content, content_type = _download_whatsapp_media(media_url)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return Response(content=content, media_type=content_type or "application/octet-stream")
 
 
 @app.post("/whatsapp/chat/messages")
@@ -473,13 +536,18 @@ async def receive_whatsapp_webhook(request: Request):
                     wa_id = str(message.get("from") or "").strip()
                     message_type = str(message.get("type") or "unknown").strip()
                     body_text = ((message.get("text") or {}).get("body") or "").strip()
+                    media_block = message.get(message_type) if message_type in {"image", "video", "audio", "document"} else {}
+                    media_id = str((media_block or {}).get("id") or "").strip() or None
                     if not body_text and message_type in {"image", "video", "audio", "document"}:
-                        caption = ((message.get(message_type) or {}).get("caption") or "").strip()
+                        caption = ((media_block or {}).get("caption") or "").strip()
                         body_text = caption or f"[{message_type}]"
                     message_id = str(message.get("id") or "").strip() or None
                     timestamp = str(message.get("timestamp") or "").strip() or None
                     if not wa_id:
                         continue
+                    payload_to_store = dict(message)
+                    if media_id:
+                        payload_to_store["media_id"] = media_id
                     _insert_whatsapp_chat_message(
                         conn,
                         wa_id=wa_id,
@@ -488,7 +556,7 @@ async def receive_whatsapp_webhook(request: Request):
                         text_body=body_text,
                         message_id=message_id,
                         status_name="received",
-                        raw_payload=message,
+                        raw_payload=payload_to_store,
                         created_at_epoch=timestamp,
                     )
 

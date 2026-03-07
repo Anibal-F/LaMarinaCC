@@ -2236,6 +2236,7 @@ def send_recepcion_whatsapp_template(
                 folio_recep,
                 nb_cliente,
                 vehiculo_marca,
+                vehiculo_tipo,
                 vehiculo_modelo,
                 vehiculo_anio
             FROM recepciones
@@ -2250,8 +2251,8 @@ def send_recepcion_whatsapp_template(
     body_params = [
         _safe_template_text(row.get("nb_cliente")),
         _safe_template_text(row.get("vehiculo_marca")),
-        _safe_template_text(row.get("vehiculo_modelo")),
-        _safe_template_text(row.get("vehiculo_anio")),
+        _safe_template_text(row.get("vehiculo_tipo")),
+        _safe_template_text(row.get("vehiculo_modelo") or row.get("vehiculo_anio")),
     ]
     public_base_url = (settings.whatsapp_pdf_public_base_url or "").strip()
     if not public_base_url:
@@ -2303,8 +2304,8 @@ def send_recepcion_whatsapp_template(
         "params": {
             "cliente": body_params[0],
             "marca": body_params[1],
-            "modelo": body_params[2],
-            "anio": body_params[3],
+            "tipo": body_params[2],
+            "modelo_o_anio": body_params[3],
         },
         "total": len(unique_phones),
         "sent": sent_count,

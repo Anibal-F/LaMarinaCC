@@ -144,9 +144,12 @@ export default function Recepcion() {
   const getTemplateVariables = (record) => {
     const cliente = String(record?.nb_cliente || "").trim() || "N/D";
     const marca = String(record?.vehiculo_marca || "").trim() || "N/D";
-    const modelo = String(record?.vehiculo_modelo || "").trim() || "N/D";
-    const anio = String(record?.vehiculo_anio || "").trim() || "N/D";
-    return { cliente, marca, modelo, anio };
+    const tipo = String(record?.vehiculo_tipo || "").trim() || "N/D";
+    const modeloAnio =
+      String(record?.vehiculo_modelo || "").trim() ||
+      String(record?.vehiculo_anio || "").trim() ||
+      "N/D";
+    return { cliente, marca, tipo, modeloAnio };
   };
 
   const openWhatsAppModal = (record) => {
@@ -154,7 +157,8 @@ export default function Recepcion() {
       record,
       primaryPhone: normalizePhone(record?.tel_cliente),
       extraPhones: [""],
-      error: ""
+      error: "",
+      success: ""
     });
   };
 
@@ -187,13 +191,20 @@ export default function Recepcion() {
       if (!response.ok) {
         throw new Error(data?.detail || "No se pudo enviar el template por WhatsApp.");
       }
-      setNotice(
-        `WhatsApp enviado. Exitosos: ${data?.sent ?? 0}, fallidos: ${data?.failed ?? 0}.`
-      );
-      setWhatsAppModal(null);
+      const sent = Number(data?.sent ?? 0);
+      const failed = Number(data?.failed ?? 0);
+      const firstError = data?.results?.find?.((item) => item?.status === "error")?.error || "";
+      const msg = `WhatsApp procesado. Exitosos: ${sent}, fallidos: ${failed}.`;
+      setNotice(msg);
+      setWhatsAppModal((prev) => ({
+        ...prev,
+        error: failed > 0 && sent === 0 ? firstError || msg : "",
+        success: sent > 0 ? msg : ""
+      }));
     } catch (err) {
       setWhatsAppModal((prev) => ({
         ...prev,
+        success: "",
         error: err.message || "No se pudo enviar el template por WhatsApp."
       }));
     } finally {
@@ -776,7 +787,7 @@ export default function Recepcion() {
                 <p className="text-xs text-slate-300 mt-2">
                   Variables detectadas:{" "}
                   <span className="text-white font-semibold">
-                    Nombre cliente, Marca, Modelo, Año
+                    Nombre cliente, Marca, Tipo/Carrocería, Modelo/Año
                   </span>
                 </p>
                 <p className="text-[11px] text-slate-400 mt-2">
@@ -793,11 +804,11 @@ export default function Recepcion() {
                   </p>
                   <p>
                     <span className="text-slate-500">3.</span>{" "}
-                    {whatsAppTemplateVars?.modelo}
+                    {whatsAppTemplateVars?.tipo}
                   </p>
                   <p>
                     <span className="text-slate-500">4.</span>{" "}
-                    {whatsAppTemplateVars?.anio}
+                    {whatsAppTemplateVars?.modeloAnio}
                   </p>
                 </div>
               </div>
@@ -814,6 +825,7 @@ export default function Recepcion() {
                       setWhatsAppModal((prev) => ({
                         ...prev,
                         primaryPhone: e.target.value,
+                        success: "",
                         error: ""
                       }))
                     }
@@ -851,6 +863,7 @@ export default function Recepcion() {
                           extraPhones: prev.extraPhones.map((item, itemIdx) =>
                             itemIdx === idx ? e.target.value : item
                           ),
+                          success: "",
                           error: ""
                         }))
                       }
@@ -878,6 +891,9 @@ export default function Recepcion() {
 
               {whatsAppModal.error ? (
                 <p className="text-sm text-alert-red">{whatsAppModal.error}</p>
+              ) : null}
+              {whatsAppModal.success ? (
+                <p className="text-sm text-alert-green">{whatsAppModal.success}</p>
               ) : null}
             </div>
             <div className="px-5 py-4 border-t border-border-dark flex justify-end gap-2">

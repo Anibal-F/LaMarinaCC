@@ -1,8 +1,8 @@
 from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 
 from app.core.config import settings
 from app.auth.routes import router as auth_router
@@ -77,3 +77,30 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/webhooks/whatsapp")
+def verify_whatsapp_webhook(
+    hub_mode: str | None = Query(default=None, alias="hub.mode"),
+    hub_verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    hub_challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    expected_token = (settings.whatsapp_webhook_verify_token or "").strip()
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="WHATSAPP_WEBHOOK_VERIFY_TOKEN no configurado en backend.",
+        )
+    if hub_mode == "subscribe" and hub_verify_token == expected_token and hub_challenge:
+        return PlainTextResponse(content=hub_challenge, status_code=status.HTTP_200_OK)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No se pudo validar webhook de WhatsApp.",
+    )
+
+
+@app.post("/webhooks/whatsapp")
+async def receive_whatsapp_webhook(request: Request):
+    # Keep a lightweight ACK so Meta can mark delivery quickly.
+    await request.body()
+    return {"received": True}

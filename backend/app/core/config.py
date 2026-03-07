@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     whatsapp_template_recepcion: str = "recepcion_automovil"
     whatsapp_template_language: str = "es"
     whatsapp_pdf_public_base_url: str = ""
+    whatsapp_webhook_verify_token: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

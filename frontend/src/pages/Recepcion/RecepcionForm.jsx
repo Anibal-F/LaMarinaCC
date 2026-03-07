@@ -111,6 +111,7 @@ export default function RecepcionForm() {
   const audioStreamRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
   const recordingStartedAtRef = useRef(0);
+  const entregaEstimRef = useRef(null);
   const [recordingTarget, setRecordingTarget] = useState("");
   const [transcribingTarget, setTranscribingTarget] = useState("");
   const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
@@ -887,7 +888,10 @@ export default function RecepcionForm() {
         vehiculo_tipo: prev.vehiculo_tipo || data.vehiculo_tipo || "",
         vehiculo_color: prev.vehiculo_color || data.vehiculo_color || "",
         kilometraje: prev.kilometraje || (data.kilometraje ? String(data.kilometraje) : ""),
-        seguro: prev.seguro || data.seguro || prev.seguro
+        seguro:
+          prev.seguro && prev.seguro !== "Particular (Sin Seguro)"
+            ? prev.seguro
+            : data.seguro || prev.seguro
       }));
       if (data.vehiculo_marca) {
         const selected = marcasAutos.find((marca) => marca.nb_marca === data.vehiculo_marca);
@@ -1691,12 +1695,31 @@ export default function RecepcionForm() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Entrega Estimada</label>
-                      <input
-                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
-                        type="date"
-                        value={form.fecha_entregaestim}
-                        onChange={(event) => setForm({ ...form, fecha_entregaestim: event.target.value })}
-                      />
+                      <div className="relative">
+                        <input
+                          ref={entregaEstimRef}
+                          className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 pr-10 text-sm text-white"
+                          type="date"
+                          value={form.fecha_entregaestim}
+                          onChange={(event) => setForm({ ...form, fecha_entregaestim: event.target.value })}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Abrir calendario"
+                          className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-white"
+                          onClick={() => {
+                            const input = entregaEstimRef.current;
+                            if (!input) return;
+                            if (typeof input.showPicker === "function") {
+                              input.showPicker();
+                              return;
+                            }
+                            input.focus();
+                          }}
+                        >
+                          <span className="material-symbols-outlined text-lg">calendar_month</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Estatus</label>

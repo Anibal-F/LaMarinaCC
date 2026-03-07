@@ -12,9 +12,9 @@ const formatTime = (value) => {
 
 const MediaPreview = ({ item, apiBase }) => {
   const rawLink = item.media_link;
-  const link =
-    rawLink && !/^https?:\/\//i.test(rawLink) ? `${apiBase}${rawLink}` : rawLink;
+  const link = rawLink && !/^https?:\/\//i.test(rawLink) ? `${apiBase}${rawLink}` : rawLink;
   if (!link) return null;
+
   if (item.message_type === "image") {
     return (
       <a href={link} target="_blank" rel="noopener noreferrer" className="block mt-2">
@@ -23,25 +23,14 @@ const MediaPreview = ({ item, apiBase }) => {
     );
   }
   if (item.message_type === "video") {
-    return (
-      <video
-        controls
-        src={link}
-        className="mt-2 max-h-56 w-full rounded-md border border-border-dark"
-      />
-    );
+    return <video controls src={link} className="mt-2 max-h-56 w-full rounded-md border border-border-dark" />;
   }
   if (item.message_type === "audio") {
     return <audio controls src={link} className="mt-2 w-full" />;
   }
   if (item.message_type === "document") {
     return (
-      <a
-        href={link}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-flex text-[11px] text-primary hover:text-white"
-      >
+      <a href={link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-[11px] text-primary hover:text-white">
         Abrir documento
       </a>
     );
@@ -51,10 +40,11 @@ const MediaPreview = ({ item, apiBase }) => {
 
 export default function WhatsAppChatWidget() {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState("list");
   const [conversations, setConversations] = useState([]);
   const [activeWaId, setActiveWaId] = useState("");
   const [messages, setMessages] = useState([]);
-  const [draftWaId, setDraftWaId] = useState("");
+  const [newChatWaId, setNewChatWaId] = useState("");
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
@@ -69,9 +59,10 @@ export default function WhatsAppChatWidget() {
       return {};
     }
   });
-  const fileInputRef = useRef(null);
 
+  const fileInputRef = useRef(null);
   const apiBase = useMemo(() => import.meta.env.VITE_API_URL, []);
+
   const filteredConversations = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return conversations;
@@ -111,9 +102,6 @@ export default function WhatsAppChatWidget() {
       if (!response.ok) throw new Error("No se pudieron cargar conversaciones");
       const data = await response.json();
       setConversations(data || []);
-      if (!activeWaId && data?.length) {
-        setActiveWaId(data[0].wa_id);
-      }
     } catch (err) {
       setError(err.message || "No se pudieron cargar conversaciones");
     } finally {
@@ -125,9 +113,7 @@ export default function WhatsAppChatWidget() {
     if (!open || !waId) return;
     try {
       setLoadingMessages(true);
-      const response = await fetch(
-        `${apiBase}/whatsapp/chat/messages?wa_id=${encodeURIComponent(waId)}&limit=200`
-      );
+      const response = await fetch(`${apiBase}/whatsapp/chat/messages?wa_id=${encodeURIComponent(waId)}&limit=200`);
       if (!response.ok) throw new Error("No se pudieron cargar mensajes");
       const data = await response.json();
       setMessages(data || []);
@@ -139,27 +125,32 @@ export default function WhatsAppChatWidget() {
     }
   };
 
+  const openConversation = async (waId) => {
+    if (!waId) return;
+    setActiveWaId(waId);
+    setNewChatWaId(waId);
+    setView("chat");
+    await loadMessages(waId);
+  };
+
   useEffect(() => {
     if (!open) return;
     loadConversations();
   }, [open]);
 
   useEffect(() => {
-    if (!open || !activeWaId) return;
-    loadMessages(activeWaId);
-  }, [open, activeWaId]);
-
-  useEffect(() => {
     if (!open) return undefined;
     const timer = window.setInterval(() => {
       loadConversations();
-      if (activeWaId) loadMessages(activeWaId);
+      if (view === "chat" && activeWaId) {
+        loadMessages(activeWaId);
+      }
     }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [open, activeWaId]);
+  }, [open, activeWaId, view]);
 
   const sendMessage = async () => {
-    const waId = (activeWaId || draftWaId || "").trim();
+    const waId = (activeWaId || newChatWaId || "").trim();
     const text = messageText.trim();
     if (!waId || (!text && !selectedFile)) {
       setError("Captura número (wa_id) y mensaje o adjunto.");
@@ -191,9 +182,8 @@ export default function WhatsAppChatWidget() {
       }
       setMessageText("");
       setSelectedFile(null);
-      setActiveWaId(waId);
+      await openConversation(waId);
       await loadConversations();
-      await loadMessages(waId);
     } catch (err) {
       setError(err.message || "No se pudo enviar el mensaje");
     } finally {
@@ -203,13 +193,18 @@ export default function WhatsAppChatWidget() {
 
   if (typeof document === "undefined") return null;
 
+  const activeConversation = conversations.find((item) => item.wa_id === activeWaId);
+
   const widget = (
     <>
       <button
         type="button"
         title="Chat WhatsApp"
-        onClick={() => setOpen((prev) => !prev)}
-        className="fixed bottom-6 right-6 z-[120] h-14 w-14 rounded-full bg-[#25D366] shadow-lg shadow-[#25D366]/40 text-white flex items-center justify-center hover:scale-105 transition-transform relative"
+        onClick={() => {
+          setOpen((prev) => !prev);
+          if (!open) setView("list");
+        }}
+        className="fixed h-14 w-14 rounded-full bg-[#25D366] shadow-lg shadow-[#25D366]/40 text-white flex items-center justify-center hover:scale-105 transition-transform relative"
         style={{ position: "fixed", right: "1.5rem", bottom: "1.5rem", left: "auto", zIndex: 120 }}
       >
         <svg viewBox="0 0 32 32" className="w-7 h-7" fill="currentColor" aria-hidden="true">
@@ -225,131 +220,162 @@ export default function WhatsAppChatWidget() {
 
       {open ? (
         <div
-          className="fixed bottom-24 right-6 z-[119] w-[360px] max-w-[calc(100vw-1.5rem)] h-[70vh] rounded-xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col"
+          className="fixed w-[380px] max-w-[calc(100vw-1.5rem)] h-[72vh] rounded-xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col"
           style={{ position: "fixed", right: "1.5rem", bottom: "6rem", left: "auto", zIndex: 119 }}
         >
           <div className="px-4 py-3 border-b border-border-dark flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white">WhatsApp</h3>
-            <button
-              type="button"
-              className="text-slate-400 hover:text-white"
-              onClick={() => setOpen(false)}
-            >
-              <span className="material-symbols-outlined text-lg">close</span>
-            </button>
-          </div>
-
-          <div className="px-3 py-2 border-b border-border-dark space-y-2">
-            <input
-              className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white"
-              placeholder="Buscar wa_id o mensaje..."
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-            <input
-              className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white"
-              placeholder="wa_id para iniciar chat (ej. 526691234567)"
-              value={draftWaId}
-              onChange={(event) => setDraftWaId(event.target.value)}
-            />
-            {loadingConversations ? (
-              <p className="text-[11px] text-slate-500">Cargando conversaciones...</p>
-            ) : (
-              <div className="flex flex-wrap gap-1 max-h-20 overflow-auto custom-scrollbar">
-                {filteredConversations.map((item) => (
-                  <button
-                    key={item.wa_id}
-                    type="button"
-                    onClick={() => {
-                      setActiveWaId(item.wa_id);
-                      setDraftWaId(item.wa_id);
-                      markConversationSeen(item.wa_id);
-                    }}
-                    className={`px-2 py-1 rounded-md text-[11px] border ${
-                      activeWaId === item.wa_id
-                        ? "bg-primary/20 text-primary border-primary/30"
-                        : "bg-background-dark text-slate-300 border-border-dark"
-                    }`}
-                  >
-                    {item.wa_id}
-                    {hasUnread(item) ? <span className="ml-1 text-alert-red">•</span> : null}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2 bg-background-dark/40">
-            {loadingMessages ? (
-              <p className="text-xs text-slate-500">Cargando mensajes...</p>
-            ) : messages.length === 0 ? (
-              <p className="text-xs text-slate-500">Sin mensajes para mostrar.</p>
-            ) : (
-              messages.map((item) => (
-                <div
-                  key={item.id}
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
-                    item.direction === "out"
-                      ? "ml-auto bg-primary/20 text-white border border-primary/30"
-                      : "mr-auto bg-surface-dark text-slate-200 border border-border-dark"
-                  }`}
-                >
-                  <p>{item.text_body || `[${item.message_type}]`}</p>
-                  <MediaPreview item={item} apiBase={apiBase} />
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    {formatTime(item.created_at)} {item.status ? `· ${item.status}` : ""}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="p-3 border-t border-border-dark space-y-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
-            />
-            <textarea
-              className="w-full min-h-20 bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
-              placeholder="Escribe tu mensaje..."
-              value={messageText}
-              onChange={(event) => setMessageText(event.target.value)}
-            />
-            <div className="flex items-center justify-between gap-2">
+            {view === "chat" ? (
               <button
                 type="button"
-                className="px-3 py-1.5 rounded-lg border border-border-dark text-xs text-slate-300 hover:text-white"
-                onClick={() => fileInputRef.current?.click()}
+                className="text-slate-300 hover:text-white flex items-center gap-1"
+                onClick={() => setView("list")}
               >
-                Adjuntar
+                <span className="material-symbols-outlined text-lg">arrow_back</span>
+                <span className="text-xs">Chats</span>
               </button>
-              {selectedFile ? (
-                <div className="text-[11px] text-slate-400 truncate">
-                  {selectedFile.name}
+            ) : (
+              <h3 className="text-sm font-bold text-white">WhatsApp</h3>
+            )}
+            <div className="flex items-center gap-2">
+              {view === "chat" && activeWaId ? <p className="text-xs text-slate-400">{activeWaId}</p> : null}
+              <button
+                type="button"
+                className="text-slate-400 hover:text-white"
+                onClick={() => setOpen(false)}
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+          </div>
+
+          {view === "list" ? (
+            <>
+              <div className="p-3 border-b border-border-dark space-y-2">
+                <input
+                  className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white"
+                  placeholder="Buscar chat..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white"
+                    placeholder="Nuevo wa_id (ej. 526691234567)"
+                    value={newChatWaId}
+                    onChange={(event) => setNewChatWaId(event.target.value)}
+                  />
                   <button
                     type="button"
-                    className="ml-2 text-alert-red"
-                    onClick={() => setSelectedFile(null)}
+                    className="px-3 rounded-lg bg-primary text-white text-xs font-semibold"
+                    onClick={() => openConversation(newChatWaId.trim())}
                   >
-                    Quitar
+                    Abrir
                   </button>
                 </div>
-              ) : (
-                <span className="text-[11px] text-slate-500">Sin adjunto</span>
-              )}
-            </div>
-            {error ? <p className="text-xs text-alert-red">{error}</p> : null}
-            <button
-              type="button"
-              className="w-full px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60"
-              disabled={sending}
-              onClick={sendMessage}
-            >
-              {sending ? "Enviando..." : "Enviar"}
-            </button>
-          </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                {loadingConversations ? (
+                  <p className="px-3 py-4 text-xs text-slate-500">Cargando conversaciones...</p>
+                ) : filteredConversations.length === 0 ? (
+                  <p className="px-3 py-4 text-xs text-slate-500">No hay conversaciones.</p>
+                ) : (
+                  filteredConversations.map((item) => (
+                    <button
+                      key={item.wa_id}
+                      type="button"
+                      onClick={() => openConversation(item.wa_id)}
+                      className="w-full text-left px-3 py-3 border-b border-border-dark/60 hover:bg-background-dark/40"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-full bg-background-dark border border-border-dark flex items-center justify-center text-slate-300 text-sm font-semibold">
+                          {String(item.wa_id || "?").slice(-2)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm text-white font-semibold truncate">{item.wa_id}</p>
+                            <p className="text-[11px] text-slate-500 whitespace-nowrap">{formatTime(item.last_at)}</p>
+                          </div>
+                          <p className="text-xs text-slate-400 truncate">{item.last_text || "Sin mensajes"}</p>
+                        </div>
+                        {hasUnread(item) ? <span className="h-2.5 w-2.5 rounded-full bg-[#25D366] mt-2" /> : null}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2 bg-background-dark/40">
+                {loadingMessages ? (
+                  <p className="text-xs text-slate-500">Cargando mensajes...</p>
+                ) : messages.length === 0 ? (
+                  <p className="text-xs text-slate-500">Sin mensajes para mostrar.</p>
+                ) : (
+                  messages.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
+                        item.direction === "out"
+                          ? "ml-auto bg-primary/20 text-white border border-primary/30"
+                          : "mr-auto bg-surface-dark text-slate-200 border border-border-dark"
+                      }`}
+                    >
+                      <p>{item.text_body || `[${item.message_type}]`}</p>
+                      <MediaPreview item={item} apiBase={apiBase} />
+                      <p className="mt-1 text-[10px] text-slate-400">
+                        {formatTime(item.created_at)} {item.status ? `· ${item.status}` : ""}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="p-3 border-t border-border-dark space-y-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
+                />
+                <textarea
+                  className="w-full min-h-20 bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                  placeholder={activeConversation ? "Escribe tu mensaje..." : "Selecciona o abre un chat"}
+                  value={messageText}
+                  onChange={(event) => setMessageText(event.target.value)}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg border border-border-dark text-xs text-slate-300 hover:text-white"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Adjuntar
+                  </button>
+                  {selectedFile ? (
+                    <div className="text-[11px] text-slate-400 truncate">
+                      {selectedFile.name}
+                      <button type="button" className="ml-2 text-alert-red" onClick={() => setSelectedFile(null)}>
+                        Quitar
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-slate-500">Sin adjunto</span>
+                  )}
+                </div>
+                {error ? <p className="text-xs text-alert-red">{error}</p> : null}
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60"
+                  disabled={sending || !activeWaId}
+                  onClick={sendMessage}
+                >
+                  {sending ? "Enviando..." : "Enviar"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </>

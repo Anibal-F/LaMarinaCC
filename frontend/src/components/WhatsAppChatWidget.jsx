@@ -320,8 +320,16 @@ export default function WhatsAppChatWidget() {
 
       {open ? (
         <div
-          className="fixed w-[380px] max-w-[calc(100vw-1.5rem)] h-[72vh] rounded-xl border border-primary/35 bg-gradient-to-b from-[#212B3A] to-[#1B2330] shadow-2xl shadow-black/55 overflow-hidden flex flex-col"
-          style={{ position: "fixed", right: "1.5rem", bottom: "6rem", left: "auto", zIndex: 119 }}
+          className="fixed w-[380px] max-w-[calc(100vw-1.5rem)] h-[72vh] rounded-xl border border-primary/45 bg-gradient-to-b from-[#212B3A] to-[#1B2330] shadow-2xl shadow-black/70 ring-1 ring-primary/20 overflow-hidden flex flex-col"
+          style={{
+            position: "fixed",
+            right: "1.5rem",
+            bottom: "6rem",
+            left: "auto",
+            zIndex: 119,
+            boxShadow:
+              "0 22px 70px rgba(0,0,0,0.65), 0 0 0 1px rgba(45,212,191,0.20), 0 0 38px rgba(45,212,191,0.18)",
+          }}
         >
           <div className="px-4 py-3 border-b border-primary/20 bg-[#273446] flex items-center justify-between">
             {view === "chat" ? (

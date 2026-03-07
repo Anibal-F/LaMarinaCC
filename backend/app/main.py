@@ -1,8 +1,13 @@
+import json
+import re
+import unicodedata
 from fastapi import FastAPI
 from fastapi import HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from fastapi.responses import FileResponse, PlainTextResponse
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest, urlopen
 
 from app.core.config import settings
 from app.auth.routes import router as auth_router
@@ -22,6 +27,59 @@ def _parse_origins(raw: str) -> list[str]:
     if not raw:
         return []
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _normalize_trigger(text: str) -> str:
+    value = unicodedata.normalize("NFD", (text or "").strip().lower())
+    value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
+def _resolve_auto_reply(user_text: str) -> str:
+    normalized = _normalize_trigger(user_text)
+    if "donde se encuentran ubicados" in normalized or "ubicacion" in normalized:
+        return settings.whatsapp_auto_reply_ubicacion
+    if "que horario de servicio tienen" in normalized or "horario" in normalized:
+        return settings.whatsapp_auto_reply_horario
+    if "tengo una duda" in normalized:
+        return settings.whatsapp_auto_reply_duda
+    return settings.whatsapp_auto_reply_default
+
+
+def _send_whatsapp_text_message(*, to_phone: str, text: str) -> dict:
+    if not settings.whatsapp_phone_number_id:
+        raise RuntimeError("WHATSAPP_PHONE_NUMBER_ID no configurado.")
+    if not settings.whatsapp_access_token:
+        raise RuntimeError("WHATSAPP_ACCESS_TOKEN no configurado.")
+    endpoint = (
+        f"{settings.whatsapp_graph_api_base_url.rstrip('/')}/"
+        f"{settings.whatsapp_api_version}/{settings.whatsapp_phone_number_id}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "text",
+        "text": {"body": text},
+    }
+    request = UrlRequest(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.whatsapp_access_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Meta API error ({exc.code}): {details or str(exc)}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
 
 
 app = FastAPI(title=settings.app_name)
@@ -101,6 +159,30 @@ def verify_whatsapp_webhook(
 
 @app.post("/webhooks/whatsapp")
 async def receive_whatsapp_webhook(request: Request):
-    # Keep a lightweight ACK so Meta can mark delivery quickly.
-    await request.body()
+    payload = await request.json()
+    if not settings.whatsapp_auto_reply_enabled:
+        return {"received": True, "auto_reply": "disabled"}
+
+    entries = payload.get("entry") or []
+    for entry in entries:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            messages = value.get("messages") or []
+            for message in messages:
+                # Only auto-respond to incoming text messages from users.
+                if message.get("type") != "text":
+                    continue
+                user_text = ((message.get("text") or {}).get("body") or "").strip()
+                if not user_text:
+                    continue
+                to_phone = str(message.get("from") or "").strip()
+                if not to_phone:
+                    continue
+                reply = _resolve_auto_reply(user_text)
+                if not reply:
+                    continue
+                try:
+                    _send_whatsapp_text_message(to_phone=to_phone, text=reply)
+                except Exception as exc:
+                    print(f"[whatsapp-webhook] auto-reply error to={to_phone}: {exc}")
     return {"received": True}

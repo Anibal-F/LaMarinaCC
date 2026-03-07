@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     whatsapp_template_language: str = "es"
     whatsapp_pdf_public_base_url: str = ""
     whatsapp_webhook_verify_token: str = ""
+    whatsapp_auto_reply_enabled: bool = True
+    whatsapp_auto_reply_ubicacion: str = (
+        "Estamos en Circunvalación Playas #31, El Toreo, 82120, Mazatlán, Sinaloa."
+    )
+    whatsapp_auto_reply_horario: str = (
+        "Nuestro horario es de lunes a viernes de 8:00 a 18:00 y sábados de 9:00 a 14:00."
+    )
+    whatsapp_auto_reply_duda: str = (
+        "Con gusto te apoyamos. Cuéntanos tu duda y un asesor te responderá a la brevedad."
+    )
+    whatsapp_auto_reply_default: str = (
+        "Gracias por tu mensaje. En breve un asesor de La Marina Collision Center te atenderá."
+    )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

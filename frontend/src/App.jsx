@@ -24,6 +24,7 @@ import ListadoVehiculosValuacion from "./pages/Valuacion/ListadoVehiculos.jsx";
 import ValuarVehiculo from "./pages/Valuacion/ValuarVehiculo.jsx";
 import Taller from "./pages/Taller/Taller.jsx";
 import AreasTrabajo from "./pages/Taller/AreasTrabajo.jsx";
+import WhatsAppChatWidget from "./components/WhatsAppChatWidget.jsx";
 
 export default function App() {
   const [, setAuthPulse] = useState(0);
@@ -52,100 +53,103 @@ export default function App() {
   const authenticated = isAuthenticated();
 
   return (
-    <Routes>
-      <Route path="/login" element={authenticated ? <Navigate to="/home" replace /> : <Login />} />
-      <Route
-        path="/"
-        element={<Navigate to={authenticated ? "/home" : "/login"} replace />}
-      />
-      <Route path="/home" element={authenticated ? <Home /> : <Navigate to="/login" replace />} />
-      <Route
-        path="/recepcion"
-        element={authenticated ? <Recepcion /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/recepcion/ordenes"
-        element={authenticated ? <OrdenAdmision /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/recepcion/citas"
-        element={authenticated ? <CitasRecepcion /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/recepcion/nuevo"
-        element={authenticated ? <RecepcionForm /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/admin/users"
-        element={authenticated ? <AdminUsers /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/admin/profiles"
-        element={authenticated ? <AdminProfiles /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/admin/credenciales"
-        element={authenticated ? <AdminCredenciales /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/clientes"
-        element={authenticated ? <CatalogoClientes /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/grupos-autos"
-        element={authenticated ? <CatalogoGruposAutos /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/marcas-autos"
-        element={authenticated ? <CatalogoMarcasAutos /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/modelos-autos"
-        element={authenticated ? <CatalogoModelosAutos /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/aseguradoras"
-        element={authenticated ? <CatalogoAseguradoras /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/partes-auto"
-        element={authenticated ? <CatalogoPartesAuto /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/estatus-valuacion"
-        element={authenticated ? <CatalogoEstatusValuacion /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/catalogos/expedientes"
-        element={authenticated ? <CatalogoExpedientes /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/reportes/historial"
-        element={authenticated ? <HistorialIngresos /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/valuacion/vehiculos"
-        element={authenticated ? <ListadoVehiculosValuacion /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/valuacion/vehiculos/:id"
-        element={authenticated ? <ValuarVehiculo /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/taller"
-        element={
-          authenticated ? <Navigate to="/taller/autos-en-sitio" replace /> : <Navigate to="/login" replace />
-        }
-      />
-      <Route
-        path="/taller/autos-en-sitio"
-        element={authenticated ? <Taller /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/taller/areas-de-trabajo"
-        element={authenticated ? <AreasTrabajo /> : <Navigate to="/login" replace />}
-      />
-      <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={authenticated ? <Navigate to="/home" replace /> : <Login />} />
+        <Route
+          path="/"
+          element={<Navigate to={authenticated ? "/home" : "/login"} replace />}
+        />
+        <Route path="/home" element={authenticated ? <Home /> : <Navigate to="/login" replace />} />
+        <Route
+          path="/recepcion"
+          element={authenticated ? <Recepcion /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/recepcion/ordenes"
+          element={authenticated ? <OrdenAdmision /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/recepcion/citas"
+          element={authenticated ? <CitasRecepcion /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/recepcion/nuevo"
+          element={authenticated ? <RecepcionForm /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin/users"
+          element={authenticated ? <AdminUsers /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin/profiles"
+          element={authenticated ? <AdminProfiles /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin/credenciales"
+          element={authenticated ? <AdminCredenciales /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/clientes"
+          element={authenticated ? <CatalogoClientes /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/grupos-autos"
+          element={authenticated ? <CatalogoGruposAutos /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/marcas-autos"
+          element={authenticated ? <CatalogoMarcasAutos /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/modelos-autos"
+          element={authenticated ? <CatalogoModelosAutos /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/aseguradoras"
+          element={authenticated ? <CatalogoAseguradoras /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/partes-auto"
+          element={authenticated ? <CatalogoPartesAuto /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/estatus-valuacion"
+          element={authenticated ? <CatalogoEstatusValuacion /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/expedientes"
+          element={authenticated ? <CatalogoExpedientes /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/reportes/historial"
+          element={authenticated ? <HistorialIngresos /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/valuacion/vehiculos"
+          element={authenticated ? <ListadoVehiculosValuacion /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/valuacion/vehiculos/:id"
+          element={authenticated ? <ValuarVehiculo /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/taller"
+          element={
+            authenticated ? <Navigate to="/taller/autos-en-sitio" replace /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route
+          path="/taller/autos-en-sitio"
+          element={authenticated ? <Taller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/taller/areas-de-trabajo"
+          element={authenticated ? <AreasTrabajo /> : <Navigate to="/login" replace />}
+        />
+        <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
+      </Routes>
+      {authenticated ? <WhatsAppChatWidget /> : null}
+    </>
   );
 }

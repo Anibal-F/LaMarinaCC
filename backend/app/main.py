@@ -5,11 +5,14 @@ from fastapi import FastAPI
 from fastapi import HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
+from pydantic import BaseModel
+from psycopg.rows import dict_row
 from fastapi.responses import FileResponse, PlainTextResponse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 
 from app.core.config import settings
+from app.core.db import get_connection
 from app.auth.routes import router as auth_router
 from app.modules.administracion.routes import router as administracion_router
 from app.modules.clientes.routes import router as clientes_router
@@ -80,6 +83,76 @@ def _send_whatsapp_text_message(*, to_phone: str, text: str) -> dict:
         raise RuntimeError(f"Meta API error ({exc.code}): {details or str(exc)}") from exc
     except URLError as exc:
         raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
+
+
+def _ensure_whatsapp_chat_tables(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS whatsapp_chat_messages (
+            id BIGSERIAL PRIMARY KEY,
+            wa_id TEXT NOT NULL,
+            direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+            message_type TEXT NOT NULL DEFAULT 'text',
+            text_body TEXT,
+            message_id TEXT UNIQUE,
+            status TEXT,
+            raw_payload JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_messages_wa_time ON whatsapp_chat_messages (wa_id, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_messages_message_id ON whatsapp_chat_messages (message_id)"
+    )
+
+
+def _insert_whatsapp_chat_message(
+    conn,
+    *,
+    wa_id: str,
+    direction: str,
+    message_type: str = "text",
+    text_body: str | None = None,
+    message_id: str | None = None,
+    status_name: str | None = None,
+    raw_payload: dict | None = None,
+    created_at_epoch: str | None = None,
+) -> None:
+    timestamp_sql = "TO_TIMESTAMP(%s)::timestamptz" if created_at_epoch else "NOW()"
+    params: list[object] = [
+        wa_id,
+        direction,
+        message_type,
+        text_body,
+        message_id,
+        status_name,
+        json.dumps(raw_payload or {}),
+    ]
+    if created_at_epoch:
+        params.append(created_at_epoch)
+    conn.execute(
+        f"""
+        INSERT INTO whatsapp_chat_messages (
+            wa_id,
+            direction,
+            message_type,
+            text_body,
+            message_id,
+            status,
+            raw_payload,
+            created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, CAST(%s AS jsonb), {timestamp_sql})
+        ON CONFLICT (message_id) DO UPDATE
+        SET
+            status = COALESCE(EXCLUDED.status, whatsapp_chat_messages.status),
+            raw_payload = COALESCE(EXCLUDED.raw_payload, whatsapp_chat_messages.raw_payload)
+        """,
+        params,
+    )
 
 
 app = FastAPI(title=settings.app_name)
@@ -157,9 +230,137 @@ def verify_whatsapp_webhook(
     )
 
 
+class WhatsAppChatSendRequest(BaseModel):
+    wa_id: str
+    text: str
+
+
+@app.get("/whatsapp/chat/conversations")
+def list_whatsapp_conversations(limit: int = 50):
+    safe_limit = max(1, min(limit, 200))
+    with get_connection() as conn:
+        _ensure_whatsapp_chat_tables(conn)
+        conn.row_factory = dict_row
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ON (wa_id)
+                wa_id,
+                text_body AS last_text,
+                direction AS last_direction,
+                status AS last_status,
+                created_at AS last_at
+            FROM whatsapp_chat_messages
+            ORDER BY wa_id, created_at DESC
+            """
+        ).fetchall()
+    rows_sorted = sorted(rows, key=lambda item: item.get("last_at") or "", reverse=True)
+    return rows_sorted[:safe_limit]
+
+
+@app.get("/whatsapp/chat/messages")
+def list_whatsapp_messages(wa_id: str, limit: int = 100):
+    if not wa_id.strip():
+        raise HTTPException(status_code=400, detail="wa_id requerido")
+    safe_limit = max(1, min(limit, 500))
+    with get_connection() as conn:
+        _ensure_whatsapp_chat_tables(conn)
+        conn.row_factory = dict_row
+        rows = conn.execute(
+            """
+            SELECT id, wa_id, direction, message_type, text_body, message_id, status, created_at
+            FROM whatsapp_chat_messages
+            WHERE wa_id = %s
+            ORDER BY created_at ASC
+            LIMIT %s
+            """,
+            (wa_id.strip(), safe_limit),
+        ).fetchall()
+    return rows
+
+
+@app.post("/whatsapp/chat/messages")
+def send_whatsapp_chat_message(payload: WhatsAppChatSendRequest):
+    wa_id = payload.wa_id.strip()
+    text = payload.text.strip()
+    if not wa_id:
+        raise HTTPException(status_code=400, detail="wa_id requerido")
+    if not text:
+        raise HTTPException(status_code=400, detail="text requerido")
+    try:
+        meta_response = _send_whatsapp_text_message(to_phone=wa_id, text=text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    message_id = ((meta_response.get("messages") or [{}])[0] or {}).get("id")
+    with get_connection() as conn:
+        _ensure_whatsapp_chat_tables(conn)
+        _insert_whatsapp_chat_message(
+            conn,
+            wa_id=wa_id,
+            direction="out",
+            message_type="text",
+            text_body=text,
+            message_id=message_id,
+            status_name="submitted",
+            raw_payload=meta_response,
+        )
+    return {"ok": True, "wa_id": wa_id, "message_id": message_id, "meta_response": meta_response}
+
+
 @app.post("/webhooks/whatsapp")
 async def receive_whatsapp_webhook(request: Request):
     payload = await request.json()
+    with get_connection() as conn:
+        _ensure_whatsapp_chat_tables(conn)
+
+        entries = payload.get("entry") or []
+        for entry in entries:
+            for change in entry.get("changes") or []:
+                value = change.get("value") or {}
+
+                # Incoming user messages.
+                messages = value.get("messages") or []
+                for message in messages:
+                    wa_id = str(message.get("from") or "").strip()
+                    message_type = str(message.get("type") or "unknown").strip()
+                    body_text = ((message.get("text") or {}).get("body") or "").strip()
+                    message_id = str(message.get("id") or "").strip() or None
+                    timestamp = str(message.get("timestamp") or "").strip() or None
+                    if not wa_id:
+                        continue
+                    _insert_whatsapp_chat_message(
+                        conn,
+                        wa_id=wa_id,
+                        direction="in",
+                        message_type=message_type,
+                        text_body=body_text,
+                        message_id=message_id,
+                        status_name="received",
+                        raw_payload=message,
+                        created_at_epoch=timestamp,
+                    )
+
+                # Delivery/read statuses for outbound messages.
+                statuses = value.get("statuses") or []
+                for status_item in statuses:
+                    message_id = str(status_item.get("id") or "").strip() or None
+                    if not message_id:
+                        continue
+                    recipient_id = str(status_item.get("recipient_id") or "").strip() or "desconocido"
+                    status_name = str(status_item.get("status") or "").strip() or "unknown"
+                    timestamp = str(status_item.get("timestamp") or "").strip() or None
+                    _insert_whatsapp_chat_message(
+                        conn,
+                        wa_id=recipient_id,
+                        direction="out",
+                        message_type="status",
+                        text_body=None,
+                        message_id=message_id,
+                        status_name=status_name,
+                        raw_payload=status_item,
+                        created_at_epoch=timestamp,
+                    )
+
     if not settings.whatsapp_auto_reply_enabled:
         return {"received": True, "auto_reply": "disabled"}
 
@@ -182,7 +383,20 @@ async def receive_whatsapp_webhook(request: Request):
                 if not reply:
                     continue
                 try:
-                    _send_whatsapp_text_message(to_phone=to_phone, text=reply)
+                    meta_response = _send_whatsapp_text_message(to_phone=to_phone, text=reply)
+                    message_id = ((meta_response.get("messages") or [{}])[0] or {}).get("id")
+                    with get_connection() as conn:
+                        _ensure_whatsapp_chat_tables(conn)
+                        _insert_whatsapp_chat_message(
+                            conn,
+                            wa_id=to_phone,
+                            direction="out",
+                            message_type="text",
+                            text_body=reply,
+                            message_id=message_id,
+                            status_name="submitted",
+                            raw_payload=meta_response,
+                        )
                 except Exception as exc:
                     print(f"[whatsapp-webhook] auto-reply error to={to_phone}: {exc}")
     return {"received": True}

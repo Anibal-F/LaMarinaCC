@@ -175,6 +175,12 @@ export default function OrdenAdmision() {
   const [adjuntoOrden, setAdjuntoOrden] = useState(null);
   const [extractingDoc, setExtractingDoc] = useState(false);
   const [extractInfo, setExtractInfo] = useState("");
+  
+  // Estados para RPA de adjudicación Qualitas
+  const [adjudicacionModal, setAdjudicacionModal] = useState(null);
+  const [adjudicando, setAdjudicando] = useState(false);
+  const [adjudicacionResult, setAdjudicacionResult] = useState(null);
+  
   const [form, setForm] = useState({
     reporte_siniestro: "",
     fecha_adm: "",
@@ -963,6 +969,155 @@ export default function OrdenAdmision() {
     });
   };
 
+  // Función para ejecutar el RPA de adjudicación en Qualitas
+  const handleAdjudicarQualitas = async (record) => {
+    if (!record.reporte_siniestro) {
+      setError("La orden no tiene número de reporte/siniestro");
+      return;
+    }
+    
+    setAdjudicacionModal(record);
+    setAdjudicando(true);
+    setAdjudicacionResult(null);
+    setError("");
+    
+    try {
+      // Preparar datos para la adjudicación
+      const datos = {
+        num_reporte: record.reporte_siniestro,
+        nombre: record.nb_cliente?.split(" ")[0] || record.nb_cliente || "",
+        apellidos: record.nb_cliente?.split(" ").slice(1).join(" ") || "",
+        celular: record.tel_cliente?.replace(/\D/g, "") || "",
+        email_cliente: record.email_cliente || "",
+        marca_qualitas_codigo: obtenerCodigoMarcaQualitas(record.marca_vehiculo),
+        modelo_id: "",
+        anio_vehiculo: record.modelo_anio || "",
+        color_vehiculo: obtenerCodigoColor(record.color_vehiculo),
+        placa: record.placas || "",
+        nro_serie: record.serie_auto || "",
+        estatus_exp_id: "1", // Piso por defecto
+        ingreso_grua: "0",
+        ubicacion: "Taller Principal",
+        contratante: record.nb_cliente || "",
+        vehiculo_referencia: `${record.marca_vehiculo || ""} ${record.tipo_vehiculo || ""} ${record.modelo_anio || ""}`.trim(),
+        headless: true
+      };
+      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/rpa/qualitas/adjudicar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(datos)
+      });
+      
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "Error al iniciar la adjudicación");
+      }
+      
+      const result = await response.json();
+      
+      setAdjudicacionResult({
+        exito: true,
+        job_id: result.job_id,
+        mensaje: "Adjudicación iniciada correctamente"
+      });
+      
+    } catch (err) {
+      setAdjudicacionResult({
+        exito: false,
+        mensaje: err.message || "Error al ejecutar la adjudicación"
+      });
+    } finally {
+      setAdjudicando(false);
+    }
+  };
+  
+  // Función auxiliar para obtener el código de marca Qualitas
+  const obtenerCodigoMarcaQualitas = (marca) => {
+    if (!marca) return "BS"; // Otro
+    
+    const marcasMap = {
+      "ACURA": "AC",
+      "AUDI": "AI",
+      "BMW": "BW",
+      "BUICK": "BK",
+      "CADILLAC": "CC",
+      "CHEVROLET": "CT",
+      "CHRYSLER": "CR",
+      "DODGE": "DE",
+      "FIAT": "FT",
+      "FORD": "FD",
+      "GM": "GS",
+      "HONDA": "HA",
+      "HYUNDAI": "HI",
+      "INFINITI": "II",
+      "JAC": "JC",
+      "JAGUAR": "JR",
+      "JEEP": "JP",
+      "KIA": "KA",
+      "LAMBORGHINI": "LA",
+      "LAND ROVER": "LR",
+      "LEXUS": "LX",
+      "MAZDA": "MA",
+      "MERCEDES": "MZ",
+      "MERCEDES BENZ": "MZ",
+      "MITSUBISHI": "MI",
+      "NISSAN": "NN",
+      "PEUGEOT": "PT",
+      "PORSCHE": "PE",
+      "RENAULT": "RT",
+      "SEAT": "ST",
+      "SMART": "SM",
+      "SUBARU": "SU",
+      "SUZUKI": "SI",
+      "TESLA": "TE",
+      "TOYOTA": "TY",
+      "VOLKSWAGEN": "VW",
+      "VOLVO": "VO",
+      "BYD": "BD",
+      "CHANGAN": "CN",
+      "GEELY": "GY",
+      "GWM": "GW",
+      "MASERATI": "MT",
+      "MG": "MG",
+      "OMODA": "OM",
+      "JETOUR": "JT",
+      "DFSK": "DK"
+    };
+    
+    const marcaUpper = marca.toUpperCase().trim();
+    return marcasMap[marcaUpper] || "BS";
+  };
+  
+  // Función auxiliar para obtener el código de color
+  const obtenerCodigoColor = (color) => {
+    if (!color) return "";
+    
+    const coloresMap = {
+      "NEGRO": "000000",
+      "BLANCO": "FFFFFF",
+      "GRIS": "BEBEBE",
+      "PLATA": "D3D3D3",
+      "ROJO": "FF0000",
+      "AZUL": "0000FF",
+      "AZUL MARINO": "0000A8",
+      "VERDE": "008000",
+      "AMARILLO": "FFFF00",
+      "NARANJA": "FFA500",
+      "CAFE": "CD853F",
+      "MARRON": "CD853F",
+      "BEIGE": "F5F5DC",
+      "DORADO": "FFD700",
+      "VINO": "990000",
+      "TINTO": "A52A2A",
+      "GRAFITO": "1c1c1c",
+      "ACERO": "b0b0b0"
+    };
+    
+    const colorUpper = color.toUpperCase().trim();
+    return coloresMap[colorUpper] || "";
+  };
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
@@ -1282,6 +1437,16 @@ export default function OrdenAdmision() {
                             >
                               <span className="material-symbols-outlined text-lg">event</span>
                             </button>
+                            {record.seguro_comp?.toUpperCase().includes("QUALITAS") ? (
+                              <button
+                                className="p-1.5 hover:bg-purple-500/20 hover:text-purple-400 rounded text-slate-400 transition-colors"
+                                title="Adjudicar en Qualitas"
+                                type="button"
+                                onClick={() => handleAdjudicarQualitas(record)}
+                              >
+                                <span className="material-symbols-outlined text-lg">robot</span>
+                              </button>
+                            ) : null}
                             <button
                               className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-slate-400 transition-colors"
                               title="Editar"
@@ -1901,6 +2066,90 @@ export default function OrdenAdmision() {
               >
                 Limpiar
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      
+      {/* Modal de Adjudicación Qualitas */}
+      {adjudicacionModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-md bg-surface-dark border border-border-dark rounded-xl p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-purple-400">robot</span>
+              <h3 className="text-lg font-bold text-white">Adjudicar en Qualitas</h3>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="bg-background-dark rounded-lg p-3">
+                <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Orden</p>
+                <p className="text-sm text-white font-medium">{adjudicacionModal.reporte_siniestro}</p>
+              </div>
+              
+              <div className="bg-background-dark rounded-lg p-3">
+                <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Cliente</p>
+                <p className="text-sm text-white">{adjudicacionModal.nb_cliente}</p>
+              </div>
+              
+              <div className="bg-background-dark rounded-lg p-3">
+                <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Vehículo</p>
+                <p className="text-sm text-white">
+                  {adjudicacionModal.marca_vehiculo} {adjudicacionModal.tipo_vehiculo} {adjudicacionModal.modelo_anio}
+                </p>
+                <p className="text-xs text-slate-400">Placas: {adjudicacionModal.placas}</p>
+              </div>
+              
+              {adjudicando ? (
+                <div className="flex items-center gap-3 py-4">
+                  <span className="material-symbols-outlined text-2xl text-primary animate-spin">refresh</span>
+                  <p className="text-sm text-slate-300">Ejecutando RPA de adjudicación...</p>
+                </div>
+              ) : adjudicacionResult ? (
+                <div className={`rounded-lg p-4 ${adjudicacionResult.exito ? 'bg-green-500/10 border border-green-500/30' : 'bg-alert-red/10 border border-alert-red/30'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`material-symbols-outlined ${adjudicacionResult.exito ? 'text-green-400' : 'text-alert-red'}`}>
+                      {adjudicacionResult.exito ? 'check_circle' : 'error'}
+                    </span>
+                    <p className={`text-sm font-bold ${adjudicacionResult.exito ? 'text-green-400' : 'text-alert-red'}`}>
+                      {adjudicacionResult.exito ? 'Adjudicación iniciada' : 'Error'}
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    {adjudicacionResult.mensaje}
+                  </p>
+                  {adjudicacionResult.job_id ? (
+                    <p className="text-[10px] text-slate-400 mt-2 font-mono">
+                      Job ID: {adjudicacionResult.job_id}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg border border-border-dark text-slate-300 hover:text-white"
+                onClick={() => {
+                  setAdjudicacionModal(null);
+                  setAdjudicacionResult(null);
+                }}
+                disabled={adjudicando}
+              >
+                {adjudicacionResult ? "Cerrar" : "Cancelar"}
+              </button>
+              
+              {!adjudicacionResult && (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-2"
+                  onClick={() => handleAdjudicarQualitas(adjudicacionModal)}
+                  disabled={adjudicando}
+                >
+                  <span className="material-symbols-outlined text-sm">play_arrow</span>
+                  {adjudicando ? "Ejecutando..." : "Ejecutar RPA"}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -421,14 +421,25 @@ def list_whatsapp_conversations(limit: int = 50):
         conn.row_factory = dict_row
         rows = conn.execute(
             """
-            SELECT DISTINCT ON (wa_id)
+            WITH normalized AS (
+                SELECT
+                    RIGHT(regexp_replace(COALESCE(wa_id, ''), '[^0-9]', '', 'g'), 10) AS phone10,
+                    wa_id,
+                    text_body,
+                    direction,
+                    status,
+                    created_at
+                FROM whatsapp_chat_messages
+            )
+            SELECT DISTINCT ON (phone10)
                 wa_id,
                 text_body AS last_text,
                 direction AS last_direction,
                 status AS last_status,
                 created_at AS last_at
-            FROM whatsapp_chat_messages
-            ORDER BY wa_id, created_at DESC
+            FROM normalized
+            WHERE phone10 <> ''
+            ORDER BY phone10, created_at DESC
             """
         ).fetchall()
         for row in rows:

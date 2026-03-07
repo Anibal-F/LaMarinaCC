@@ -210,6 +210,7 @@ export default function WhatsAppChatWidget() {
         title="Chat WhatsApp"
         onClick={() => setOpen((prev) => !prev)}
         className="fixed bottom-6 right-6 z-[120] h-14 w-14 rounded-full bg-[#25D366] shadow-lg shadow-[#25D366]/40 text-white flex items-center justify-center hover:scale-105 transition-transform relative"
+        style={{ position: "fixed", right: "1.5rem", bottom: "1.5rem", left: "auto", zIndex: 120 }}
       >
         <svg viewBox="0 0 32 32" className="w-7 h-7" fill="currentColor" aria-hidden="true">
           <path d="M19.11 17.21c-.28-.14-1.65-.82-1.9-.91-.25-.09-.43-.14-.61.14-.18.28-.71.91-.87 1.09-.16.18-.32.21-.6.07-.28-.14-1.17-.43-2.24-1.37-.83-.74-1.39-1.65-1.55-1.93-.16-.28-.02-.43.12-.57.13-.13.28-.32.42-.48.14-.16.18-.28.28-.46.09-.18.05-.35-.02-.49-.07-.14-.61-1.48-.84-2.03-.22-.53-.45-.46-.61-.46h-.52c-.18 0-.46.07-.7.35-.24.28-.92.9-.92 2.19s.94 2.54 1.07 2.71c.14.18 1.85 2.82 4.48 3.95.63.27 1.12.43 1.5.55.63.2 1.2.17 1.65.1.5-.07 1.65-.67 1.88-1.31.23-.64.23-1.19.16-1.31-.07-.12-.25-.19-.53-.33z" />
@@ -223,7 +224,10 @@ export default function WhatsAppChatWidget() {
       </button>
 
       {open ? (
-        <div className="fixed bottom-24 right-6 z-[119] w-[360px] max-w-[calc(100vw-1.5rem)] h-[70vh] rounded-xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col">
+        <div
+          className="fixed bottom-24 right-6 z-[119] w-[360px] max-w-[calc(100vw-1.5rem)] h-[70vh] rounded-xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col"
+          style={{ position: "fixed", right: "1.5rem", bottom: "6rem", left: "auto", zIndex: 119 }}
+        >
           <div className="px-4 py-3 border-b border-border-dark flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">WhatsApp</h3>
             <button

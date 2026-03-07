@@ -45,6 +45,8 @@ export default function WhatsAppChatWidget() {
   const [activeWaId, setActiveWaId] = useState("");
   const [messages, setMessages] = useState([]);
   const [newChatWaId, setNewChatWaId] = useState("");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [clientesCatalogo, setClientesCatalogo] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -62,6 +64,7 @@ export default function WhatsAppChatWidget() {
   });
 
   const fileInputRef = useRef(null);
+  const clientDropdownRef = useRef(null);
   const apiBase = useMemo(() => import.meta.env.VITE_API_URL, []);
 
   const filteredConversations = useMemo(() => {
@@ -74,6 +77,18 @@ export default function WhatsAppChatWidget() {
       return wa.includes(query) || name.includes(query) || txt.includes(query);
     });
   }, [conversations, searchQuery]);
+
+  const filteredClientesCatalogo = useMemo(() => {
+    const query = clientSearchQuery.trim().toLowerCase();
+    if (!query) return clientesCatalogo.slice(0, 50);
+    return clientesCatalogo
+      .filter((item) => {
+        const name = String(item.nb_cliente || "").toLowerCase();
+        const phone = String(item.tel_cliente || "").toLowerCase();
+        return name.includes(query) || phone.includes(query);
+      })
+      .slice(0, 50);
+  }, [clientesCatalogo, clientSearchQuery]);
 
   const hasUnread = (item) => {
     if (item.last_direction !== "in") return false;
@@ -164,6 +179,22 @@ export default function WhatsAppChatWidget() {
     }, POLL_MS);
     return () => window.clearInterval(timer);
   }, [open, activeWaId, view]);
+
+  useEffect(() => {
+    if (!clientDropdownOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (!clientDropdownRef.current) return;
+      if (!clientDropdownRef.current.contains(event.target)) {
+        setClientDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, [clientDropdownOpen]);
 
   const sendMessage = async () => {
     const waId = (activeWaId || newChatWaId || "").trim();
@@ -293,24 +324,40 @@ export default function WhatsAppChatWidget() {
                     Abrir
                   </button>
                 </div>
-                <select
-                  className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-slate-200"
-                  value=""
-                  onChange={(event) => {
-                    const selected = clientesCatalogo.find(
-                      (item) => String(item.id) === event.target.value
-                    );
-                    if (!selected) return;
-                    setNewChatWaId(String(selected.tel_cliente || ""));
-                  }}
-                >
-                  <option value="">Seleccionar cliente del catálogo...</option>
-                  {clientesCatalogo.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.nb_cliente} · {item.tel_cliente}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative" ref={clientDropdownRef}>
+                  <input
+                    className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-slate-200"
+                    placeholder="Buscar cliente por nombre o celular..."
+                    value={clientSearchQuery}
+                    onFocus={() => setClientDropdownOpen(true)}
+                    onChange={(event) => {
+                      setClientSearchQuery(event.target.value);
+                      setClientDropdownOpen(true);
+                    }}
+                  />
+                  {clientDropdownOpen ? (
+                    <div className="absolute z-[130] mt-1 w-full max-h-48 overflow-y-auto custom-scrollbar rounded-lg border border-border-dark bg-surface-dark shadow-xl">
+                      {filteredClientesCatalogo.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias.</p>
+                      ) : (
+                        filteredClientesCatalogo.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-background-dark/70"
+                            onClick={() => {
+                              setNewChatWaId(String(item.tel_cliente || ""));
+                              setClientSearchQuery(`${item.nb_cliente} · ${item.tel_cliente}`);
+                              setClientDropdownOpen(false);
+                            }}
+                          >
+                            {item.nb_cliente} · {item.tel_cliente}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar">

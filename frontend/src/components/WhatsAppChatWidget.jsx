@@ -65,6 +65,7 @@ export default function WhatsAppChatWidget() {
 
   const fileInputRef = useRef(null);
   const clientDropdownRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const apiBase = useMemo(() => import.meta.env.VITE_API_URL, []);
 
   const filteredConversations = useMemo(() => {
@@ -139,19 +140,45 @@ export default function WhatsAppChatWidget() {
     }
   };
 
-  const loadMessages = async (waId) => {
+  const loadMessages = async (
+    waId,
+    options = { showLoader: true, preserveScroll: true, stickToBottom: false }
+  ) => {
     if (!open || !waId) return;
+    const showLoader = options.showLoader ?? true;
+    const preserveScroll = options.preserveScroll ?? true;
+    const stickToBottom = options.stickToBottom ?? false;
+
+    const container = messagesContainerRef.current;
+    const previousScrollTop = container ? container.scrollTop : 0;
+    const previousScrollHeight = container ? container.scrollHeight : 0;
+    const wasNearBottom = container
+      ? container.scrollHeight - container.scrollTop - container.clientHeight <= 24
+      : false;
+
     try {
-      setLoadingMessages(true);
+      if (showLoader) setLoadingMessages(true);
       const response = await fetch(`${apiBase}/whatsapp/chat/messages?wa_id=${encodeURIComponent(waId)}&limit=200`);
       if (!response.ok) throw new Error("No se pudieron cargar mensajes");
       const data = await response.json();
       setMessages(data || []);
       markConversationSeen(waId);
+      window.requestAnimationFrame(() => {
+        const nextContainer = messagesContainerRef.current;
+        if (!nextContainer) return;
+        if (stickToBottom || wasNearBottom) {
+          nextContainer.scrollTop = nextContainer.scrollHeight;
+          return;
+        }
+        if (preserveScroll) {
+          const deltaHeight = nextContainer.scrollHeight - previousScrollHeight;
+          nextContainer.scrollTop = Math.max(0, previousScrollTop + deltaHeight);
+        }
+      });
     } catch (err) {
       setError(err.message || "No se pudieron cargar mensajes");
     } finally {
-      setLoadingMessages(false);
+      if (showLoader) setLoadingMessages(false);
     }
   };
 
@@ -160,7 +187,7 @@ export default function WhatsAppChatWidget() {
     setActiveWaId(waId);
     setNewChatWaId(waId);
     setView("chat");
-    await loadMessages(waId);
+    await loadMessages(waId, { showLoader: true, preserveScroll: false, stickToBottom: true });
   };
 
   useEffect(() => {
@@ -174,7 +201,7 @@ export default function WhatsAppChatWidget() {
     const timer = window.setInterval(() => {
       loadConversations();
       if (view === "chat" && activeWaId) {
-        loadMessages(activeWaId);
+        loadMessages(activeWaId, { showLoader: false, preserveScroll: true, stickToBottom: false });
       }
     }, POLL_MS);
     return () => window.clearInterval(timer);
@@ -396,7 +423,7 @@ export default function WhatsAppChatWidget() {
             </>
           ) : (
             <>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2 bg-background-dark/40">
+              <div ref={messagesContainerRef} className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2 bg-background-dark/40">
                 {loadingMessages ? (
                   <p className="text-xs text-slate-500">Cargando mensajes...</p>
                 ) : messages.length === 0 ? (

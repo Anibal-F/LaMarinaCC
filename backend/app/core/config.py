@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     whatsapp_pdf_public_base_url: str = ""
     whatsapp_webhook_verify_token: str = ""
     whatsapp_auto_reply_enabled: bool = True
+    whatsapp_auto_reply_cooldown_minutes: int = 120
     whatsapp_auto_reply_ubicacion: str = (
         "Estamos en Circunvalación Playas #31, El Toreo, 82120, Mazatlán, Sinaloa."
     )

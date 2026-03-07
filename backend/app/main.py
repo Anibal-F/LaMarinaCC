@@ -131,6 +131,30 @@ def _resolve_auto_reply(user_text: str) -> str:
     return settings.whatsapp_auto_reply_default
 
 
+def _should_send_auto_reply(conn, wa_id: str) -> bool:
+    cooldown_minutes = max(0, int(settings.whatsapp_auto_reply_cooldown_minutes or 0))
+    if cooldown_minutes <= 0:
+        return True
+
+    _, last10 = _phone_match_tokens(wa_id)
+    if not last10:
+        return True
+
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM whatsapp_chat_messages
+        WHERE RIGHT(regexp_replace(COALESCE(wa_id, ''), '[^0-9]', '', 'g'), 10) = %s
+          AND direction = 'out'
+          AND COALESCE(raw_payload->>'auto_reply', 'false') = 'true'
+          AND created_at >= NOW() - (%s * INTERVAL '1 minute')
+        LIMIT 1
+        """,
+        (last10, cooldown_minutes),
+    ).fetchone()
+    return row is None
+
+
 def _send_whatsapp_text_message(*, to_phone: str, text: str) -> dict:
     if not settings.whatsapp_phone_number_id:
         raise RuntimeError("WHATSAPP_PHONE_NUMBER_ID no configurado.")
@@ -705,6 +729,10 @@ async def receive_whatsapp_webhook(request: Request):
                 to_phone = str(message.get("from") or "").strip()
                 if not to_phone:
                     continue
+                with get_connection() as conn:
+                    _ensure_whatsapp_chat_tables(conn)
+                    if not _should_send_auto_reply(conn, to_phone):
+                        continue
                 reply = _resolve_auto_reply(user_text)
                 if not reply:
                     continue
@@ -721,7 +749,11 @@ async def receive_whatsapp_webhook(request: Request):
                             text_body=reply,
                             message_id=message_id,
                             status_name="submitted",
-                            raw_payload=meta_response,
+                            raw_payload={
+                                "meta_response": meta_response,
+                                "auto_reply": True,
+                                "trigger_text": user_text,
+                            },
                         )
                 except Exception as exc:
                     print(f"[whatsapp-webhook] auto-reply error to={to_phone}: {exc}")

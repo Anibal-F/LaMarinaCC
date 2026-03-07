@@ -779,6 +779,9 @@ export default function Recepcion() {
                     Nombre cliente, Marca, Modelo, Año
                   </span>
                 </p>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Se adjuntará el PDF generado de esta recepción.
+                </p>
                 <div className="mt-3 text-xs text-slate-300 space-y-1">
                   <p>
                     <span className="text-slate-500">1.</span>{" "}

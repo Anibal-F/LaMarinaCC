@@ -8,12 +8,12 @@ import time
 from typing import Any, Optional
 import unicodedata
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request as UrlRequest, urlopen
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.etree import ElementTree as ET
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from reportlab.graphics import renderPDF
@@ -1047,12 +1047,23 @@ def _normalize_whatsapp_phone(value: str) -> str:
     return digits
 
 
+def _safe_filename_token(value: Optional[object], fallback: str = "NA") -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return fallback
+    cleaned = re.sub(r"\s+", "-", raw)
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "", cleaned)
+    return cleaned or fallback
+
+
 def _send_whatsapp_template_message(
     *,
     to_phone: str,
     template_name: str,
     language_code: str,
     body_params: list[str],
+    document_link: Optional[str] = None,
+    document_filename: Optional[str] = None,
 ) -> dict[str, Any]:
     if not settings.whatsapp_phone_number_id:
         raise HTTPException(
@@ -1069,6 +1080,24 @@ def _send_whatsapp_template_message(
         f"{settings.whatsapp_graph_api_base_url.rstrip('/')}/"
         f"{settings.whatsapp_api_version}/{settings.whatsapp_phone_number_id}/messages"
     )
+    components = []
+    if document_link:
+        document = {"link": document_link}
+        if document_filename:
+            document["filename"] = document_filename
+        components.append(
+            {
+                "type": "header",
+                "parameters": [{"type": "document", "document": document}],
+            }
+        )
+    components.append(
+        {
+            "type": "body",
+            "parameters": [{"type": "text", "text": item} for item in body_params],
+        }
+    )
+
     payload = {
         "messaging_product": "whatsapp",
         "to": to_phone,
@@ -1076,16 +1105,11 @@ def _send_whatsapp_template_message(
         "template": {
             "name": template_name,
             "language": {"code": language_code},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [{"type": "text", "text": item} for item in body_params],
-                }
-            ],
+            "components": components,
         },
     }
     data = json.dumps(payload).encode("utf-8")
-    request = Request(
+    request = UrlRequest(
         endpoint,
         data=data,
         headers={
@@ -2166,7 +2190,11 @@ def get_registro(recepcion_id: int):
 
 
 @router.post("/registros/{recepcion_id}/whatsapp-template")
-def send_recepcion_whatsapp_template(recepcion_id: int, payload: WhatsAppRecepcionSendRequest):
+def send_recepcion_whatsapp_template(
+    recepcion_id: int,
+    payload: WhatsAppRecepcionSendRequest,
+    request: Request,
+):
     normalized_phones = []
     for raw in payload.phones:
         normalized = _normalize_whatsapp_phone(raw)
@@ -2185,6 +2213,7 @@ def send_recepcion_whatsapp_template(recepcion_id: int, payload: WhatsAppRecepci
             """
             SELECT
                 id,
+                folio_recep,
                 nb_cliente,
                 vehiculo_marca,
                 vehiculo_modelo,
@@ -2204,6 +2233,18 @@ def send_recepcion_whatsapp_template(recepcion_id: int, payload: WhatsAppRecepci
         _safe_template_text(row.get("vehiculo_modelo")),
         _safe_template_text(row.get("vehiculo_anio")),
     ]
+    public_base_url = (settings.whatsapp_pdf_public_base_url or "").strip()
+    if not public_base_url:
+        public_base_url = str(request.base_url).rstrip("/")
+    else:
+        public_base_url = public_base_url.rstrip("/")
+    pdf_url = f"{public_base_url}/recepcion/registros/{recepcion_id}/pdf"
+    pdf_filename = (
+        f"Recepcion_{_safe_filename_token(row.get('folio_recep') or recepcion_id)}_"
+        f"{_safe_filename_token(row.get('vehiculo_marca'))}_"
+        f"{_safe_filename_token(row.get('vehiculo_modelo'))}_"
+        f"{_safe_filename_token(row.get('vehiculo_anio'))}.pdf"
+    )
 
     results = []
     sent_count = 0
@@ -2214,6 +2255,8 @@ def send_recepcion_whatsapp_template(recepcion_id: int, payload: WhatsAppRecepci
                 template_name=settings.whatsapp_template_recepcion,
                 language_code=settings.whatsapp_template_language,
                 body_params=body_params,
+                document_link=pdf_url,
+                document_filename=pdf_filename,
             )
             results.append(
                 {
@@ -2235,6 +2278,8 @@ def send_recepcion_whatsapp_template(recepcion_id: int, payload: WhatsAppRecepci
     return {
         "template": settings.whatsapp_template_recepcion,
         "language": settings.whatsapp_template_language,
+        "document_url": pdf_url,
+        "document_filename": pdf_filename,
         "params": {
             "cliente": body_params[0],
             "marca": body_params[1],

@@ -40,6 +40,19 @@ def _normalize_trigger(text: str) -> str:
     return value
 
 
+def _normalize_whatsapp_phone(value: str) -> str:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 13 and digits.startswith("521"):
+        return f"52{digits[3:]}"
+    if len(digits) == 10:
+        return f"52{digits}"
+    return digits
+
+
 def _resolve_auto_reply(user_text: str) -> str:
     normalized = _normalize_trigger(user_text)
     if "donde se encuentran ubicados" in normalized or "ubicacion" in normalized:
@@ -417,7 +430,7 @@ def get_whatsapp_chat_media(media_id: str):
 
 @app.post("/whatsapp/chat/messages")
 def send_whatsapp_chat_message(payload: WhatsAppChatSendRequest):
-    wa_id = payload.wa_id.strip()
+    wa_id = _normalize_whatsapp_phone(payload.wa_id)
     text = payload.text.strip()
     if not wa_id:
         raise HTTPException(status_code=400, detail="wa_id requerido")
@@ -451,7 +464,7 @@ async def send_whatsapp_chat_media_message(
     caption: str = Form(default=""),
     file: UploadFile = File(...),
 ):
-    normalized_wa_id = wa_id.strip()
+    normalized_wa_id = _normalize_whatsapp_phone(wa_id)
     if not normalized_wa_id:
         raise HTTPException(status_code=400, detail="wa_id requerido")
     if not file.filename:

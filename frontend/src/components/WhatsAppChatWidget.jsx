@@ -68,8 +68,9 @@ export default function WhatsAppChatWidget() {
     if (!query) return conversations;
     return conversations.filter((item) => {
       const wa = String(item.wa_id || "").toLowerCase();
+      const name = String(item.contact_name || "").toLowerCase();
       const txt = String(item.last_text || "").toLowerCase();
-      return wa.includes(query) || txt.includes(query);
+      return wa.includes(query) || name.includes(query) || txt.includes(query);
     });
   }, [conversations, searchQuery]);
 

@@ -1056,6 +1056,44 @@ def _safe_filename_token(value: Optional[object], fallback: str = "NA") -> str:
     return cleaned or fallback
 
 
+def _sync_cliente(conn, nb_cliente: Optional[str], tel_cliente: Optional[str], email_cliente: Optional[str]) -> None:
+    nombre = str(nb_cliente or "").strip()
+    if not nombre:
+        return
+    tel = str(tel_cliente or "").strip() or None
+    email = str(email_cliente or "").strip() or None
+
+    if tel:
+        conn.execute(
+            """
+            INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (tel_cliente) DO UPDATE
+            SET
+                nb_cliente = EXCLUDED.nb_cliente,
+                email_cliente = COALESCE(EXCLUDED.email_cliente, clientes.email_cliente)
+            """,
+            (nombre, tel, email),
+        )
+        return
+
+    cliente_exists = conn.execute(
+        """
+        SELECT 1 FROM clientes
+        WHERE LOWER(nb_cliente) = LOWER(%s)
+          AND tel_cliente IS NULL
+          AND email_cliente IS NOT DISTINCT FROM %s
+        LIMIT 1
+        """,
+        (nombre, email),
+    ).fetchone()
+    if not cliente_exists:
+        conn.execute(
+            "INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente) VALUES (%s, %s, %s)",
+            (nombre, None, email),
+        )
+
+
 def _send_whatsapp_template_message(
     *,
     to_phone: str,
@@ -1869,25 +1907,7 @@ def create_orden_admision(payload: OrdenAdmisionCreate):
 
     with get_connection() as conn:
         ensure_orden_admision_transmision_column(conn)
-        if payload.nb_cliente:
-            cliente_exists = conn.execute(
-                """
-                SELECT 1 FROM clientes
-                WHERE LOWER(nb_cliente) = LOWER(%s)
-                  AND tel_cliente IS NOT DISTINCT FROM %s
-                  AND email_cliente IS NOT DISTINCT FROM %s
-                LIMIT 1
-                """,
-                (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
-            ).fetchone()
-            if not cliente_exists:
-                conn.execute(
-                    """
-                    INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
-                )
+        _sync_cliente(conn, payload.nb_cliente, payload.tel_cliente, payload.email_cliente)
 
         conn.row_factory = dict_row
         row = conn.execute(
@@ -2693,25 +2713,7 @@ def create_registro(payload: RecepcionCreate):
             conn.execute("LOCK TABLE recepciones IN EXCLUSIVE MODE")
             generated_folio = _next_recepcion_folio(conn)
 
-            if payload.nb_cliente:
-                cliente = conn.execute(
-                    """
-                    SELECT 1 FROM clientes
-                    WHERE LOWER(nb_cliente) = LOWER(%s)
-                      AND tel_cliente IS NOT DISTINCT FROM %s
-                      AND email_cliente IS NOT DISTINCT FROM %s
-                    LIMIT 1
-                    """,
-                    (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
-                ).fetchone()
-                if not cliente:
-                    conn.execute(
-                        """
-                        INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
-                        VALUES (%s, %s, %s)
-                        """,
-                        (payload.nb_cliente, payload.tel_cliente, payload.email_cliente),
-                    )
+            _sync_cliente(conn, payload.nb_cliente, payload.tel_cliente, payload.email_cliente)
 
             duplicate = conn.execute(
                 """
@@ -2879,23 +2881,12 @@ def update_registro(recepcion_id: int, payload: RecepcionUpdate):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
 
         if "nb_cliente" in updates and updates.get("nb_cliente"):
-            tel = updates.get("tel_cliente")
-            email = updates.get("email_cliente")
-            cliente = conn.execute(
-                """
-                SELECT 1 FROM clientes
-                WHERE LOWER(nb_cliente) = LOWER(%s)
-                  AND tel_cliente IS NOT DISTINCT FROM %s
-                  AND email_cliente IS NOT DISTINCT FROM %s
-                LIMIT 1
-                """,
-                (updates["nb_cliente"], tel, email),
-            ).fetchone()
-            if not cliente:
-                conn.execute(
-                    "INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente) VALUES (%s, %s, %s)",
-                    (updates["nb_cliente"], tel, email),
-                )
+            _sync_cliente(
+                conn,
+                updates["nb_cliente"],
+                updates.get("tel_cliente", current.get("tel_cliente")),
+                updates.get("email_cliente", current.get("email_cliente")),
+            )
 
         set_clause = ", ".join(f"{field} = %s" for field in updates.keys())
         values = list(updates.values()) + [recepcion_id]

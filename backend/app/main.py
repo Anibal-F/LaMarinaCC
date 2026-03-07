@@ -2,12 +2,13 @@ import json
 import re
 import unicodedata
 from fastapi import FastAPI
-from fastapi import HTTPException, Query, Request, status
+from fastapi import File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from pydantic import BaseModel
 from psycopg.rows import dict_row
 from fastapi.responses import FileResponse, PlainTextResponse
+from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 
@@ -83,6 +84,65 @@ def _send_whatsapp_text_message(*, to_phone: str, text: str) -> dict:
         raise RuntimeError(f"Meta API error ({exc.code}): {details or str(exc)}") from exc
     except URLError as exc:
         raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
+
+
+def _send_whatsapp_media_message(
+    *,
+    to_phone: str,
+    media_type: str,
+    media_link: str,
+    caption: str | None = None,
+    filename: str | None = None,
+) -> dict:
+    if not settings.whatsapp_phone_number_id:
+        raise RuntimeError("WHATSAPP_PHONE_NUMBER_ID no configurado.")
+    if not settings.whatsapp_access_token:
+        raise RuntimeError("WHATSAPP_ACCESS_TOKEN no configurado.")
+    endpoint = (
+        f"{settings.whatsapp_graph_api_base_url.rstrip('/')}/"
+        f"{settings.whatsapp_api_version}/{settings.whatsapp_phone_number_id}/messages"
+    )
+    media_payload: dict[str, str] = {"link": media_link}
+    if caption and media_type in {"image", "video", "document"}:
+        media_payload["caption"] = caption
+    if filename and media_type == "document":
+        media_payload["filename"] = filename
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": media_type,
+        media_type: media_payload,
+    }
+    request = UrlRequest(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.whatsapp_access_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Meta API error ({exc.code}): {details or str(exc)}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"No se pudo contactar Meta API: {exc}") from exc
+
+
+def _detect_media_type(filename: str, content_type: str) -> str:
+    extension = Path(filename or "").suffix.lower()
+    mime = (content_type or "").lower()
+    if mime.startswith("image/") or extension in {".jpg", ".jpeg", ".png", ".webp"}:
+        return "image"
+    if mime.startswith("video/") or extension in {".mp4", ".mov", ".webm", ".mkv"}:
+        return "video"
+    if mime.startswith("audio/") or extension in {".mp3", ".ogg", ".wav", ".m4a"}:
+        return "audio"
+    return "document"
 
 
 def _ensure_whatsapp_chat_tables(conn) -> None:
@@ -253,7 +313,11 @@ def list_whatsapp_conversations(limit: int = 50):
             ORDER BY wa_id, created_at DESC
             """
         ).fetchall()
-    rows_sorted = sorted(rows, key=lambda item: item.get("last_at") or "", reverse=True)
+    rows_sorted = sorted(
+        rows,
+        key=lambda item: (item.get("last_at").timestamp() if item.get("last_at") else 0),
+        reverse=True,
+    )
     return rows_sorted[:safe_limit]
 
 
@@ -307,6 +371,81 @@ def send_whatsapp_chat_message(payload: WhatsAppChatSendRequest):
     return {"ok": True, "wa_id": wa_id, "message_id": message_id, "meta_response": meta_response}
 
 
+@app.post("/whatsapp/chat/messages/media")
+async def send_whatsapp_chat_media_message(
+    request: Request,
+    wa_id: str = Form(...),
+    caption: str = Form(default=""),
+    file: UploadFile = File(...),
+):
+    normalized_wa_id = wa_id.strip()
+    if not normalized_wa_id:
+        raise HTTPException(status_code=400, detail="wa_id requerido")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Archivo requerido")
+
+    safe_name = Path(file.filename).name
+    extension = Path(safe_name).suffix.lower()
+    unique_name = f"wa_{uuid4().hex}{extension}"
+    upload_dir = app_media_dir / "whatsapp_chat_uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target_path = upload_dir / unique_name
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Archivo vacío")
+    with target_path.open("wb") as out:
+        out.write(content)
+
+    public_base = (settings.whatsapp_pdf_public_base_url or "").strip()
+    if not public_base:
+        public_base = str(request.base_url).rstrip("/")
+    else:
+        public_base = public_base.rstrip("/")
+    media_link = f"{public_base}/media/whatsapp_chat_uploads/{unique_name}"
+    media_type = _detect_media_type(file.filename, file.content_type or "")
+
+    try:
+        meta_response = _send_whatsapp_media_message(
+            to_phone=normalized_wa_id,
+            media_type=media_type,
+            media_link=media_link,
+            caption=caption.strip() or None,
+            filename=safe_name,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    message_id = ((meta_response.get("messages") or [{}])[0] or {}).get("id")
+    preview_text = f"[{media_type}] {safe_name}"
+    if caption.strip():
+        preview_text = f"{preview_text}\n{caption.strip()}"
+    with get_connection() as conn:
+        _ensure_whatsapp_chat_tables(conn)
+        _insert_whatsapp_chat_message(
+            conn,
+            wa_id=normalized_wa_id,
+            direction="out",
+            message_type=media_type,
+            text_body=preview_text,
+            message_id=message_id,
+            status_name="submitted",
+            raw_payload={
+                "meta_response": meta_response,
+                "media_link": media_link,
+                "file_name": safe_name,
+            },
+        )
+    return {
+        "ok": True,
+        "wa_id": normalized_wa_id,
+        "message_id": message_id,
+        "media_type": media_type,
+        "media_link": media_link,
+        "meta_response": meta_response,
+    }
+
+
 @app.post("/webhooks/whatsapp")
 async def receive_whatsapp_webhook(request: Request):
     payload = await request.json()
@@ -324,6 +463,9 @@ async def receive_whatsapp_webhook(request: Request):
                     wa_id = str(message.get("from") or "").strip()
                     message_type = str(message.get("type") or "unknown").strip()
                     body_text = ((message.get("text") or {}).get("body") or "").strip()
+                    if not body_text and message_type in {"image", "video", "audio", "document"}:
+                        caption = ((message.get(message_type) or {}).get("caption") or "").strip()
+                        body_text = caption or f"[{message_type}]"
                     message_id = str(message.get("id") or "").strip() or None
                     timestamp = str(message.get("timestamp") or "").strip() or None
                     if not wa_id:

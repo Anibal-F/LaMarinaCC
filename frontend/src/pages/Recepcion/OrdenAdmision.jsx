@@ -970,13 +970,12 @@ export default function OrdenAdmision() {
   };
 
   // Función para ejecutar el RPA de adjudicación en Qualitas
-  const handleAdjudicarQualitas = async (record) => {
+  const ejecutarAdjudicacion = async (record) => {
     if (!record.reporte_siniestro) {
       setError("La orden no tiene número de reporte/siniestro");
       return;
     }
     
-    setAdjudicacionModal(record);
     setAdjudicando(true);
     setAdjudicacionResult(null);
     setError("");
@@ -1442,7 +1441,12 @@ export default function OrdenAdmision() {
                                 className="p-1.5 hover:bg-purple-500/20 hover:text-purple-400 rounded text-slate-400 transition-colors"
                                 title="Adjudicar en Qualitas"
                                 type="button"
-                                onClick={() => handleAdjudicarQualitas(record)}
+                                onClick={() => {
+                                  setAdjudicacionModal(record);
+                                  setAdjudicando(false);
+                                  setAdjudicacionResult(null);
+                                  setError("");
+                                }}
                               >
                                 <span className="material-symbols-outlined text-lg">robot</span>
                               </button>
@@ -2143,7 +2147,7 @@ export default function OrdenAdmision() {
                 <button
                   type="button"
                   className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-2"
-                  onClick={() => handleAdjudicarQualitas(adjudicacionModal)}
+                  onClick={() => ejecutarAdjudicacion(adjudicacionModal)}
                   disabled={adjudicando}
                 >
                   <span className="material-symbols-outlined text-sm">play_arrow</span>

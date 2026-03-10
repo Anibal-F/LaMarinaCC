@@ -361,7 +361,7 @@ export default function Taller() {
                               <button
                                 className="text-primary hover:text-white hover:bg-primary/20 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors inline-flex items-center gap-1 uppercase tracking-wide"
                                 type="button"
-                                onClick={() => navigate(`/recepcion/nuevo?edit=${record.id}`)}
+                                onClick={() => navigate(`/taller/autos-en-sitio/${record.id}`, { state: { record } })}
                               >
                                 Gestionar
                                 <span className="material-symbols-outlined text-sm">arrow_forward</span>

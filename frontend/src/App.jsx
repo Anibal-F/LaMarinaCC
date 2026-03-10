@@ -24,6 +24,7 @@ import ListadoVehiculosValuacion from "./pages/Valuacion/ListadoVehiculos.jsx";
 import ValuarVehiculo from "./pages/Valuacion/ValuarVehiculo.jsx";
 import Taller from "./pages/Taller/Taller.jsx";
 import AreasTrabajo from "./pages/Taller/AreasTrabajo.jsx";
+import TallerGestion from "./pages/Taller/TallerGestion.jsx";
 import WhatsAppChatWidget from "./components/WhatsAppChatWidget.jsx";
 
 export default function App() {
@@ -142,6 +143,10 @@ export default function App() {
         <Route
           path="/taller/autos-en-sitio"
           element={authenticated ? <Taller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/taller/autos-en-sitio/:id"
+          element={authenticated ? <TallerGestion /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/taller/areas-de-trabajo"

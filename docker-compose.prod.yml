@@ -3,6 +3,8 @@ services:
     build: ./backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8010
     restart: unless-stopped
+    volumes:
+      - backend_media:/app/app/media
     environment:
       APP_NAME: ${APP_NAME:-LaMarinaCC}
       ENV: ${ENV:-prod}
@@ -46,3 +48,6 @@ services:
       - "3010:80"
     depends_on:
       - backend
+
+volumes:
+  backend_media:

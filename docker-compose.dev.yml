@@ -11,6 +11,10 @@ services:
       ENV: dev
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/lamarinacc}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010,http://127.0.0.1:3010}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
       - "8010:8010"
     depends_on:

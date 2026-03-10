@@ -44,6 +44,11 @@ except Exception:  # pragma: no cover - optional dependency
     boto3 = None
 
 try:
+    from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+except Exception:  # pragma: no cover - optional dependency
+    NoCredentialsError = PartialCredentialsError = None
+
+try:
     import pypdfium2 as pdfium
 except Exception:  # pragma: no cover - optional dependency
     pdfium = None
@@ -2053,9 +2058,21 @@ def extract_orden_fields(file: UploadFile = File(...)):
     try:
         textract_data = _extract_textract_data(file_bytes, extension)
     except Exception as exc:
+        credentials_error = (
+            (NoCredentialsError and isinstance(exc, NoCredentialsError))
+            or (PartialCredentialsError and isinstance(exc, PartialCredentialsError))
+            or "Unable to locate credentials" in str(exc)
+        )
+        detail = (
+            "Textract no tiene credenciales AWS. Configura AWS_ACCESS_KEY_ID, "
+            "AWS_SECRET_ACCESS_KEY y opcionalmente AWS_SESSION_TOKEN en el backend, "
+            "o asigna un IAM Role valido a la instancia EC2."
+            if credentials_error
+            else f"No se pudo extraer texto con Textract: {exc}"
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"No se pudo extraer texto con Textract: {exc}",
+            detail=detail,
         ) from exc
 
     ocr_text = textract_data.get("text", "")

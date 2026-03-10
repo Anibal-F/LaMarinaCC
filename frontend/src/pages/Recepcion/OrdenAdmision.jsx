@@ -132,6 +132,7 @@ export default function OrdenAdmision() {
   const [clientes, setClientes] = useState([]);
   const [grupos, setGrupos] = useState([]);
   const [marcas, setMarcas] = useState([]);
+  const [modelosAutos, setModelosAutos] = useState([]);
   const [aseguradoras, setAseguradoras] = useState([]);
   const [partesAuto, setPartesAuto] = useState([]);
   const [grupoSeleccionado, setGrupoSeleccionado] = useState("");
@@ -160,6 +161,8 @@ export default function OrdenAdmision() {
   const [isSaving, setIsSaving] = useState(false);
   const [marcaSaving, setMarcaSaving] = useState(false);
   const [marcaError, setMarcaError] = useState("");
+  const [modeloSaving, setModeloSaving] = useState(false);
+  const [modeloError, setModeloError] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -223,9 +226,10 @@ export default function OrdenAdmision() {
   useEffect(() => {
     const loadCatalogos = async () => {
       try {
-        const [gruposRes, marcasRes, aseguradorasRes, partesRes, clientesRes] = await Promise.all([
+        const [gruposRes, marcasRes, modelosRes, aseguradorasRes, partesRes, clientesRes] = await Promise.all([
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/grupos-autos`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/marcas-autos`),
+          fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/aseguradoras`),
           fetch(`${import.meta.env.VITE_API_URL}/catalogos/partes-auto`),
           fetch(`${import.meta.env.VITE_API_URL}/clientes`)
@@ -235,6 +239,9 @@ export default function OrdenAdmision() {
         }
         if (marcasRes.ok) {
           setMarcas(await marcasRes.json());
+        }
+        if (modelosRes.ok) {
+          setModelosAutos(await modelosRes.json());
         }
         if (aseguradorasRes.ok) {
           setAseguradoras(await aseguradorasRes.json());
@@ -824,6 +831,23 @@ export default function OrdenAdmision() {
     return marcas.filter((marca) => marca.gpo_marca === grupoSeleccionado);
   }, [marcas, grupoSeleccionado]);
 
+  const modelosFiltrados = useMemo(() => {
+    const marcaSeleccionada = String(form.marca_vehiculo || "").trim().toLowerCase();
+    const modelosBase = !marcaSeleccionada
+      ? modelosAutos
+      : modelosAutos.filter(
+          (modelo) => String(modelo.nb_marca || "").trim().toLowerCase() === marcaSeleccionada
+        );
+
+    return Array.from(
+      new Set(
+        modelosBase
+          .map((item) => String(item.nb_modelo || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b, "es-MX", { sensitivity: "base" }));
+  }, [form.marca_vehiculo, modelosAutos]);
+
   const handleCreateMarca = async (nombreMarca) => {
     setMarcaError("");
     if (!nombreMarca.trim()) {
@@ -847,12 +871,48 @@ export default function OrdenAdmision() {
       }
       const created = await response.json();
       setMarcas((prev) => [...prev, created]);
-      setForm((prev) => ({ ...prev, marca_vehiculo: created.nb_marca }));
+      setForm((prev) => ({ ...prev, marca_vehiculo: created.nb_marca, tipo_vehiculo: "" }));
       setGrupoSeleccionado(created.gpo_marca || "Otros");
     } catch (err) {
       setMarcaError(err.message || "No se pudo crear la marca");
     } finally {
       setMarcaSaving(false);
+    }
+  };
+
+  const handleCreateModelo = async (nombreModelo) => {
+    setModeloError("");
+    const marcaSeleccionada = marcas.find((marca) => marca.nb_marca === form.marca_vehiculo);
+    if (!marcaSeleccionada?.id) {
+      setModeloError("Selecciona primero una marca para registrar el tipo.");
+      return;
+    }
+    if (!nombreModelo.trim()) {
+      setModeloError("Escribe el tipo/modelo a registrar.");
+      return;
+    }
+
+    try {
+      setModeloSaving(true);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          marca_id: Number(marcaSeleccionada.id),
+          nb_modelo: nombreModelo.trim()
+        })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo crear el tipo");
+      }
+      const created = await response.json();
+      setModelosAutos((prev) => [...prev, created]);
+      setForm((prev) => ({ ...prev, tipo_vehiculo: created.nb_modelo }));
+    } catch (err) {
+      setModeloError(err.message || "No se pudo crear el tipo");
+    } finally {
+      setModeloSaving(false);
     }
   };
 
@@ -1640,7 +1700,9 @@ export default function OrdenAdmision() {
                       label="Marca"
                       value={form.marca_vehiculo}
                       onChange={(value) => {
-                        setForm((prev) => ({ ...prev, marca_vehiculo: value }));
+                        setMarcaError("");
+                        setModeloError("");
+                        setForm((prev) => ({ ...prev, marca_vehiculo: value, tipo_vehiculo: "" }));
                         const selected = marcas.find((marca) => marca.nb_marca === value);
                         if (selected?.gpo_marca) {
                           setGrupoSeleccionado(selected.gpo_marca);
@@ -1652,15 +1714,27 @@ export default function OrdenAdmision() {
                       onAdd={handleCreateMarca}
                       addLabel="Agregar marca"
                     />
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo</label>
-                      <input
-                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
-                        value={form.tipo_vehiculo}
-                        onChange={handleChange("tipo_vehiculo")}
-                        placeholder="GLA 200"
-                      />
-                    </div>
+                    <SearchableSelect
+                      label="Tipo"
+                      value={form.tipo_vehiculo}
+                      onChange={(value) => {
+                        setModeloError("");
+                        setForm((prev) => ({ ...prev, tipo_vehiculo: value }));
+                      }}
+                      options={modelosFiltrados}
+                      placeholder={
+                        form.marca_vehiculo ? "Selecciona tipo" : "Selecciona primero una marca"
+                      }
+                      error={modeloError}
+                      onAdd={handleCreateModelo}
+                      addLabel={modeloSaving ? "Agregando tipo" : "Agregar tipo"}
+                      disabled={!form.marca_vehiculo}
+                      emptyLabel={
+                        form.marca_vehiculo
+                          ? "Sin tipos registrados para esta marca"
+                          : "Selecciona una marca para ver tipos"
+                      }
+                    />
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Año</label>
                       <input

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import { resolveMediaUrl } from "../../utils/media.js";
 
 const WORKSHOP_DRAFTS_KEY = "lmcc_taller_gestion_v1";
 
@@ -211,10 +212,10 @@ export default function TallerGestion() {
   );
   const lastPhotoItem = photoItems.length ? photoItems[photoItems.length - 1] : null;
 
-  const intakePhoto = photoItems[0]?.file_path ? `${import.meta.env.VITE_API_URL}${photoItems[0].file_path}` : "";
+  const intakePhoto = photoItems[0]?.file_path ? resolveMediaUrl(photoItems[0].file_path) : "";
   const currentPhoto =
     photoItems.length > 1 && lastPhotoItem?.file_path
-      ? `${import.meta.env.VITE_API_URL}${lastPhotoItem.file_path}`
+      ? resolveMediaUrl(lastPhotoItem.file_path)
       : "";
 
   const currentStageIndex = useMemo(() => {

@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import { resolveMediaUrl } from "../../utils/media.js";
 
 const statusFilters = [
   "Todos",
@@ -576,7 +577,7 @@ export default function Recepcion() {
                     title="Abrir en pantalla completa"
                   >
                     <img
-                      src={`${import.meta.env.VITE_API_URL}${item.file_path}`}
+                      src={resolveMediaUrl(item.file_path)}
                       alt={item.original_name}
                       className="w-full h-44 object-cover rounded-lg border border-border-dark"
                     />
@@ -594,7 +595,7 @@ export default function Recepcion() {
                 {mediaItems.map((item) => (
                   <video
                     key={item.id}
-                    src={`${import.meta.env.VITE_API_URL}${item.file_path}`}
+                    src={resolveMediaUrl(item.file_path)}
                     controls
                     className="w-full rounded-lg border border-border-dark"
                   />
@@ -740,7 +741,7 @@ export default function Recepcion() {
             </>
           ) : null}
           <img
-            src={`${import.meta.env.VITE_API_URL}${mediaItems[photoViewerIndex].file_path}`}
+            src={resolveMediaUrl(mediaItems[photoViewerIndex].file_path)}
             alt={mediaItems[photoViewerIndex].original_name}
             className="max-w-full max-h-full object-contain rounded-lg"
           />

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import { resolveMediaUrl } from "../../utils/media.js";
 
 const fileTypeOptions = [
   { value: "archivoorden_admision", label: "Orden de admision" },
@@ -21,9 +22,7 @@ function isImageFile(file) {
 function fileUrl(file) {
   const path = file?.archivo_path || "";
   if (!path) return "";
-  if (/^https?:\/\//.test(path)) return encodeURI(path);
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${import.meta.env.VITE_API_URL}${encodeURI(normalizedPath)}`;
+  return resolveMediaUrl(path);
 }
 
 export default function CatalogoExpedientes() {

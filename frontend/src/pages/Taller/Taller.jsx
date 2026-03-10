@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import { resolveMediaUrl } from "../../utils/media.js";
 
 const PAGE_SIZE = 8;
 const ACTIVE_WORKSHOP_STATUS = ["recepcion", "valuacion", "autorizacion", "taller"];
@@ -151,7 +152,7 @@ export default function Taller() {
             );
             return [
               record.id,
-              firstPhoto?.file_path ? `${import.meta.env.VITE_API_URL}${firstPhoto.file_path}` : null
+              firstPhoto?.file_path ? resolveMediaUrl(firstPhoto.file_path) : null
             ];
           } catch {
             return [record.id, null];

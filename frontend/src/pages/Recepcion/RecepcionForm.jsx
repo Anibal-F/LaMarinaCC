@@ -47,6 +47,7 @@ export default function RecepcionForm() {
   const [marcaSaving, setMarcaSaving] = useState(false);
   const [marcaError, setMarcaError] = useState("");
   const [modeloError, setModeloError] = useState("");
+  const [tipoError, setTipoError] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [aseguradoras, setAseguradoras] = useState([]);
   const [fuelLevelIndex, setFuelLevelIndex] = useState(2);
@@ -1591,8 +1592,9 @@ export default function RecepcionForm() {
                       value={grupoSeleccionado}
                       onChange={(value) => {
                         setModeloError("");
+                        setTipoError("");
                         setGrupoSeleccionado(value);
-                        setForm((prev) => ({ ...prev, vehiculo_marca: "", vehiculo_modelo: "" }));
+                        setForm((prev) => ({ ...prev, vehiculo_marca: "", vehiculo_modelo: "", vehiculo_tipo: "" }));
                       }}
                       options={gruposAutos.map((grupo) => grupo.nb_grupo)}
                       placeholder="Selecciona grupo"
@@ -1604,7 +1606,8 @@ export default function RecepcionForm() {
                       value={form.vehiculo_marca}
                       onChange={(value) => {
                         setModeloError("");
-                        setForm((prev) => ({ ...prev, vehiculo_marca: value, vehiculo_modelo: "" }));
+                        setTipoError("");
+                        setForm((prev) => ({ ...prev, vehiculo_marca: value, vehiculo_modelo: "", vehiculo_tipo: "" }));
                         const selected = marcasAutos.find((marca) => marca.nb_marca === value);
                         if (selected?.gpo_marca) {
                           setGrupoSeleccionado(selected.gpo_marca);
@@ -1630,13 +1633,62 @@ export default function RecepcionForm() {
                       addLabel="Agregar modelo"
                     />
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo / Carrocería</label>
-                      <input
-                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
-                        placeholder="Pick-up"
-                        type="text"
+                      <SearchableSelect
+                        label="Tipo / Carrocería"
                         value={form.vehiculo_tipo}
-                        onChange={(event) => setForm({ ...form, vehiculo_tipo: event.target.value })}
+                        onChange={(value) => {
+                          setTipoError("");
+                          setForm((prev) => ({ ...prev, vehiculo_tipo: value }));
+                        }}
+                        options={Array.from(new Set(modelosFiltrados.map((modelo) => modelo.nb_modelo))).sort((a, b) => a.localeCompare(b, "es-MX"))}
+                        placeholder={form.vehiculo_marca ? "Selecciona tipo / carrocería" : "Selecciona primero una marca"}
+                        error={tipoError}
+                        onAdd={async (nombreTipo) => {
+                          setTipoError("");
+                          const nbTipo = String(nombreTipo || "").trim();
+                          if (!nbTipo) {
+                            setTipoError("Escribe el tipo / carrocería.");
+                            return;
+                          }
+                          if (!form.vehiculo_marca) {
+                            setTipoError("Selecciona primero una marca.");
+                            return;
+                          }
+
+                          const marca = marcasAutos.find(
+                            (item) => String(item.nb_marca || "").trim() === String(form.vehiculo_marca || "").trim()
+                          );
+                          if (!marca?.id) {
+                            setTipoError("No se encontró la marca seleccionada.");
+                            return;
+                          }
+
+                          try {
+                            const response = await fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ marca_id: Number(marca.id), nb_modelo: nbTipo })
+                            });
+                            if (!response.ok) {
+                              const payload = await response.json().catch(() => null);
+                              throw new Error(payload?.detail || "No se pudo crear el tipo / carrocería");
+                            }
+                            const created = await response.json();
+                            setModelosAutos((prev) => {
+                              if (prev.some((item) => Number(item.id) === Number(created.id))) return prev;
+                              return [...prev, created];
+                            });
+                            setForm((prev) => ({ ...prev, vehiculo_tipo: created.nb_modelo || nbTipo }));
+                          } catch (err) {
+                            setTipoError(err.message || "No se pudo crear el tipo / carrocería");
+                          }
+                        }}
+                        addLabel="Agregar tipo"
+                        emptyLabel={
+                          form.vehiculo_marca
+                            ? "Sin tipos registrados para esta marca"
+                            : "Selecciona una marca para ver tipos"
+                        }
                       />
                     </div>
                     <div className="space-y-1.5">

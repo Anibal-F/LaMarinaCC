@@ -2168,11 +2168,43 @@ class WhatsAppRecepcionSendRequest(BaseModel):
 
 
 def _next_recepcion_folio(conn) -> str:
+    conn.execute(
+        """
+        CREATE SEQUENCE IF NOT EXISTS recepcion_folio_seq
+        START WITH 5000
+        INCREMENT BY 1
+        MINVALUE 5000
+        """
+    )
     row = conn.execute(
         """
-        SELECT COALESCE(MAX(folio_recep::bigint), 4999) + 1 AS next_folio
-        FROM recepciones
-        WHERE folio_recep ~ '^[0-9]+$'
+        WITH max_recepciones AS (
+            SELECT COALESCE(MAX(folio_recep::bigint), 4999) AS max_value
+            FROM recepciones
+            WHERE folio_recep ~ '^[0-9]+$'
+        ),
+        max_historico AS (
+            SELECT COALESCE(MAX(folio_recep::bigint), 4999) AS max_value
+            FROM historical_entries
+            WHERE folio_recep ~ '^[0-9]+$'
+        ),
+        current_seq AS (
+            SELECT COALESCE(last_value, 4999) AS max_value
+            FROM recepcion_folio_seq
+        ),
+        synced AS (
+            SELECT setval(
+                'recepcion_folio_seq',
+                GREATEST(
+                    (SELECT max_value FROM max_recepciones),
+                    (SELECT max_value FROM max_historico),
+                    (SELECT max_value FROM current_seq)
+                ),
+                true
+            ) AS current_value
+        )
+        SELECT nextval('recepcion_folio_seq') AS next_folio
+        FROM synced
         """
     ).fetchone()
     next_folio = row[0] if row else 5000
@@ -2738,7 +2770,7 @@ def create_registro(payload: RecepcionCreate):
             duplicate = conn.execute(
                 """
                 SELECT 1
-                FROM historical_entries
+                FROM recepciones
                 WHERE DATE(fecha_recep) = DATE(%s) AND placas = %s
                 LIMIT 1
                 """,

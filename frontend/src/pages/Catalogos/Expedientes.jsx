@@ -40,6 +40,11 @@ export default function CatalogoExpedientes() {
   const [selectedTipo, setSelectedTipo] = useState("archivo_valuacion");
   const [uploadFiles, setUploadFiles] = useState([]);
   const [detailView, setDetailView] = useState("list");
+  const [editingExpediente, setEditingExpediente] = useState(null);
+  const [editReporteValue, setEditReporteValue] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingExpediente, setDeletingExpediente] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadExpedientes = async (query = "") => {
     setLoadingList(true);
@@ -103,6 +108,78 @@ export default function CatalogoExpedientes() {
     const folio = expediente?.expediente?.reporte_siniestro;
     if (!folio) return;
     await Promise.all([openExpediente(folio), loadExpedientes(reporte.trim())]);
+  };
+
+  const handleStartEditExpediente = (item) => {
+    setActionError("");
+    setActionSuccess("");
+    setEditingExpediente(item);
+    setEditReporteValue(String(item?.reporte_siniestro || ""));
+  };
+
+  const handleSaveExpediente = async () => {
+    if (!editingExpediente?.id) return;
+    const nextReporte = editReporteValue.trim();
+    if (!nextReporte) {
+      setActionError("Captura el nuevo reporte/siniestro.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setActionError("");
+    setActionSuccess("");
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/expedientes/${editingExpediente.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reporte_siniestro: nextReporte })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.detail || "No se pudo actualizar el expediente.");
+      }
+
+      setEditingExpediente(null);
+      setEditReporteValue("");
+      setReporte(nextReporte);
+      setActionSuccess("Expediente actualizado.");
+      await Promise.all([loadExpedientes(nextReporte), openExpediente(nextReporte)]);
+    } catch (err) {
+      setActionError(err.message || "No se pudo actualizar el expediente.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteExpediente = async () => {
+    if (!deletingExpediente?.id) return;
+    setDeleting(true);
+    setActionError("");
+    setActionSuccess("");
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/expedientes/${deletingExpediente.id}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo eliminar el expediente.");
+      }
+
+      const deletedReporte = deletingExpediente.reporte_siniestro;
+      setDeletingExpediente(null);
+      setActionSuccess("Expediente eliminado.");
+      if (expediente?.expediente?.reporte_siniestro === deletedReporte) {
+        setExpediente(null);
+      }
+      if (reporte.trim() === deletedReporte) {
+        setReporte("");
+      }
+      await loadExpedientes(reporte.trim() === deletedReporte ? "" : reporte.trim());
+    } catch (err) {
+      setActionError(err.message || "No se pudo eliminar el expediente.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleUploadToExpediente = async () => {
@@ -228,7 +305,7 @@ export default function CatalogoExpedientes() {
                           Última actividad
                         </th>
                         <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-right">
-                          Acción
+                          Acciones
                         </th>
                       </tr>
                     </thead>
@@ -245,16 +322,34 @@ export default function CatalogoExpedientes() {
                             {item.ultima_actividad || item.created_at || "-"}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <button
-                              className="text-primary text-xs font-bold hover:underline"
-                              type="button"
-                              onClick={() => {
-                                setReporte(item.reporte_siniestro || "");
-                                openExpediente(item.reporte_siniestro);
-                              }}
-                            >
-                              Ver detalle
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-primary/20 hover:text-primary"
+                                type="button"
+                                title="Editar reporte"
+                                onClick={() => handleStartEditExpediente(item)}
+                              >
+                                <span className="material-symbols-outlined text-base">edit</span>
+                              </button>
+                              <button
+                                className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-alert-red/20 hover:text-alert-red"
+                                type="button"
+                                title="Eliminar expediente"
+                                onClick={() => setDeletingExpediente(item)}
+                              >
+                                <span className="material-symbols-outlined text-base">delete</span>
+                              </button>
+                              <button
+                                className="text-primary text-xs font-bold hover:underline"
+                                type="button"
+                                onClick={() => {
+                                  setReporte(item.reporte_siniestro || "");
+                                  openExpediente(item.reporte_siniestro);
+                                }}
+                              >
+                                Ver detalle
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -449,6 +544,76 @@ export default function CatalogoExpedientes() {
           </div>
         </main>
       </div>
+
+      {editingExpediente ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-xl border border-border-dark bg-surface-dark p-6">
+            <h3 className="text-lg font-bold text-white">Editar expediente</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Actualiza el nombre del reporte o siniestro.
+            </p>
+            <div className="mt-4 space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Reporte / Siniestro
+              </label>
+              <input
+                className="w-full rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
+                value={editReporteValue}
+                onChange={(event) => setEditReporteValue(event.target.value)}
+                placeholder="Ej. 5000"
+              />
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                className="rounded-lg border border-border-dark px-4 py-2 text-slate-300"
+                type="button"
+                onClick={() => {
+                  setEditingExpediente(null);
+                  setEditReporteValue("");
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-lg bg-primary px-4 py-2 text-white"
+                type="button"
+                onClick={handleSaveExpediente}
+                disabled={savingEdit}
+              >
+                {savingEdit ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deletingExpediente ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-xl border border-border-dark bg-surface-dark p-6">
+            <h3 className="text-lg font-bold text-white">Eliminar expediente</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Se eliminará el expediente <span className="font-semibold text-white">{deletingExpediente.reporte_siniestro}</span> y todos sus archivos.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                className="rounded-lg border border-border-dark px-4 py-2 text-slate-300"
+                type="button"
+                onClick={() => setDeletingExpediente(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-lg bg-alert-red px-4 py-2 text-white"
+                type="button"
+                onClick={handleDeleteExpediente}
+                disabled={deleting}
+              >
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

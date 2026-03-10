@@ -64,6 +64,10 @@ def _safe_token(value: str, fallback: str = "archivo") -> str:
     return token or fallback
 
 
+def _expedientes_media_root() -> Path:
+    return Path(__file__).resolve().parent.parent.parent / "media" / "expedientes"
+
+
 def _ensure_categoria_column(conn):
     conn.execute(
         """
@@ -130,6 +134,83 @@ def create_expediente(payload: dict):
     return {"id": expediente_id, "reporte_siniestro": reporte_siniestro}
 
 
+@router.put("/{expediente_id}")
+def update_expediente(expediente_id: int, payload: dict):
+    reporte_siniestro = (payload.get("reporte_siniestro") or "").strip()
+    if not reporte_siniestro:
+        raise HTTPException(status_code=400, detail="reporte_siniestro requerido")
+
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        expediente = conn.execute(
+            "SELECT id, reporte_siniestro, created_at FROM expedientes WHERE id = %s LIMIT 1",
+            (expediente_id,),
+        ).fetchone()
+        if not expediente:
+            raise HTTPException(status_code=404, detail="Expediente no encontrado")
+
+        duplicate = conn.execute(
+            """
+            SELECT id
+            FROM expedientes
+            WHERE LOWER(reporte_siniestro) = LOWER(%s) AND id <> %s
+            LIMIT 1
+            """,
+            (reporte_siniestro, expediente_id),
+        ).fetchone()
+        if duplicate:
+            raise HTTPException(status_code=409, detail="Ya existe un expediente con ese reporte/siniestro")
+
+        current_report = str(expediente["reporte_siniestro"] or "").strip()
+        if current_report != reporte_siniestro:
+            archivo_rows = conn.execute(
+                """
+                SELECT id, archivo_path
+                FROM expediente_archivos
+                WHERE expediente_id = %s
+                """,
+                (expediente_id,),
+            ).fetchall()
+
+            media_root = _expedientes_media_root()
+            source_dir = media_root / current_report
+            target_dir = media_root / reporte_siniestro
+            if source_dir.exists() and source_dir.is_dir():
+                target_dir.parent.mkdir(parents=True, exist_ok=True)
+                if target_dir.exists():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Ya existe una carpeta de archivos para ese reporte/siniestro",
+                    )
+                source_dir.rename(target_dir)
+
+            for row in archivo_rows:
+                current_path = str(row.get("archivo_path") or "").strip()
+                if not current_path:
+                    continue
+                next_path = current_path.replace(
+                    f"/media/expedientes/{current_report}/",
+                    f"/media/expedientes/{reporte_siniestro}/",
+                    1,
+                )
+                conn.execute(
+                    "UPDATE expediente_archivos SET archivo_path = %s WHERE id = %s",
+                    (next_path, row["id"]),
+                )
+
+        updated = conn.execute(
+            """
+            UPDATE expedientes
+            SET reporte_siniestro = %s
+            WHERE id = %s
+            RETURNING id, reporte_siniestro, created_at
+            """,
+            (reporte_siniestro, expediente_id),
+        ).fetchone()
+
+    return updated
+
+
 @router.get("")
 def list_expedientes(query: str = Query(default="", max_length=120), limit: int = Query(default=100, ge=1, le=500)):
     search = (query or "").strip()
@@ -155,6 +236,59 @@ def list_expedientes(query: str = Query(default="", max_length=120), limit: int 
         ).fetchall()
 
     return rows
+
+
+@router.delete("/{expediente_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_expediente(expediente_id: int):
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        expediente = conn.execute(
+            "SELECT id, reporte_siniestro FROM expedientes WHERE id = %s LIMIT 1",
+            (expediente_id,),
+        ).fetchone()
+        if not expediente:
+            raise HTTPException(status_code=404, detail="Expediente no encontrado")
+
+        archivos = conn.execute(
+            """
+            SELECT id, archivo_path
+            FROM expediente_archivos
+            WHERE expediente_id = %s
+            """,
+            (expediente_id,),
+        ).fetchall()
+
+        conn.execute("DELETE FROM expediente_archivos WHERE expediente_id = %s", (expediente_id,))
+        conn.execute("DELETE FROM expedientes WHERE id = %s", (expediente_id,))
+
+    app_root = Path(__file__).resolve().parent.parent.parent
+    for row in archivos:
+        relative_path = str(row.get("archivo_path") or "").strip()
+        if not relative_path:
+            continue
+        disk_path = app_root / relative_path.lstrip("/")
+        if disk_path.exists() and disk_path.is_file():
+            try:
+                disk_path.unlink()
+            except Exception:
+                pass
+
+    media_folder = _expedientes_media_root() / str(expediente["reporte_siniestro"] or "").strip()
+    if media_folder.exists() and media_folder.is_dir():
+        for child in sorted(media_folder.rglob("*"), reverse=True):
+            try:
+                if child.is_file():
+                    child.unlink()
+                elif child.is_dir():
+                    child.rmdir()
+            except Exception:
+                pass
+        try:
+            media_folder.rmdir()
+        except Exception:
+            pass
+
+    return None
 
 
 @router.get("/{reporte_siniestro}")

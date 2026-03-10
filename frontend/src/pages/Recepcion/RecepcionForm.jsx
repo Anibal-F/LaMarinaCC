@@ -1695,31 +1695,13 @@ export default function RecepcionForm() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Entrega Estimada</label>
-                      <div className="relative">
-                        <input
-                          ref={entregaEstimRef}
-                          className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 pr-10 text-sm text-white"
-                          type="date"
-                          value={form.fecha_entregaestim}
-                          onChange={(event) => setForm({ ...form, fecha_entregaestim: event.target.value })}
-                        />
-                        <button
-                          type="button"
-                          aria-label="Abrir calendario"
-                          className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-white"
-                          onClick={() => {
-                            const input = entregaEstimRef.current;
-                            if (!input) return;
-                            if (typeof input.showPicker === "function") {
-                              input.showPicker();
-                              return;
-                            }
-                            input.focus();
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-lg">calendar_month</span>
-                        </button>
-                      </div>
+                      <input
+                        ref={entregaEstimRef}
+                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                        type="date"
+                        value={form.fecha_entregaestim}
+                        onChange={(event) => setForm({ ...form, fecha_entregaestim: event.target.value })}
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Estatus</label>

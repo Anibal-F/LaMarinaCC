@@ -930,11 +930,17 @@ def ensure_recepcion_media_table(conn):
         CREATE TABLE IF NOT EXISTS recepcion_media (
             id BIGSERIAL PRIMARY KEY,
             recepcion_id BIGINT NOT NULL REFERENCES recepciones(id) ON DELETE CASCADE,
-            media_type VARCHAR(20) NOT NULL,
+            media_type VARCHAR(50) NOT NULL,
             file_path TEXT NOT NULL,
             original_name TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE recepcion_media
+        ALTER COLUMN media_type TYPE VARCHAR(50)
         """
     )
     conn.execute(

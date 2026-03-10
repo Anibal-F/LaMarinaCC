@@ -145,6 +145,11 @@ function statusPill(stageId) {
   return "bg-alert-amber/15 text-alert-amber border border-alert-amber/30";
 }
 
+function isRecepcionCompleted(record) {
+  if (record?.recepcionado_completado) return true;
+  return Boolean(String(record?.folio_seguro || "").trim() && String(record?.folio_ot || record?.folio_recep || "").trim());
+}
+
 function insurerTagClasses(seguro) {
   const normalized = String(seguro || "").toLowerCase();
   if (normalized.includes("qualitas")) return "bg-violet-500/10 text-violet-300 border-violet-500/30";
@@ -213,9 +218,14 @@ export default function TallerGestion() {
       : "";
 
   const currentStageIndex = useMemo(() => {
-    const index = WORKSHOP_STAGES.findIndex((stage) => stage.id === draft?.currentStage);
+    const recepcionCompleted = isRecepcionCompleted(record);
+    const effectiveStageId =
+      recepcionCompleted && draft?.currentStage === "recepcionado" ? "carroceria" : draft?.currentStage;
+    const index = WORKSHOP_STAGES.findIndex((stage) => stage.id === effectiveStageId);
     return index >= 0 ? index : 0;
-  }, [draft?.currentStage]);
+  }, [draft?.currentStage, record]);
+
+  const recepcionCompleted = useMemo(() => isRecepcionCompleted(record), [record]);
 
   const pendingCount = useMemo(
     () => (draft?.checklist || []).filter((item) => !item.done).length,
@@ -228,8 +238,11 @@ export default function TallerGestion() {
   );
 
   const progressValue = useMemo(() => {
-    if (!draft?.checklist?.length) return Math.round(((currentStageIndex + 1) / WORKSHOP_STAGES.length) * 100);
-    return Math.round((completedCount / draft.checklist.length) * 100);
+    const manualProgress = draft?.checklist?.length
+      ? Math.round((completedCount / draft.checklist.length) * 100)
+      : 0;
+    const stageProgress = Math.round((currentStageIndex / (WORKSHOP_STAGES.length - 1)) * 100);
+    return Math.max(manualProgress, stageProgress);
   }, [completedCount, currentStageIndex, draft?.checklist]);
 
   const vehicleTitle = [
@@ -396,6 +409,15 @@ export default function TallerGestion() {
                         Color: <span className="font-semibold text-white">{record.vehiculo_color || "-"}</span>
                       </span>
                       <span className="h-4 w-px bg-border-dark"></span>
+                      {record.folio_seguro ? (
+                        <>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[18px]">confirmation_number</span>
+                            Reporte: <span className="font-semibold text-white">{record.folio_seguro}</span>
+                          </span>
+                          <span className="h-4 w-px bg-border-dark"></span>
+                        </>
+                      ) : null}
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${insurerTagClasses(
                           record.seguro
@@ -504,7 +526,8 @@ export default function TallerGestion() {
 
                     <div className="relative">
                       {WORKSHOP_STAGES.map((stage, index) => {
-                        const isCompleted = index < currentStageIndex;
+                        const isRecepcionStep = stage.id === "recepcionado";
+                        const isCompleted = index < currentStageIndex || (isRecepcionStep && recepcionCompleted);
                         const isActive = index === currentStageIndex;
                         const isFuture = index > currentStageIndex;
 
@@ -512,8 +535,8 @@ export default function TallerGestion() {
                           <div key={stage.id} className="relative flex gap-4 pb-7 last:pb-0">
                             {index < WORKSHOP_STAGES.length - 1 ? (
                               <div
-                                className={`absolute left-5 top-10 h-[calc(100%-4px)] w-px ${
-                                  isCompleted ? "bg-primary/60" : "border-l border-dashed border-border-dark"
+                              className={`absolute left-5 top-10 h-[calc(100%-4px)] w-px ${
+                                  isCompleted ? "bg-alert-green/60" : "border-l border-dashed border-border-dark"
                                 }`}
                               ></div>
                             ) : null}
@@ -525,7 +548,7 @@ export default function TallerGestion() {
                                 isActive
                                   ? "border-alert-amber bg-alert-amber text-background-dark shadow-[0_0_20px_rgba(242,163,0,0.28)]"
                                   : isCompleted
-                                    ? "border-primary bg-primary/20 text-primary"
+                                    ? "border-alert-green bg-alert-green/20 text-alert-green"
                                     : "border-border-dark bg-background-dark text-slate-500"
                               }`}
                             >
@@ -537,7 +560,7 @@ export default function TallerGestion() {
                                 isActive
                                   ? "border-alert-amber/30 bg-alert-amber/10"
                                   : isCompleted
-                                    ? "border-border-dark bg-background-dark"
+                                    ? "border-alert-green/30 bg-alert-green/10"
                                     : "border-transparent bg-transparent opacity-70 hover:opacity-100"
                               }`}
                             >
@@ -545,6 +568,11 @@ export default function TallerGestion() {
                                 <div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <h4 className={`text-lg font-bold ${isFuture ? "text-slate-300" : "text-white"}`}>{stage.label}</h4>
+                                    {!isActive && isCompleted ? (
+                                      <span className="rounded-md bg-alert-green px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-background-dark">
+                                        Completado
+                                      </span>
+                                    ) : null}
                                     {isActive ? (
                                       <span className="rounded-md bg-alert-amber px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-background-dark">
                                         En progreso
@@ -554,7 +582,9 @@ export default function TallerGestion() {
                                   <p className="mt-1 text-sm text-slate-400">
                                     {isCompleted
                                       ? index === 0
-                                        ? `Completado ${formatDateTime(record.fecha_recep)}`
+                                        ? record.folio_seguro
+                                          ? `Completado: ${record.folio_seguro} asignado a OT #${record.folio_ot || record.folio_recep}`
+                                          : `Completado ${formatDateTime(record.fecha_recep)}`
                                         : `Etapa completada antes de ${WORKSHOP_STAGES[currentStageIndex]?.label.toLowerCase()}`
                                       : isActive
                                         ? draft.updatedAt

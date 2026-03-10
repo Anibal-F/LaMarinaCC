@@ -377,6 +377,7 @@ export default function RecepcionForm() {
       partes_preexistentes: damagePartsPreexist,
       observaciones_siniestro: damageObsSiniestro || null,
       observaciones_preexistentes: damageObsPreexist || null,
+      folio_seguro: reporteSiniestro || null,
       fecha_entregaestim: form.fecha_entregaestim
         ? new Date(form.fecha_entregaestim).toISOString()
         : null,
@@ -385,6 +386,7 @@ export default function RecepcionForm() {
     [
       form,
       fuelLevelIndex,
+      reporteSiniestro,
       damagePartsSiniestro,
       damagePartsPreexist,
       damageObsSiniestro,
@@ -1482,7 +1484,7 @@ export default function RecepcionForm() {
                   disabled={saving}
                 >
                   <span className="material-symbols-outlined text-sm">save</span>
-                  {saving ? "Guardando..." : "Guardar e Iniciar OT"}
+                  {saving ? "Guardando..." : "Guardar"}
                 </button>
               </>
             }

@@ -2163,6 +2163,8 @@ class RecepcionUpdate(BaseModel):
     partes_preexistentes: Optional[list[str]] = None
     observaciones_siniestro: Optional[str] = None
     observaciones_preexistentes: Optional[str] = None
+    folio_seguro: Optional[str] = None
+    folio_ot: Optional[str] = None
     fecha_seguro: Optional[datetime] = None
     folio_seguro: Optional[str] = None
     folio_ot: Optional[str] = None
@@ -2254,9 +2256,22 @@ def get_registro(recepcion_id: int):
                 partes_siniestro,
                 partes_preexistentes,
                 observaciones_siniestro,
-                observaciones_preexistentes
-            FROM recepciones
-            WHERE id = %s
+                observaciones_preexistentes,
+                he.folio_seguro,
+                COALESCE(NULLIF(he.folio_ot, ''), r.folio_recep) AS folio_ot,
+                (
+                    COALESCE(NULLIF(he.folio_seguro, ''), '') <> ''
+                    AND COALESCE(NULLIF(COALESCE(he.folio_ot, r.folio_recep), ''), '') <> ''
+                ) AS recepcionado_completado
+            FROM recepciones r
+            LEFT JOIN LATERAL (
+                SELECT folio_seguro, folio_ot
+                FROM historical_entries
+                WHERE folio_recep = r.folio_recep
+                ORDER BY id DESC
+                LIMIT 1
+            ) he ON TRUE
+            WHERE r.id = %s
             LIMIT 1
             """,
             (recepcion_id,),
@@ -2873,7 +2888,7 @@ def create_registro(payload: RecepcionCreate):
                     payload.fecha_recep,
                     payload.folio_seguro,
                     generated_folio,
-                    payload.folio_ot,
+                    payload.folio_ot or generated_folio,
                     payload.nb_cliente,
                     payload.tel_cliente,
                     payload.seguro,
@@ -2966,6 +2981,9 @@ def update_registro(recepcion_id: int, payload: RecepcionUpdate):
             (recepcion_id,),
         ).fetchone()
 
+        next_folio_seguro = payload.folio_seguro if payload.folio_seguro is not None else None
+        next_folio_ot = payload.folio_ot if payload.folio_ot is not None else None
+
         conn.execute(
             """
             UPDATE historical_entries
@@ -2985,7 +3003,9 @@ def update_registro(recepcion_id: int, payload: RecepcionUpdate):
                 estado_mecanico = %s,
                 observaciones = %s,
                 fecha_entregaestim = %s,
-                estatus = %s
+                estatus = %s,
+                folio_seguro = COALESCE(%s, folio_seguro),
+                folio_ot = COALESCE(%s, folio_ot, %s)
             WHERE folio_recep = %s
             """,
             (
@@ -3005,6 +3025,9 @@ def update_registro(recepcion_id: int, payload: RecepcionUpdate):
                 updated.get("observaciones"),
                 updated.get("fecha_entregaestim"),
                 updated.get("estatus"),
+                next_folio_seguro,
+                next_folio_ot,
+                updated.get("folio_recep"),
                 current.get("folio_recep"),
             ),
         )

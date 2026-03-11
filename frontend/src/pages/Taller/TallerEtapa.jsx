@@ -6,15 +6,12 @@ import AppHeader from "../../components/AppHeader.jsx";
 import { resolveMediaUrl } from "../../utils/media.js";
 import {
   WORKSHOP_STAGES,
-  buildDraft,
   formatDateTime,
   getStageMeta,
   getVehicleTitle,
   insurerTagClasses,
-  loadDrafts,
   parseDate,
-  relativeTime,
-  saveDraft
+  relativeTime
 } from "./tallerShared.js";
 
 function getCurrentUserLabel() {
@@ -42,7 +39,10 @@ export default function TallerEtapa() {
   const uploadInputRef = useRef(null);
 
   const [record, setRecord] = useState(null);
-  const [draft, setDraft] = useState(null);
+  const [stageRecord, setStageRecord] = useState(null);
+  const [stageChecklist, setStageChecklist] = useState([]);
+  const [stageNotes, setStageNotes] = useState([]);
+  const [allOtStages, setAllOtStages] = useState([]);
   const [mediaItems, setMediaItems] = useState([]);
   const [expedienteFiles, setExpedienteFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,17 +60,27 @@ export default function TallerEtapa() {
     try {
       setLoading(true);
       setError("");
-      const [recordResponse, mediaResponse] = await Promise.all([
+      const [recordResponse, mediaResponse, stagesResponse] = await Promise.all([
         fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}`),
-        fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}/media`)
+        fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}/media`),
+        fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas`)
       ]);
 
       if (!recordResponse.ok) {
         throw new Error("No se pudo cargar la etapa solicitada.");
       }
+      if (!stagesResponse.ok) {
+        throw new Error("No se pudo cargar la operacion de taller.");
+      }
 
       const recordPayload = await recordResponse.json();
       const mediaPayload = mediaResponse.ok ? await mediaResponse.json() : [];
+      const stagesPayload = await stagesResponse.json();
+      const stageItems = Array.isArray(stagesPayload) ? stagesPayload : [];
+      const currentStageRecord = stageItems.find((item) => item.clave === stageId);
+      if (!currentStageRecord) {
+        throw new Error("La etapa seleccionada no existe para esta OT.");
+      }
       let expedientePayload = [];
       if (recordPayload?.folio_seguro) {
         const expedienteResponse = await fetch(
@@ -81,10 +91,23 @@ export default function TallerEtapa() {
           expedientePayload = Array.isArray(expedienteData?.archivos) ? expedienteData.archivos : [];
         }
       }
-
-      const existingDraft = loadDrafts()[id];
+      const [checklistResponse, notesResponse] = await Promise.all([
+        fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${currentStageRecord.etapa_id}/checklist`),
+        fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${currentStageRecord.etapa_id}/notas`)
+      ]);
+      if (!checklistResponse.ok) {
+        throw new Error("No se pudo cargar el checklist operativo.");
+      }
+      if (!notesResponse.ok) {
+        throw new Error("No se pudieron cargar las notas operativas.");
+      }
+      const checklistPayload = await checklistResponse.json();
+      const notesPayload = await notesResponse.json();
       setRecord(recordPayload);
-      setDraft(buildDraft(recordPayload, existingDraft));
+      setStageRecord(currentStageRecord);
+      setAllOtStages(stageItems);
+      setStageChecklist(Array.isArray(checklistPayload) ? checklistPayload : []);
+      setStageNotes(Array.isArray(notesPayload) ? notesPayload : []);
       setMediaItems(Array.isArray(mediaPayload) ? mediaPayload : []);
       setExpedienteFiles(expedientePayload);
     } catch (err) {
@@ -100,10 +123,17 @@ export default function TallerEtapa() {
 
   const vehicleTitle = getVehicleTitle(record);
 
-  const operationalTasks = draft?.stageTasks?.[currentStage.id] || [];
-  const completedTasks = operationalTasks.filter((item) => item.done).length;
+  const operationalTasks = stageChecklist;
+  const completedTasks = operationalTasks.filter((item) => item.completado).length;
   const progressValue = operationalTasks.length ? Math.round((completedTasks / operationalTasks.length) * 100) : 0;
-  const notes = sortNotes(draft?.stageNotes?.[currentStage.id] || []);
+  const notes = sortNotes(
+    stageNotes.map((note) => ({
+      id: note.id,
+      author: note.creado_por || "Operador Taller",
+      text: note.nota,
+      createdAt: note.created_at
+    }))
+  );
 
   const expedientePhotoItems = useMemo(
     () =>
@@ -130,70 +160,131 @@ export default function TallerEtapa() {
 
   const primaryPhoto = evidenceItems[0]?.path ? resolveMediaUrl(evidenceItems[0].path) : "";
 
-  const persistDraft = (updater, successMessage = "") => {
-    setDraft((prev) => {
-      const nextDraft = typeof updater === "function" ? updater(prev) : updater;
-      const finalDraft = { ...nextDraft, updatedAt: new Date().toISOString() };
-      saveDraft(id, finalDraft);
-      if (successMessage) setNotice(successMessage);
-      return finalDraft;
-    });
-  };
-
-  const toggleTask = (taskId) => {
+  const toggleTask = async (taskId) => {
+    const targetTask = stageChecklist.find((item) => item.id === taskId);
+    if (!targetTask || !stageRecord) return;
     setNotice("");
-    persistDraft(
-      (prev) => ({
-        ...prev,
-        stageTasks: {
-          ...prev.stageTasks,
-          [currentStage.id]: prev.stageTasks[currentStage.id].map((task) =>
-            task.id === taskId ? { ...task, done: !task.done } : task
-          )
+    setError("");
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${stageRecord.etapa_id}/checklist/${targetTask.checklist_item_id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            completado: !targetTask.completado,
+            completado_por: getCurrentUserLabel()
+          })
         }
-      }),
-      ""
-    );
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo actualizar el checklist.");
+      }
+      const updatedTask = await response.json();
+      const nextChecklist = stageChecklist.map((item) => (item.id === updatedTask.id ? updatedTask : item));
+      setStageChecklist(nextChecklist);
+      const nextProgress = nextChecklist.length
+        ? Math.round((nextChecklist.filter((item) => item.completado).length / nextChecklist.length) * 100)
+        : 0;
+      const stageResponse = await fetch(
+        `${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${stageRecord.etapa_id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            progreso: nextProgress,
+            estatus: nextProgress >= 100 ? "COMPLETADO" : "EN_PROCESO"
+          })
+        }
+      );
+      if (stageResponse.ok) {
+        const updatedStage = await stageResponse.json();
+        setStageRecord((prev) => ({ ...prev, ...updatedStage }));
+      }
+    } catch (err) {
+      setError(err.message || "No se pudo actualizar el checklist.");
+    }
   };
 
-  const handleAddNote = () => {
+  const handleAddNote = async () => {
     const trimmed = noteInput.trim();
     if (!trimmed) return;
-
-    const note = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`,
-      author: getCurrentUserLabel(),
-      text: trimmed,
-      createdAt: new Date().toISOString()
-    };
-
-    setNotice("");
-    persistDraft(
-      (prev) => ({
-        ...prev,
-        stageNotes: {
-          ...prev.stageNotes,
-          [currentStage.id]: [note, ...(prev.stageNotes?.[currentStage.id] || [])]
+    if (!stageRecord) return;
+    try {
+      setError("");
+      setNotice("");
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${stageRecord.etapa_id}/notas`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nota: trimmed,
+            creado_por: getCurrentUserLabel()
+          })
         }
-      }),
-      "Nota operativa agregada."
-    );
-    setNoteInput("");
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo guardar la nota.");
+      }
+      const created = await response.json();
+      setStageNotes((prev) => [created, ...prev]);
+      setNoteInput("");
+      setNotice("Nota operativa agregada.");
+    } catch (err) {
+      setError(err.message || "No se pudo guardar la nota.");
+    }
   };
 
-  const handleCompleteStage = () => {
-    if (!draft) return;
+  const handleCompleteStage = async () => {
+    if (!stageRecord) return;
     setSaving(true);
     setError("");
     setNotice("");
     try {
-      persistDraft(
-        (prev) => ({
-          ...prev,
-          currentStage: nextStage?.id || currentStage.id
-        }),
-        nextStage ? `Etapa finalizada. Siguiente etapa: ${nextStage.label}.` : "Etapa finalizada."
+      const completeResponse = await fetch(
+        `${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${stageRecord.etapa_id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            estatus: "COMPLETADO",
+            progreso: 100,
+            fecha_fin: new Date().toISOString()
+          })
+        }
       );
+      if (!completeResponse.ok) {
+        const payload = await completeResponse.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo finalizar la etapa.");
+      }
+
+      if (nextStage) {
+        const nextStageRecord = allOtStages.find((item) => item.clave === nextStage.id);
+        if (nextStageRecord) {
+          const nextResponse = await fetch(
+            `${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${nextStageRecord.etapa_id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                estatus: "EN_PROCESO",
+                progreso: Math.max(Number(nextStageRecord.progreso || 0), 10),
+                fecha_inicio: nextStageRecord.fecha_inicio || new Date().toISOString()
+              })
+            }
+          );
+          if (!nextResponse.ok) {
+            const payload = await nextResponse.json().catch(() => null);
+            throw new Error(payload?.detail || "No se pudo activar la siguiente etapa.");
+          }
+        }
+      }
+
+      setNotice(nextStage ? `Etapa finalizada. Siguiente etapa: ${nextStage.label}.` : "Etapa finalizada.");
+      await loadRecord();
     } finally {
       setSaving(false);
     }
@@ -244,7 +335,7 @@ export default function TallerEtapa() {
     );
   }
 
-  if (!record || !draft) {
+  if (!record || !stageRecord) {
     return (
       <div className="bg-background-dark text-slate-100 antialiased font-display">
         <div className="flex h-screen overflow-hidden">
@@ -311,14 +402,14 @@ export default function TallerEtapa() {
                         {currentStage.label}
                       </h2>
                       <p className="mt-3 text-sm text-slate-400">
-                        {draft.updatedAt ? relativeTime(draft.updatedAt) : "Lista para registrar actividad operativa."}
+                        {stageRecord.updated_at ? relativeTime(stageRecord.updated_at) : "Lista para registrar actividad operativa."}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-4 text-left lg:min-w-[190px] lg:text-right">
                       <p className="text-sm text-slate-400">Tiempo objetivo</p>
                       <p className="mt-1 text-2xl font-black text-white">{currentStage.targetTime}</p>
                       <p className="mt-4 text-[11px] font-bold uppercase tracking-widest text-slate-500">
-                        {completedTasks} de {operationalTasks.length} completado
+                      {completedTasks} de {operationalTasks.length} completado
                       </p>
                     </div>
                   </div>
@@ -347,17 +438,19 @@ export default function TallerEtapa() {
                           <div className="shrink-0">
                             <div
                               className={`flex h-6 w-6 items-center justify-center rounded border-2 ${
-                                task.done ? "border-primary bg-primary text-white" : "border-slate-500 text-transparent"
+                                task.completado ? "border-primary bg-primary text-white" : "border-slate-500 text-transparent"
                               }`}
                             >
                               <span className="material-symbols-outlined text-[16px]">check</span>
                             </div>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={`text-xs font-black uppercase tracking-widest ${task.done ? "text-primary" : "text-white"}`}>
-                              {task.label}
+                            <p className={`text-xs font-black uppercase tracking-widest ${task.completado ? "text-primary" : "text-white"}`}>
+                              {task.descripcion}
                             </p>
-                            <p className="mt-1 text-[11px] text-slate-400">{task.detail}</p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              {task.obligatorio ? "Punto obligatorio para completar la etapa." : "Punto operativo opcional."}
+                            </p>
                           </div>
                         </button>
                       ))}

@@ -5,8 +5,6 @@ import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import { resolveMediaUrl } from "../../utils/media.js";
 import {
-  BAY_OPTIONS,
-  TECHNICIAN_OPTIONS,
   WORKSHOP_STAGES,
   buildDraft,
   formatAbsoluteDate,
@@ -37,6 +35,8 @@ export default function TallerGestion() {
 
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [catalogs, setCatalogs] = useState(null);
+  const [otStages, setOtStages] = useState([]);
   const [mediaItems, setMediaItems] = useState([]);
   const [expedienteFiles, setExpedienteFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,17 +49,27 @@ export default function TallerGestion() {
     try {
       setLoading(true);
       setError("");
-      const [recordResponse, mediaResponse] = await Promise.all([
+      const [recordResponse, mediaResponse, bootstrapResponse, stagesResponse] = await Promise.all([
         fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}`),
-        fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}/media`)
+        fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}/media`),
+        fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/bootstrap`),
+        fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas`)
       ]);
 
       if (!recordResponse.ok) {
         throw new Error("No se pudo cargar el registro del vehiculo.");
       }
+      if (!bootstrapResponse.ok) {
+        throw new Error("No se pudieron cargar los catalogos de taller.");
+      }
+      if (!stagesResponse.ok) {
+        throw new Error("No se pudieron cargar las etapas operativas.");
+      }
 
       const recordPayload = await recordResponse.json();
       const mediaPayload = mediaResponse.ok ? await mediaResponse.json() : [];
+      const bootstrapPayload = await bootstrapResponse.json();
+      const stagePayload = await stagesResponse.json();
       let expedientePayload = [];
       if (recordPayload?.folio_seguro) {
         const expedienteResponse = await fetch(
@@ -71,9 +81,33 @@ export default function TallerGestion() {
         }
       }
       const existingDraft = loadDrafts()[id];
+      const localDraft = buildDraft(recordPayload, existingDraft);
+      const stageItems = Array.isArray(stagePayload) ? stagePayload : [];
+      const recepcionCompleted = isRecepcionCompleted(recordPayload);
+      const activeStage =
+        stageItems.find((item) => String(item.estatus || "").toUpperCase() === "EN_PROCESO") ||
+        stageItems.find((item) => String(item.estatus || "").toUpperCase() === "COMPLETADO") ||
+        stageItems[0] ||
+        null;
+      const derivedStageId =
+        recepcionCompleted && activeStage?.clave === "recepcionado"
+          ? "carroceria"
+          : activeStage?.clave || localDraft.currentStage;
+      const selectedStage =
+        stageItems.find((item) => item.clave === derivedStageId) ||
+        stageItems.find((item) => item.clave === activeStage?.clave) ||
+        null;
 
       setRecord(recordPayload);
-      setDraft(buildDraft(recordPayload, existingDraft));
+      setDraft({
+        currentStage: derivedStageId,
+        checklist: localDraft.checklist,
+        assignedTechId: selectedStage?.personal_id_responsable ? String(selectedStage.personal_id_responsable) : "",
+        assignedBayId: selectedStage?.estacion_id ? String(selectedStage.estacion_id) : "",
+        updatedAt: selectedStage?.updated_at || localDraft.updatedAt || null
+      });
+      setCatalogs(bootstrapPayload);
+      setOtStages(stageItems);
       setMediaItems(Array.isArray(mediaPayload) ? mediaPayload : []);
       setExpedienteFiles(expedientePayload);
     } catch (err) {
@@ -86,6 +120,10 @@ export default function TallerGestion() {
   useEffect(() => {
     loadRecord();
   }, [id]);
+
+  const stageMap = useMemo(() => {
+    return new Map(otStages.map((stage) => [stage.clave, stage]));
+  }, [otStages]);
 
   const photoItems = useMemo(
     () =>
@@ -130,6 +168,32 @@ export default function TallerGestion() {
     return index >= 0 ? index : 0;
   }, [draft?.currentStage, record]);
 
+  const currentOtStage = useMemo(() => {
+    return stageMap.get(draft?.currentStage) || otStages.find((item) => item.clave === draft?.currentStage) || null;
+  }, [draft?.currentStage, otStages, stageMap]);
+
+  const areasById = useMemo(() => {
+    const rows = Array.isArray(catalogs?.areas) ? catalogs.areas : [];
+    return new Map(rows.map((item) => [item.id, item]));
+  }, [catalogs?.areas]);
+
+  const availableTechnicians = useMemo(() => {
+    const rows = Array.isArray(catalogs?.personal) ? catalogs.personal : [];
+    const filtered = rows.filter((item) => item.clave === draft?.currentStage);
+    return filtered.length ? filtered : rows;
+  }, [catalogs?.personal, draft?.currentStage]);
+
+  const availableStations = useMemo(() => {
+    const rows = Array.isArray(catalogs?.estaciones) ? catalogs.estaciones : [];
+    const filtered = rows.filter((item) => areasById.get(item.area_id)?.clave === draft?.currentStage);
+    return filtered.length ? filtered : rows;
+  }, [catalogs?.estaciones, areasById, draft?.currentStage]);
+
+  const selectedStation = useMemo(() => {
+    if (!draft?.assignedBayId) return null;
+    return availableStations.find((item) => String(item.id) === String(draft.assignedBayId)) || null;
+  }, [availableStations, draft?.assignedBayId]);
+
   const recepcionCompleted = useMemo(() => isRecepcionCompleted(record), [record]);
 
   const pendingCount = useMemo(
@@ -137,39 +201,100 @@ export default function TallerGestion() {
     [draft?.checklist]
   );
 
-  const completedCount = useMemo(
-    () => (draft?.checklist || []).filter((item) => item.done).length,
-    [draft?.checklist]
-  );
+  const completedCount = useMemo(() => {
+    return otStages.filter((item) => String(item.estatus || "").toUpperCase() === "COMPLETADO").length;
+  }, [otStages]);
 
   const progressValue = useMemo(() => {
-    const manualProgress = draft?.checklist?.length
-      ? Math.round((completedCount / draft.checklist.length) * 100)
-      : 0;
+    const manualProgress = Number(currentOtStage?.progreso || 0);
     const stageProgress = Math.round((currentStageIndex / (WORKSHOP_STAGES.length - 1)) * 100);
     return Math.max(manualProgress, stageProgress);
-  }, [completedCount, currentStageIndex, draft?.checklist]);
+  }, [currentOtStage?.progreso, currentStageIndex]);
 
   const vehicleTitle = getVehicleTitle(record);
 
   const toggleChecklistItem = (itemId) => {
+    setDraft((prev) => {
+      const nextDraft = {
+        ...prev,
+        checklist: prev.checklist.map((item) =>
+          item.id === itemId ? { ...item, done: !item.done } : item
+        )
+      };
+      const existingDraft = loadDrafts()[id] || {};
+      saveDraft(id, { ...existingDraft, checklist: nextDraft.checklist, updatedAt: new Date().toISOString() });
+      return nextDraft;
+    });
+  };
+
+  const selectStage = (stageId) => {
+    const targetStage = stageMap.get(stageId);
     setDraft((prev) => ({
       ...prev,
-      checklist: prev.checklist.map((item) =>
-        item.id === itemId ? { ...item, done: !item.done } : item
-      )
+      currentStage: stageId,
+      assignedTechId: targetStage?.personal_id_responsable ? String(targetStage.personal_id_responsable) : "",
+      assignedBayId: targetStage?.estacion_id ? String(targetStage.estacion_id) : "",
+      updatedAt: targetStage?.updated_at || prev.updatedAt
     }));
+    setNotice("");
   };
 
   const handleSave = async () => {
     if (!draft) return;
     setSaving(true);
     setNotice("");
+    setError("");
     try {
-      const nextDraft = { ...draft, updatedAt: new Date().toISOString() };
-      saveDraft(id, nextDraft);
-      setDraft(nextDraft);
-      setNotice("Cambios de taller guardados localmente.");
+      const selectedStageIndex = WORKSHOP_STAGES.findIndex((stage) => stage.id === draft.currentStage);
+      const updates = otStages.map((stage) => {
+        const stageIndex = WORKSHOP_STAGES.findIndex((item) => item.id === stage.clave);
+        let nextStatus = stage.estatus;
+        let nextProgress = Number(stage.progreso || 0);
+
+        if (stage.clave === "recepcionado" && recepcionCompleted) {
+          nextStatus = "COMPLETADO";
+          nextProgress = 100;
+        } else if (stageIndex < selectedStageIndex) {
+          nextStatus = "COMPLETADO";
+          nextProgress = 100;
+        } else if (stageIndex === selectedStageIndex) {
+          nextStatus = "EN_PROCESO";
+          nextProgress = Math.max(nextProgress, 10);
+        } else if (String(stage.estatus || "").toUpperCase() !== "COMPLETADO") {
+          nextStatus = "PENDIENTE";
+          nextProgress = 0;
+        }
+
+        const payload = {
+          estatus: nextStatus,
+          progreso: nextProgress
+        };
+
+        if (stage.clave === draft.currentStage) {
+          payload.personal_id_responsable = draft.assignedTechId ? Number(draft.assignedTechId) : null;
+          payload.estacion_id = draft.assignedBayId ? Number(draft.assignedBayId) : null;
+          payload.area_id = selectedStation?.area_id || null;
+          payload.fecha_inicio = stage.fecha_inicio || new Date().toISOString();
+        }
+
+        return fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas/${stage.etapa_id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }).then(async (response) => {
+          if (!response.ok) {
+            const payloadError = await response.json().catch(() => null);
+            throw new Error(payloadError?.detail || "No se pudo guardar la etapa operativa.");
+          }
+          return response.json();
+        });
+      });
+
+      await Promise.all(updates);
+      const existingDraft = loadDrafts()[id] || {};
+      saveDraft(id, { ...existingDraft, checklist: draft.checklist, updatedAt: new Date().toISOString() });
+      setNotice("Cambios de taller guardados en backend.");
+      await loadRecord();
     } finally {
       setSaving(false);
     }
@@ -423,13 +548,14 @@ export default function TallerGestion() {
                           Tecnico responsable
                         </span>
                         <select
-                          value={draft.assignedTech}
-                          onChange={(event) => setDraft((prev) => ({ ...prev, assignedTech: event.target.value }))}
+                          value={draft.assignedTechId || ""}
+                          onChange={(event) => setDraft((prev) => ({ ...prev, assignedTechId: event.target.value }))}
                           className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-primary"
                         >
-                          {TECHNICIAN_OPTIONS.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
+                          <option value="">Sin asignar</option>
+                          {availableTechnicians.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.nb_personal}
                             </option>
                           ))}
                         </select>
@@ -440,13 +566,14 @@ export default function TallerGestion() {
                           Bahia / puesto
                         </span>
                         <select
-                          value={draft.assignedBay}
-                          onChange={(event) => setDraft((prev) => ({ ...prev, assignedBay: event.target.value }))}
+                          value={draft.assignedBayId || ""}
+                          onChange={(event) => setDraft((prev) => ({ ...prev, assignedBayId: event.target.value }))}
                           className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-primary"
                         >
-                          {BAY_OPTIONS.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
+                          <option value="">Sin asignar</option>
+                          {availableStations.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.nb_estacion}
                             </option>
                           ))}
                         </select>
@@ -533,8 +660,11 @@ export default function TallerGestion() {
 
                     <div className="relative">
                       {WORKSHOP_STAGES.map((stage, index) => {
+                        const stageData = stageMap.get(stage.id);
                         const isRecepcionStep = stage.id === "recepcionado";
-                        const isCompleted = index < currentStageIndex || (isRecepcionStep && recepcionCompleted);
+                        const isCompleted =
+                          String(stageData?.estatus || "").toUpperCase() === "COMPLETADO" ||
+                          (isRecepcionStep && recepcionCompleted);
                         const isActive = index === currentStageIndex;
                         const isFuture = index > currentStageIndex;
 
@@ -550,7 +680,7 @@ export default function TallerGestion() {
 
                             <button
                               type="button"
-                              onClick={() => setDraft((prev) => ({ ...prev, currentStage: stage.id }))}
+                              onClick={() => selectStage(stage.id)}
                               className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
                                 isActive
                                   ? "border-alert-amber bg-alert-amber text-background-dark shadow-[0_0_20px_rgba(242,163,0,0.28)]"
@@ -592,10 +722,12 @@ export default function TallerGestion() {
                                         ? record.folio_seguro
                                           ? `Completado: ${record.folio_seguro} asignado a OT #${record.folio_ot || record.folio_recep}`
                                           : `Completado ${formatDateTime(record.fecha_recep)}`
-                                        : `Etapa completada antes de ${WORKSHOP_STAGES[currentStageIndex]?.label.toLowerCase()}`
+                                        : stageData?.updated_at
+                                          ? `Etapa completada ${formatDateTime(stageData.updated_at)}`
+                                          : `Etapa completada antes de ${WORKSHOP_STAGES[currentStageIndex]?.label.toLowerCase()}`
                                       : isActive
-                                        ? draft.updatedAt
-                                          ? relativeTime(draft.updatedAt)
+                                        ? stageData?.updated_at
+                                          ? relativeTime(stageData.updated_at)
                                           : "Listo para registrar avances"
                                         : "Pendiente por iniciar"}
                                   </p>
@@ -610,7 +742,10 @@ export default function TallerGestion() {
                                   {isActive ? (
                                     <div className="mt-4 max-w-xs">
                                       <div className="h-2 overflow-hidden rounded-full bg-background-dark">
-                                        <div className="h-full rounded-full bg-alert-amber" style={{ width: `${progressValue}%` }}></div>
+                                        <div
+                                          className="h-full rounded-full bg-alert-amber"
+                                          style={{ width: `${Number(stageData?.progreso ?? progressValue)}%` }}
+                                        ></div>
                                       </div>
                                       <span className="mt-2 block text-[11px] font-semibold uppercase tracking-widest text-slate-500">
                                         Progreso estimado

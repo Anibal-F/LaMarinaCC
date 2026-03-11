@@ -168,6 +168,7 @@ export default function TallerGestion() {
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
+  const [expedienteFiles, setExpedienteFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -189,11 +190,22 @@ export default function TallerGestion() {
 
       const recordPayload = await recordResponse.json();
       const mediaPayload = mediaResponse.ok ? await mediaResponse.json() : [];
+      let expedientePayload = [];
+      if (recordPayload?.folio_seguro) {
+        const expedienteResponse = await fetch(
+          `${import.meta.env.VITE_API_URL}/expedientes/${encodeURIComponent(recordPayload.folio_seguro)}`
+        );
+        if (expedienteResponse.ok) {
+          const expedienteData = await expedienteResponse.json();
+          expedientePayload = Array.isArray(expedienteData?.archivos) ? expedienteData.archivos : [];
+        }
+      }
       const existingDraft = loadDrafts()[id];
 
       setRecord(recordPayload);
       setDraft(buildDraft(recordPayload, existingDraft));
       setMediaItems(Array.isArray(mediaPayload) ? mediaPayload : []);
+      setExpedienteFiles(expedientePayload);
     } catch (err) {
       setError(err.message || "No se pudo cargar la gestion de taller.");
     } finally {
@@ -210,13 +222,35 @@ export default function TallerGestion() {
       mediaItems.filter((item) => String(item.media_type || "").startsWith("photo")),
     [mediaItems]
   );
+  const expedientePhotoItems = useMemo(
+    () =>
+      expedienteFiles.filter((item) => {
+        const tipo = String(item.tipo || "").toLowerCase();
+        const mime = String(item.mime_type || "").toLowerCase();
+        const path = String(item.archivo_path || "").toLowerCase();
+        return (
+          (tipo === "recepcion_foto" || tipo === "valuacion_foto" || tipo === "archivorecepcion_vehiculo") &&
+          (mime.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif"].some((ext) => path.endsWith(ext)))
+        );
+      }),
+    [expedienteFiles]
+  );
   const lastPhotoItem = photoItems.length ? photoItems[photoItems.length - 1] : null;
+  const expedienteFirstPhoto = expedientePhotoItems.length ? expedientePhotoItems[0] : null;
+  const expedienteLastPhoto = expedientePhotoItems.length ? expedientePhotoItems[expedientePhotoItems.length - 1] : null;
 
-  const intakePhoto = photoItems[0]?.file_path ? resolveMediaUrl(photoItems[0].file_path) : "";
+  const intakePhoto = photoItems[0]?.file_path
+    ? resolveMediaUrl(photoItems[0].file_path)
+    : expedienteFirstPhoto?.archivo_path
+      ? resolveMediaUrl(expedienteFirstPhoto.archivo_path)
+      : "";
   const currentPhoto =
     photoItems.length > 1 && lastPhotoItem?.file_path
       ? resolveMediaUrl(lastPhotoItem.file_path)
+      : expedienteLastPhoto?.archivo_path
+        ? resolveMediaUrl(expedienteLastPhoto.archivo_path)
       : "";
+  const evidenceCount = photoItems.length || expedientePhotoItems.length;
 
   const currentStageIndex = useMemo(() => {
     const recepcionCompleted = isRecepcionCompleted(record);
@@ -685,7 +719,7 @@ export default function TallerGestion() {
                         <span className="material-symbols-outlined text-primary">photo_camera</span>
                         Evidencia
                       </h3>
-                      <span className="text-xs text-slate-500">{photoItems.length} fotos</span>
+                      <span className="text-xs text-slate-500">{evidenceCount} fotos</span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">

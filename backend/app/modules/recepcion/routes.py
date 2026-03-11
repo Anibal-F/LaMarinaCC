@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import time
 from typing import Any, Optional
 import unicodedata
@@ -954,6 +955,98 @@ def ensure_recepcion_media_table(conn):
         CREATE INDEX IF NOT EXISTS idx_recepcion_media_recepcion_type
         ON recepcion_media(recepcion_id, media_type)
         """
+    )
+
+
+def _ensure_expediente_for_report(conn, reporte_siniestro: str) -> int:
+    conn.row_factory = dict_row
+    row = conn.execute(
+        "SELECT id FROM expedientes WHERE reporte_siniestro = %s LIMIT 1",
+        (reporte_siniestro,),
+    ).fetchone()
+    if row:
+        return row["id"]
+
+    created = conn.execute(
+        """
+        INSERT INTO expedientes (reporte_siniestro)
+        VALUES (%s)
+        RETURNING id
+        """,
+        (reporte_siniestro,),
+    ).fetchone()
+    return created["id"] if isinstance(created, dict) else created[0]
+
+
+def _ensure_expediente_archivos_columns(conn):
+    conn.execute(
+        """
+        ALTER TABLE expediente_archivos
+        ADD COLUMN IF NOT EXISTS categoria VARCHAR(40)
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE expediente_archivos
+        ADD COLUMN IF NOT EXISTS anotaciones JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+
+
+def _mirror_photo_to_expediente(conn, recepcion_id: int, source_file_path: Path, original_name: str, mime_type: str):
+    conn.row_factory = dict_row
+    recepcion_row = conn.execute(
+        """
+        SELECT r.folio_recep, he.folio_seguro
+        FROM recepciones r
+        LEFT JOIN historical_entries he ON he.folio_recep = r.folio_recep
+        WHERE r.id = %s
+        ORDER BY he.id DESC NULLS LAST
+        LIMIT 1
+        """,
+        (recepcion_id,),
+    ).fetchone()
+    if not recepcion_row:
+        return
+
+    reporte_siniestro = str(recepcion_row.get("folio_seguro") or "").strip()
+    if not reporte_siniestro:
+        return
+
+    _ensure_expediente_archivos_columns(conn)
+    expediente_id = _ensure_expediente_for_report(conn, reporte_siniestro)
+
+    media_root = Path(__file__).resolve().parent.parent.parent / "media" / "expedientes" / reporte_siniestro / "recepcion_foto"
+    media_root.mkdir(parents=True, exist_ok=True)
+    extension = source_file_path.suffix.lower()
+    filename = f"recepcion_foto_{uuid4().hex}{extension}"
+    target_file_path = media_root / filename
+    shutil.copy2(source_file_path, target_file_path)
+
+    relative_path = f"/media/expedientes/{reporte_siniestro}/recepcion_foto/{filename}"
+    conn.execute(
+        """
+        INSERT INTO expediente_archivos (
+            expediente_id,
+            tipo,
+            categoria,
+            archivo_path,
+            archivo_nombre,
+            archivo_size,
+            mime_type,
+            anotaciones
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
+        """,
+        (
+            expediente_id,
+            "recepcion_foto",
+            "otros",
+            relative_path,
+            original_name,
+            target_file_path.stat().st_size,
+            mime_type,
+        ),
     )
 
 
@@ -3102,6 +3195,12 @@ def upload_media(recepcion_id: int, media_type: str, file: UploadFile = File(...
             """,
             (recepcion_id, media_type, relative_path, file.filename),
         )
+        if media_type == "photo":
+            try:
+                _mirror_photo_to_expediente(conn, recepcion_id, file_path, file.filename or filename, file.content_type or "")
+            except Exception:
+                # Keep workshop upload working even if expediente sync fails.
+                pass
 
     return {"path": relative_path}
 

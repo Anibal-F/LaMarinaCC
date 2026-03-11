@@ -22,6 +22,7 @@ export default function AreasTrabajo() {
   const [assignmentForm, setAssignmentForm] = useState({ recepcionId: "", personalId: "" });
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadDashboard = async () => {
     try {
@@ -81,6 +82,20 @@ export default function AreasTrabajo() {
     } finally {
       setAssignmentLoading(false);
     }
+  };
+
+  const requestReassignment = (area, station) => {
+    setConfirmDialog({
+      type: "reassign",
+      title: "Reasignar estacion",
+      message: `La estacion ${station.name} ya tiene una OT activa. Si continuas, la asignacion actual se cerrara y podras colocar una nueva OT.`,
+      station,
+      confirmLabel: "Continuar",
+      onConfirm: () => {
+        setConfirmDialog(null);
+        openAssignmentModal(area, station);
+      }
+    });
   };
 
   const handleCreateAssignment = async () => {
@@ -143,6 +158,20 @@ export default function AreasTrabajo() {
     } catch (err) {
       setToast({ type: "error", message: err.message || "No se pudo liberar la estacion." });
     }
+  };
+
+  const requestReleaseAssignment = (station) => {
+    setConfirmDialog({
+      type: "release",
+      title: "Liberar estacion",
+      message: `Vas a liberar la estacion ${station.name}. La OT actual dejara de estar asignada a esta estacion.`,
+      station,
+      confirmLabel: "Liberar",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await handleReleaseAssignment(station);
+      }
+    });
   };
 
   const filteredAreas = useMemo(() => {
@@ -359,14 +388,14 @@ export default function AreasTrabajo() {
                                 <button
                                   type="button"
                                   className="flex-1 rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-[11px] font-bold text-slate-300 hover:text-white hover:border-primary transition-colors"
-                                  onClick={() => openAssignmentModal(group, station)}
+                                  onClick={() => requestReassignment(group, station)}
                                 >
                                   Reasignar
                                 </button>
                                 <button
                                   type="button"
                                   className="rounded-lg border border-alert-red/40 bg-alert-red/10 px-3 py-2 text-[11px] font-bold text-alert-red hover:bg-alert-red/20"
-                                  onClick={() => handleReleaseAssignment(station)}
+                                  onClick={() => requestReleaseAssignment(station)}
                                 >
                                   Liberar
                                 </button>
@@ -539,6 +568,56 @@ export default function AreasTrabajo() {
                 disabled={assignmentLoading || assignmentSaving || assignmentOptions.ots.length === 0}
               >
                 {assignmentSaving ? "Asignando..." : "Asignar OT"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background-dark/80 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-2xl border border-border-dark bg-surface-dark p-6 shadow-2xl shadow-black/30">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-alert-amber text-3xl">warning</span>
+              <div>
+                <h3 className="text-lg font-bold text-white">{confirmDialog.title}</h3>
+                <p className="mt-2 text-sm text-slate-400">{confirmDialog.message}</p>
+                {confirmDialog.station ? (
+                  <div className="mt-4 rounded-xl border border-border-dark bg-background-dark/60 p-4 text-sm">
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">OT actual</p>
+                        <p className="mt-1 text-white font-semibold">{confirmDialog.station.order || "Sin OT"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Vehiculo</p>
+                        <p className="mt-1 text-white font-semibold">{confirmDialog.station.vehicle || "Sin vehiculo asignado"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Tecnico actual</p>
+                        <p className="mt-1 text-slate-300">{confirmDialog.station.tech || "Sin tecnico asignado"}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-lg border border-border-dark px-4 py-2 text-slate-300 hover:text-white"
+                onClick={() => setConfirmDialog(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className={`rounded-lg px-4 py-2 font-bold text-white ${
+                  confirmDialog.type === "release" ? "bg-alert-red hover:bg-alert-red/90" : "bg-primary hover:bg-primary/90"
+                }`}
+                onClick={confirmDialog.onConfirm}
+              >
+                {confirmDialog.confirmLabel}
               </button>
             </div>
           </div>

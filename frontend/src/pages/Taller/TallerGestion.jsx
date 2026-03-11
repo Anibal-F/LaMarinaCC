@@ -419,38 +419,38 @@ export default function TallerGestion() {
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
             <div className="mx-auto max-w-7xl space-y-6">
-              <section className="rounded-2xl border border-border-dark bg-gradient-to-r from-background-dark via-background-dark to-primary/10 px-6 py-6">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="space-y-3">
+              <section className="rounded-2xl border border-border-dark bg-gradient-to-r from-background-dark via-background-dark to-primary/10 px-5 py-5 sm:px-6 sm:py-6">
+                <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
+                  <div className="space-y-3 2xl:flex-1">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h1 className="text-3xl font-black tracking-tight text-white">{vehicleTitle}</h1>
+                      <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">{vehicleTitle}</h1>
                       <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest ${statusPill(draft.currentStage)}`}>
                         {draft.currentStage === "entrega" ? "Listo para entrega" : "En proceso"}
                       </span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-400">
                       <span className="inline-flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[18px]">badge</span>
                         Placas: <span className="font-semibold text-white">{record.placas || "-"}</span>
                       </span>
-                      <span className="h-4 w-px bg-border-dark"></span>
+                      <span className="hidden h-4 w-px bg-border-dark sm:block"></span>
                       <span className="inline-flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[18px]">receipt_long</span>
                         Orden: <span className="font-semibold text-white">#{record.folio_recep || record.id}</span>
                       </span>
-                      <span className="h-4 w-px bg-border-dark"></span>
+                      <span className="hidden h-4 w-px bg-border-dark sm:block"></span>
                       <span className="inline-flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[18px]">palette</span>
                         Color: <span className="font-semibold text-white">{record.vehiculo_color || "-"}</span>
                       </span>
-                      <span className="h-4 w-px bg-border-dark"></span>
+                      <span className="hidden h-4 w-px bg-border-dark sm:block"></span>
                       {record.folio_seguro ? (
                         <>
                           <span className="inline-flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-[18px]">confirmation_number</span>
                             Reporte: <span className="font-semibold text-white">{record.folio_seguro}</span>
                           </span>
-                          <span className="h-4 w-px bg-border-dark"></span>
+                          <span className="hidden h-4 w-px bg-border-dark sm:block"></span>
                         </>
                       ) : null}
                       <span
@@ -462,20 +462,20 @@ export default function TallerGestion() {
                       </span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[420px]">
-                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4">
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:min-w-[520px] 2xl:max-w-[560px]">
+                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4 lg:min-h-[112px]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Ingreso</p>
                       <p className="mt-2 text-lg font-bold text-white">{formatAbsoluteDate(record.fecha_recep)}</p>
                     </article>
-                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4">
+                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4 lg:min-h-[112px]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Etapa actual</p>
                       <p className="mt-2 text-lg font-bold text-white">{WORKSHOP_STAGES[currentStageIndex]?.label}</p>
                     </article>
-                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4">
+                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4 lg:min-h-[112px]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Pendientes</p>
                       <p className="mt-2 text-lg font-bold text-white">{pendingCount}</p>
                     </article>
-                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4">
+                    <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4 lg:min-h-[112px]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Avance</p>
                       <p className="mt-2 text-lg font-bold text-white">{progressValue}%</p>
                     </article>
@@ -485,8 +485,9 @@ export default function TallerGestion() {
                 {notice ? <p className="mt-4 text-sm text-primary">{notice}</p> : null}
               </section>
 
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-                <section className="xl:col-span-3 space-y-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                <section className="space-y-6 lg:col-span-4 xl:col-span-3 lg:space-y-0">
+                  <div className="space-y-6 md:grid md:grid-cols-2 md:gap-6 md:space-y-0 lg:grid-cols-1">
                   <article className="overflow-hidden rounded-2xl border border-border-dark bg-surface-dark shadow-xl shadow-black/10">
                     <div className="relative aspect-[4/3] overflow-hidden bg-background-dark">
                       {intakePhoto ? (
@@ -545,6 +546,8 @@ export default function TallerGestion() {
                       ))}
                     </div>
                   </article>
+                  </div>
+                  <div className="space-y-6 md:grid md:grid-cols-2 md:gap-6 md:space-y-0 lg:grid-cols-1 lg:pt-6">
                   <article className="rounded-2xl border border-border-dark bg-surface-dark p-5">
                     <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-white">
                       <span className="material-symbols-outlined text-primary">manage_accounts</span>
@@ -649,9 +652,10 @@ export default function TallerGestion() {
                       onChange={handleUploadPhoto}
                     />
                   </article>
+                  </div>
                 </section>
 
-                <section className="xl:col-span-9">
+                <section className="lg:col-span-8 xl:col-span-9">
                   <article className="rounded-2xl border border-border-dark bg-surface-dark p-5 sm:p-6">
                     <div className="mb-6 flex items-center justify-between gap-3">
                       <div>

@@ -118,9 +118,9 @@ def run_rpa_script(seguro: str, job_id: str, action: str, headless: bool, save_s
         rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
         return
     
-    # Construir comando
+    # Construir comando (usar python3 para compatibilidad con Docker)
     cmd = [
-        "python", "-m", f"app.rpa.{script_name.replace('.py', '')}",
+        "python3", "-m", f"app.rpa.{script_name.replace('.py', '')}",
         "--use-db"  # Usar credenciales de la base de datos
     ]
     
@@ -209,9 +209,9 @@ def run_adjudicacion_script(job_id: str, datos_json: str, headless: bool):
             f.write(datos_json)
         log_message(f"Datos guardados en: {temp_file}")
         
-        # Construir comando
+        # Construir comando (usar python3 en lugar de python para compatibilidad con Docker)
         cmd = [
-            "python", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}",
+            "python3", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}",
             str(temp_file),
             "--use-db"
         ]

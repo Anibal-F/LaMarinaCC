@@ -176,10 +176,27 @@ def run_adjudicacion_script(job_id: str, datos_json: str, headless: bool):
     script_name = "qualitas_adjudicacion_runner.py"
     script_path = backend_dir / "app" / "rpa" / script_name
     
+    # Configurar archivo de log
+    log_dir = backend_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"adjudicacion_{job_id}.log"
+    
+    def log_message(msg: str):
+        """Escribe mensaje al log y lo almacena en el job."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_line = f"[{timestamp}] {msg}\n"
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_line)
+        # También guardar en memoria para consulta rápida
+        if "logs" not in rpa_jobs[job_id]:
+            rpa_jobs[job_id]["logs"] = []
+        rpa_jobs[job_id]["logs"].append(log_line)
+    
     if not script_path.exists():
         rpa_jobs[job_id]["status"] = "failed"
         rpa_jobs[job_id]["error"] = f"Script no encontrado: {script_path}"
         rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        log_message(f"ERROR: Script no encontrado: {script_path}")
         return
     
     # Guardar datos en archivo temporal
@@ -190,10 +207,11 @@ def run_adjudicacion_script(job_id: str, datos_json: str, headless: bool):
     try:
         with open(temp_file, "w", encoding="utf-8") as f:
             f.write(datos_json)
+        log_message(f"Datos guardados en: {temp_file}")
         
         # Construir comando
         cmd = [
-            "python", "-m", f"app.rpa.{script_name.replace('.py', '')}",
+            "python", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}",
             str(temp_file),
             "--use-db"
         ]
@@ -202,50 +220,96 @@ def run_adjudicacion_script(job_id: str, datos_json: str, headless: bool):
         is_docker = os.path.exists('/.dockerenv') or os.getenv('DOCKER_CONTAINER', False)
         if headless or is_docker:
             cmd.append("--headless")
+            log_message("Modo: HEADLESS (sin ventana visible)")
+        else:
+            log_message("Modo: VISUAL (con navegador visible)")
         
-        # Ejecutar script
+        # Ejecutar script con streaming de output
         rpa_jobs[job_id]["status"] = "running"
         rpa_jobs[job_id]["started_at"] = datetime.now().isoformat()
+        rpa_jobs[job_id]["log_file"] = str(log_file)
+        log_message(f"Job iniciado: {job_id}")
+        log_message(f"Comando: {' '.join(cmd)}")
         
-        result = subprocess.run(
+        # Ejecutar con Popen para capturar output en tiempo real
+        import subprocess
+        process = subprocess.Popen(
             cmd,
             cwd=str(backend_dir),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=120,  # 2 minutos por adjudicación
             encoding='utf-8',
-            errors='replace'
+            errors='replace',
+            bufsize=1  # Line buffered
         )
         
-        rpa_jobs[job_id]["output"] = result.stdout
+        # Capturar output en tiempo real
+        full_output = []
+        try:
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    full_output.append(line)
+                    log_message(f"RPA: {line}")
+                    # Mantener solo últimas 100 líneas en memoria
+                    if len(rpa_jobs[job_id]["logs"]) > 100:
+                        rpa_jobs[job_id]["logs"] = rpa_jobs[job_id]["logs"][-100:]
+        except Exception as e:
+            log_message(f"Error leyendo output: {e}")
+        
+        # Esperar a que termine el proceso
+        try:
+            process.wait(timeout=120)  # 2 minutos timeout
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            log_message("ERROR: Timeout después de 2 minutos")
+            rpa_jobs[job_id]["status"] = "failed"
+            rpa_jobs[job_id]["error"] = "Timeout: La adjudicación tardó más de 2 minutos"
+            return
+        
+        rpa_jobs[job_id]["output"] = "\n".join(full_output)
+        log_message(f"Proceso terminado con código: {process.returncode}")
         
         # Leer resultado del archivo de salida
         result_file = temp_file.with_suffix('.result.json')
         if result_file.exists():
-            import json
             with open(result_file, "r", encoding="utf-8") as f:
                 resultado = json.load(f)
             rpa_jobs[job_id]["resultado"] = resultado
+            exitosos = resultado.get("exitosos", 0)
+            fallidos = resultado.get("fallidos", 0)
+            log_message(f"Resultado: {exitosos} exitosos, {fallidos} fallidos")
             result_file.unlink()
         
-        if result.returncode == 0:
+        if process.returncode == 0:
             rpa_jobs[job_id]["status"] = "completed"
             rpa_jobs[job_id]["message"] = "Adjudicación completada exitosamente"
+            log_message("Job completado exitosamente")
+        elif process.returncode == 1:
+            rpa_jobs[job_id]["status"] = "completed_with_errors"
+            rpa_jobs[job_id]["message"] = "Algunas adjudicaciones fallaron"
+            log_message("Job completado con errores parciales")
         else:
             rpa_jobs[job_id]["status"] = "failed"
-            rpa_jobs[job_id]["error"] = result.stderr or "Error desconocido"
+            rpa_jobs[job_id]["error"] = f"Error en ejecución (código {process.returncode})"
+            log_message(f"Job fallido con código {process.returncode}")
             
-    except subprocess.TimeoutExpired:
-        rpa_jobs[job_id]["status"] = "failed"
-        rpa_jobs[job_id]["error"] = "Timeout: La adjudicación tardó más de 2 minutos"
     except Exception as e:
+        error_msg = f"Error inesperado: {str(e)}"
+        log_message(f"ERROR: {error_msg}")
+        import traceback
+        log_message(f"Traceback: {traceback.format_exc()}")
         rpa_jobs[job_id]["status"] = "failed"
-        rpa_jobs[job_id]["error"] = str(e)
+        rpa_jobs[job_id]["error"] = error_msg
     finally:
         # Limpiar archivo temporal
         if temp_file.exists():
             temp_file.unlink()
         rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        log_message(f"Job finalizado a las {rpa_jobs[job_id]['completed_at']}")
+        log_message(f"Log completo disponible en: {log_file}")
 
 
 @router.post("/qualitas", response_model=RPAResponse)
@@ -508,3 +572,89 @@ async def get_marcas_qualitas():
             for nombre, codigo in sorted(MAPA_MARCAS_QUALITAS.items())
         ]
     }
+
+
+@router.get("/status/{job_id}/logs")
+async def get_rpa_logs(job_id: str, lines: int = 50):
+    """
+    Obtiene los logs de un job de RPA.
+    
+    Args:
+        job_id: ID del job
+        lines: Número de líneas a retornar (últimas N líneas)
+    """
+    if job_id not in rpa_jobs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job no encontrado"
+        )
+    
+    job = rpa_jobs[job_id]
+    
+    # Intentar leer desde memoria primero
+    logs = job.get("logs", [])
+    
+    # Si no hay logs en memoria, intentar leer del archivo
+    if not logs and "log_file" in job:
+        log_file = Path(job["log_file"])
+        if log_file.exists():
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    logs = f.readlines()
+            except Exception:
+                logs = []
+    
+    # Retornar últimas N líneas
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "total_lines": len(logs),
+        "logs": logs[-lines:] if logs else []
+    }
+
+
+@router.get("/status/{job_id}/stream")
+async def stream_rpa_logs(job_id: str):
+    """
+    Endpoint SSE para streaming de logs en tiempo real.
+    """
+    from fastapi.responses import StreamingResponse
+    import asyncio
+    
+    if job_id not in rpa_jobs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job no encontrado"
+        )
+    
+    async def log_generator():
+        last_line = 0
+        while True:
+            if job_id not in rpa_jobs:
+                yield f"data: {{\"type\": \"error\", \"message\": \"Job no encontrado\"}}\n\n"
+                break
+            
+            job = rpa_jobs[job_id]
+            logs = job.get("logs", [])
+            
+            # Enviar nuevas líneas
+            if len(logs) > last_line:
+                for line in logs[last_line:]:
+                    yield f"data: {json.dumps({'type': 'log', 'message': line.strip()})}\n\n"
+                last_line = len(logs)
+            
+            # Verificar si el job terminó
+            if job.get("status") in ["completed", "failed", "completed_with_errors"]:
+                yield f"data: {json.dumps({'type': 'status', 'status': job.get('status')})}\n\n"
+                break
+            
+            await asyncio.sleep(1)
+    
+    return StreamingResponse(
+        log_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )

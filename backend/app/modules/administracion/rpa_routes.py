@@ -275,6 +275,7 @@ def run_adjudicacion_script(job_id: str, datos_json: str, headless: bool):
         # Leer resultado del archivo de salida
         result_file = temp_file.with_suffix('.result.json')
         if result_file.exists():
+            import json
             with open(result_file, "r", encoding="utf-8") as f:
                 resultado = json.load(f)
             rpa_jobs[job_id]["resultado"] = resultado

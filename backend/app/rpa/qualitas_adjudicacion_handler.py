@@ -119,32 +119,52 @@ class QualitasAdjudicacionHandler:
             return False
         
         try:
-            # Asegurarse de que estamos en el tab de asignados
-            tab_asignados = self.page.locator('a[href="#asignados"], #asignados-tab')
-            if await tab_asignados.count() > 0:
-                await tab_asignados.click()
-                await asyncio.sleep(1)
+            # Navegar a la página de órdenes asignadas primero
+            print(f"[Adjudicacion] Navegando a Bandeja Qualitas...")
+            await self.page.goto("https://proordersistem.com.mx/BandejaQualitas", wait_until="networkidle")
+            await asyncio.sleep(2)
+            
+            # Verificar que estamos en la página correcta
+            if "BandejaQualitas" not in self.page.url:
+                print(f"[Adjudicacion] ✗ No se pudo navegar a BandejaQualitas. URL actual: {self.page.url}")
+                return False
+            
+            print(f"[Adjudicacion] ✓ Página de Bandeja Qualitas cargada")
+            
+            # Esperar a que cargue la tabla
+            await self.page.wait_for_selector('#tableasig', timeout=10000)
             
             # Buscar el campo de búsqueda específico para la tabla de asignados
             input_busqueda = self.page.locator('#busqueda_input_tableasig')
             select_busqueda = self.page.locator('#busqueda_select_tableasig')
             
+            # Esperar a que los elementos estén disponibles
+            await self.page.wait_for_selector('#busqueda_input_tableasig', timeout=5000)
+            await self.page.wait_for_selector('#busqueda_select_tableasig', timeout=5000)
+            
             if await input_busqueda.count() == 0:
-                print(f"[Adjudicacion] ✗ No se encontró campo de búsqueda")
+                print(f"[Adjudicacion] ✗ No se encontró campo de búsqueda (#busqueda_input_tableasig)")
                 return False
             
             # Seleccionar el tipo de búsqueda
+            print(f"[Adjudicacion] Seleccionando tipo de búsqueda: {campo_select}")
             await select_busqueda.select_option(campo_select)
             await asyncio.sleep(0.5)
             
             # Ingresar el valor de búsqueda
+            print(f"[Adjudicacion] Ingresando valor de búsqueda: {valor_busqueda}")
             await input_busqueda.fill(valor_busqueda)
             await asyncio.sleep(0.5)
             
             # Hacer clic en el botón de búsqueda
             btn_buscar = self.page.locator('button[onclick*="busqueda(\'tableasig\')"]')
             if await btn_buscar.count() > 0:
+                print(f"[Adjudicacion] Haciendo clic en botón de búsqueda...")
                 await btn_buscar.click()
+                await asyncio.sleep(2)
+            else:
+                print(f"[Adjudicacion] ⚠ No se encontró botón de búsqueda, intentando con Enter...")
+                await input_busqueda.press('Enter')
                 await asyncio.sleep(2)
             
             # Verificar si se encontró el expediente en la tabla

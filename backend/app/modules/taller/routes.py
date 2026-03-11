@@ -16,6 +16,10 @@ class EtapaPayload(BaseModel):
     activo: bool = True
 
 
+class EtapaReorderPayload(BaseModel):
+    ordered_ids: list[int] = Field(min_length=1)
+
+
 class ChecklistItemPayload(BaseModel):
     etapa_id: int
     descripcion: str = Field(min_length=1, max_length=255)
@@ -624,6 +628,40 @@ def update_etapa(etapa_id: int, payload: EtapaPayload):
     if not row:
         raise HTTPException(status_code=404, detail="Etapa no encontrada")
     return row
+
+
+@router.put("/catalogos/etapas/reordenar")
+def reorder_etapas(payload: EtapaReorderPayload):
+    _ensure_taller_schema()
+    ordered_ids = [int(item_id) for item_id in payload.ordered_ids]
+    if len(set(ordered_ids)) != len(ordered_ids):
+        raise HTTPException(status_code=400, detail="La lista de etapas contiene duplicados")
+
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        current_rows = conn.execute(
+            "SELECT id FROM taller_etapas ORDER BY orden ASC"
+        ).fetchall()
+        current_ids = [int(row["id"]) for row in current_rows]
+        if set(current_ids) != set(ordered_ids):
+            raise HTTPException(status_code=400, detail="Debes enviar todas las etapas para reordenar")
+
+        offset = len(ordered_ids) + 100
+        for index, etapa_id in enumerate(ordered_ids, start=1):
+            conn.execute(
+                "UPDATE taller_etapas SET orden = %s WHERE id = %s",
+                (offset + index, etapa_id),
+            )
+        for index, etapa_id in enumerate(ordered_ids, start=1):
+            conn.execute(
+                "UPDATE taller_etapas SET orden = %s WHERE id = %s",
+                (index, etapa_id),
+            )
+
+        rows = conn.execute(
+            "SELECT id, clave, nb_etapa, orden, activo, created_at FROM taller_etapas ORDER BY orden ASC"
+        ).fetchall()
+    return rows
 
 
 @router.delete("/catalogos/etapas/{etapa_id}", status_code=status.HTTP_204_NO_CONTENT)

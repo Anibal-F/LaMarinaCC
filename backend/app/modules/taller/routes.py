@@ -1065,6 +1065,76 @@ def create_estacion_asignacion(payload: EstacionAsignacionPayload):
     return row
 
 
+@router.put("/estaciones/asignaciones/{asignacion_id}")
+def update_estacion_asignacion(asignacion_id: int, payload: EstacionAsignacionPayload):
+    _ensure_taller_schema()
+    with get_connection() as conn:
+        _validate_reference(conn, "taller_estaciones", payload.estacion_id, "Estacion no encontrada")
+        _validate_reference(conn, "taller_personal", payload.personal_id, "Personal no encontrado")
+        if payload.recepcion_id is not None:
+            _get_recepcion_reference(conn, payload.recepcion_id)
+        if payload.etapa_id is not None:
+            _validate_reference(conn, "taller_etapas", payload.etapa_id, "Etapa no encontrada")
+
+        if payload.activa:
+            current = conn.execute(
+                "SELECT estacion_id FROM taller_estacion_asignaciones WHERE id = %s LIMIT 1",
+                (asignacion_id,),
+            ).fetchone()
+            if not current:
+                raise HTTPException(status_code=404, detail="Asignacion no encontrada")
+            conn.execute(
+                "UPDATE taller_estacion_asignaciones SET activa = FALSE, fecha_fin = COALESCE(fecha_fin, NOW()) WHERE estacion_id = %s AND activa = TRUE AND id <> %s",
+                (payload.estacion_id, asignacion_id),
+            )
+            if current[0] != payload.estacion_id:
+                conn.execute(
+                    "UPDATE taller_estacion_asignaciones SET activa = FALSE, fecha_fin = COALESCE(fecha_fin, NOW()) WHERE estacion_id = %s AND activa = TRUE AND id <> %s",
+                    (current[0], asignacion_id),
+                )
+
+        conn.row_factory = dict_row
+        row = conn.execute(
+            """
+            UPDATE taller_estacion_asignaciones
+            SET estacion_id = %s,
+                personal_id = %s,
+                recepcion_id = %s,
+                folio_ot = %s,
+                etapa_id = %s,
+                fecha_inicio = COALESCE(%s::timestamp, fecha_inicio, NOW()),
+                fecha_fin = %s::timestamp,
+                activa = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                payload.estacion_id,
+                payload.personal_id,
+                payload.recepcion_id,
+                (payload.folio_ot or "").strip() or None,
+                payload.etapa_id,
+                payload.fecha_inicio,
+                payload.fecha_fin,
+                payload.activa,
+                asignacion_id,
+            ),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Asignacion no encontrada")
+    return row
+
+
+@router.delete("/estaciones/asignaciones/{asignacion_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_estacion_asignacion(asignacion_id: int):
+    _ensure_taller_schema()
+    with get_connection() as conn:
+        result = conn.execute("DELETE FROM taller_estacion_asignaciones WHERE id = %s", (asignacion_id,))
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Asignacion no encontrada")
+    return None
+
+
 @router.get("/ordenes/{recepcion_id}/etapas")
 def list_ot_etapas(recepcion_id: int, sync: bool = Query(default=True)):
     _ensure_taller_schema()

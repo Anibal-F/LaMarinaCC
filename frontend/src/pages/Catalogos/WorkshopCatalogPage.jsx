@@ -121,7 +121,7 @@ export default function WorkshopCatalogPage({
     if (Object.keys(validation).length > 0) return;
 
     try {
-      const payload = buildPayload ? buildPayload(form) : defaultBuildPayload(form, fields);
+      const payload = buildPayload ? buildPayload(form, auxData) : defaultBuildPayload(form, fields);
       const response = await fetch(
         editingId ? `${import.meta.env.VITE_API_URL}${endpoint}/${editingId}` : `${import.meta.env.VITE_API_URL}${endpoint}`,
         {
@@ -306,7 +306,7 @@ export default function WorkshopCatalogPage({
                                 className="text-slate-300 hover:text-white"
                                 onClick={() => {
                                   setEditingId(item.id);
-                                  setForm(mapItemToForm ? mapItemToForm(item) : { ...initialForm, ...item });
+                                  setForm(mapItemToForm ? mapItemToForm(item, auxData) : { ...initialForm, ...item });
                                   setShowForm(true);
                                   setFieldErrors({});
                                 }}

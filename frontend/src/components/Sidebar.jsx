@@ -604,6 +604,17 @@ export default function Sidebar() {
               {showLabels ? <span className="text-sm font-medium">Personal Taller</span> : null}
               <span className="material-symbols-outlined text-[18px] ml-auto">groups</span>
             </NavLink>
+            <NavLink
+              to="/catalogos/asignaciones-estacion"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Asignaciones Estación</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">lan</span>
+            </NavLink>
           </>
         ) : null}
         <button

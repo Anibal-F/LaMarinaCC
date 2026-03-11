@@ -25,6 +25,7 @@ import CatalogoAreasTaller from "./pages/Catalogos/AreasTaller.jsx";
 import CatalogoEstacionesTrabajo from "./pages/Catalogos/EstacionesTrabajo.jsx";
 import CatalogoPuestosTaller from "./pages/Catalogos/PuestosTaller.jsx";
 import CatalogoPersonalTaller from "./pages/Catalogos/PersonalTaller.jsx";
+import CatalogoAsignacionesEstacion from "./pages/Catalogos/AsignacionesEstacion.jsx";
 import HistorialIngresos from "./pages/Reportes/HistorialIngresos.jsx";
 import ListadoVehiculosValuacion from "./pages/Valuacion/ListadoVehiculos.jsx";
 import ValuarVehiculo from "./pages/Valuacion/ValuarVehiculo.jsx";
@@ -152,6 +153,10 @@ export default function App() {
         <Route
           path="/catalogos/personal-taller"
           element={authenticated ? <CatalogoPersonalTaller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/asignaciones-estacion"
+          element={authenticated ? <CatalogoAsignacionesEstacion /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/reportes/historial"

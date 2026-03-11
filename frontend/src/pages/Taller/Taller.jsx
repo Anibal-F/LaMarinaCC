@@ -140,19 +140,43 @@ export default function Taller() {
       const results = await Promise.all(
         recordsWithoutPhoto.map(async (record) => {
           try {
-            const response = await fetch(
+            const mediaResponse = await fetch(
               `${import.meta.env.VITE_API_URL}/recepcion/registros/${record.id}/media`
             );
-            if (!response.ok) {
-              return [record.id, null];
-            }
-            const media = await response.json();
+            const media = mediaResponse.ok ? await mediaResponse.json() : [];
             const firstPhoto = (Array.isArray(media) ? media : []).find((item) =>
               String(item.media_type || "").startsWith("photo")
             );
+            if (firstPhoto?.file_path) {
+              return [record.id, resolveMediaUrl(firstPhoto.file_path)];
+            }
+
+            const reportId = String(record.folio_seguro || "").trim();
+            if (!reportId) {
+              return [record.id, null];
+            }
+
+            const expedienteResponse = await fetch(
+              `${import.meta.env.VITE_API_URL}/expedientes/${encodeURIComponent(reportId)}`
+            );
+            if (!expedienteResponse.ok) {
+              return [record.id, null];
+            }
+            const expedienteData = await expedienteResponse.json();
+            const expedientePhoto = (Array.isArray(expedienteData?.archivos) ? expedienteData.archivos : []).find(
+              (item) => {
+                const tipo = String(item.tipo || "").toLowerCase();
+                const path = String(item.archivo_path || "").toLowerCase();
+                const mime = String(item.mime_type || "").toLowerCase();
+                return (
+                  (tipo === "recepcion_foto" || tipo === "valuacion_foto" || tipo === "archivorecepcion_vehiculo") &&
+                  (mime.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif"].some((ext) => path.endsWith(ext)))
+                );
+              }
+            );
             return [
               record.id,
-              firstPhoto?.file_path ? resolveMediaUrl(firstPhoto.file_path) : null
+              expedientePhoto?.archivo_path ? resolveMediaUrl(expedientePhoto.archivo_path) : null
             ];
           } catch {
             return [record.id, null];

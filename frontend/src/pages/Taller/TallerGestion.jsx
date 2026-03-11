@@ -4,160 +4,30 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import { resolveMediaUrl } from "../../utils/media.js";
+import {
+  BAY_OPTIONS,
+  TECHNICIAN_OPTIONS,
+  WORKSHOP_STAGES,
+  buildDraft,
+  formatAbsoluteDate,
+  formatDateTime,
+  getVehicleTitle,
+  insurerTagClasses,
+  isRecepcionCompleted,
+  loadDrafts,
+  relativeTime,
+  saveDraft,
+  statusPill
+} from "./tallerShared.js";
 
-const WORKSHOP_DRAFTS_KEY = "lmcc_taller_gestion_v1";
-
-const WORKSHOP_STAGES = [
-  { id: "recepcionado", label: "Recepcionado", icon: "assignment_turned_in" },
-  { id: "carroceria", label: "Carroceria", icon: "directions_car" },
-  { id: "pintura", label: "Pintura", icon: "format_paint" },
-  { id: "armado", label: "Armado", icon: "build" },
-  { id: "lavado", label: "Lavado", icon: "local_car_wash" },
-  { id: "entrega", label: "Entrega", icon: "key" }
-];
-
-const TECHNICIAN_OPTIONS = [
-  "Carlos Mendez (Pintura)",
-  "Juan Perez (Carroceria)",
-  "Roberto Diaz (Mecanica)",
-  "Equipo pendiente"
-];
-
-const BAY_OPTIONS = [
-  "Bahia de Pintura 2",
-  "Banco de Enderezado A",
-  "Bahia de Armado 1",
-  "Patio de Lavado",
-  "Sin asignar"
-];
-
-function parseDate(value) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return parsed;
-
-  const fallback = new Date(String(value).replace(" ", "T"));
-  if (!Number.isNaN(fallback.getTime())) return fallback;
-  return null;
-}
-
-function formatAbsoluteDate(value) {
-  const date = parseDate(value);
-  if (!date) return "-";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  }).format(date);
-}
-
-function formatDateTime(value) {
-  const date = parseDate(value);
-  if (!date) return "";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function relativeTime(value) {
-  const date = parseDate(value);
-  if (!date) return "";
-  const diffMinutes = Math.max(1, Math.round((Date.now() - date.getTime()) / 60000));
-  if (diffMinutes < 60) return `Iniciado hace ${diffMinutes} min`;
-  const hours = Math.round(diffMinutes / 60);
-  if (hours < 24) return `Iniciado hace ${hours} h`;
-  const days = Math.round(hours / 24);
-  return `Iniciado hace ${days} d`;
-}
-
-function loadDrafts() {
-  try {
-    const raw = window.localStorage.getItem(WORKSHOP_DRAFTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveDraft(recordId, draft) {
-  const drafts = loadDrafts();
-  drafts[recordId] = draft;
-  window.localStorage.setItem(WORKSHOP_DRAFTS_KEY, JSON.stringify(drafts));
-}
-
-function normalizeChecklist(parts) {
-  if (Array.isArray(parts)) {
-    return parts
-      .map((item) => String(item || "").trim())
-      .filter(Boolean)
-      .map((label, index) => ({ id: `part-${index}-${label}`, label, done: false }));
-  }
-
-  if (typeof parts === "string" && parts.trim()) {
-    return parts
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((label, index) => ({ id: `part-${index}-${label}`, label, done: false }));
-  }
-
-  return [
-    { id: "check-1", label: "Validar refacciones pendientes", done: false },
-    { id: "check-2", label: "Inspeccion de pintura", done: false },
-    { id: "check-3", label: "Revision de armado final", done: false }
-  ];
-}
-
-function inferStage(record) {
-  const status = String(record?.estatus || "").toLowerCase();
-  if (status.includes("entrega")) return "entrega";
-  if (status.includes("lavado")) return "lavado";
-  if (status.includes("armado")) return "armado";
-  if (status.includes("pintura") || status.includes("taller")) return "pintura";
-  if (status.includes("valuacion") || status.includes("autorizacion") || status.includes("carroceria")) {
-    return "carroceria";
-  }
-  return "recepcionado";
-}
-
-function buildDraft(record, existingDraft) {
-  const baseChecklist = normalizeChecklist(record?.partes_siniestro);
-  const existingChecklist = Array.isArray(existingDraft?.checklist) ? existingDraft.checklist : [];
-  const mergedChecklist = baseChecklist.map((item) => {
-    const match = existingChecklist.find((entry) => entry.label === item.label || entry.id === item.id);
-    return match ? { ...item, done: Boolean(match.done) } : item;
-  });
-
-  return {
-    currentStage: existingDraft?.currentStage || inferStage(record),
-    assignedTech: existingDraft?.assignedTech || TECHNICIAN_OPTIONS[0],
-    assignedBay: existingDraft?.assignedBay || BAY_OPTIONS[0],
-    checklist: mergedChecklist,
-    updatedAt: existingDraft?.updatedAt || null
-  };
-}
-
-function statusPill(stageId) {
-  if (stageId === "entrega") return "bg-alert-green/15 text-alert-green border border-alert-green/30";
-  return "bg-alert-amber/15 text-alert-amber border border-alert-amber/30";
-}
-
-function isRecepcionCompleted(record) {
-  if (record?.recepcionado_completado) return true;
-  return Boolean(String(record?.folio_seguro || "").trim() && String(record?.folio_ot || record?.folio_recep || "").trim());
-}
-
-function insurerTagClasses(seguro) {
-  const normalized = String(seguro || "").toLowerCase();
-  if (normalized.includes("qualitas")) return "bg-violet-500/10 text-violet-300 border-violet-500/30";
-  if (normalized.includes("axa")) return "bg-blue-500/10 text-blue-300 border-blue-500/30";
-  if (normalized.includes("mapfre")) return "bg-red-500/10 text-red-300 border-red-500/30";
-  if (normalized.includes("hdi")) return "bg-emerald-500/10 text-emerald-300 border-emerald-500/30";
-  return "bg-primary/10 text-primary border-primary/30";
+function StageActionIcon(props) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M459.94 53.25a16.06 16.06 0 0 0-23.22-.56L424.35 65a8 8 0 0 0 0 11.31l11.34 11.32a8 8 0 0 0 11.34 0l12.06-12c6.1-6.09 6.67-16.01.85-22.38" />
+      <path d="M399.34 90L218.82 270.2a9 9 0 0 0-2.31 3.93L208.16 299a3.91 3.91 0 0 0 4.86 4.86l24.85-8.35a9 9 0 0 0 3.93-2.31L422 112.66a9 9 0 0 0 0-12.66l-9.95-10a9 9 0 0 0-12.71 0" />
+      <path d="M386.34 193.66L264.45 315.79A41.1 41.1 0 0 1 247.58 326l-25.9 8.67a35.92 35.92 0 0 1-44.33-44.33l8.67-25.9a41.1 41.1 0 0 1 10.19-16.87l122.13-121.91a8 8 0 0 0-5.65-13.66H104a56 56 0 0 0-56 56v240a56 56 0 0 0 56 56h240a56 56 0 0 0 56-56V199.31a8 8 0 0 0-13.66-5.65" />
+    </svg>
+  );
 }
 
 export default function TallerGestion() {
@@ -280,13 +150,7 @@ export default function TallerGestion() {
     return Math.max(manualProgress, stageProgress);
   }, [completedCount, currentStageIndex, draft?.checklist]);
 
-  const vehicleTitle = [
-    record?.vehiculo_marca,
-    record?.vehiculo_modelo,
-    record?.vehiculo_anio
-  ]
-    .filter(Boolean)
-    .join(" ") || record?.vehiculo || "Vehiculo en taller";
+  const vehicleTitle = getVehicleTitle(record);
 
   const toggleChecklistItem = (itemId) => {
     setDraft((prev) => ({
@@ -756,10 +620,12 @@ export default function TallerGestion() {
                                 </div>
                                 <button
                                   type="button"
-                                  className="text-slate-500 transition-colors hover:text-primary"
-                                  title="Notificar progreso"
+                                  onClick={() => navigate(`/taller/autos-en-sitio/${id}/etapas/${stage.id}`)}
+                                  className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-background-dark hover:text-primary"
+                                  title={`Abrir etapa ${stage.label}`}
+                                  aria-label={`Abrir etapa ${stage.label}`}
                                 >
-                                  <span className="material-symbols-outlined">chat</span>
+                                  <StageActionIcon className="h-5 w-5" />
                                 </button>
                               </div>
                             </div>

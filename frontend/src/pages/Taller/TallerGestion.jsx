@@ -545,124 +545,6 @@ export default function TallerGestion() {
                       ))}
                     </div>
                   </article>
-                </section>
-
-                <section className="xl:col-span-6">
-                  <article className="rounded-2xl border border-border-dark bg-surface-dark p-5 sm:p-6">
-                    <div className="mb-6 flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-2xl font-bold text-white">Linea de tiempo</h3>
-                        <p className="mt-1 text-sm text-slate-400">Selecciona la etapa activa para reflejar el avance operativo.</p>
-                      </div>
-                      <span className="rounded-full border border-border-dark bg-background-dark px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        {completedCount} completadas
-                      </span>
-                    </div>
-
-                    <div className="relative">
-                      {WORKSHOP_STAGES.map((stage, index) => {
-                        const isRecepcionStep = stage.id === "recepcionado";
-                        const isCompleted = index < currentStageIndex || (isRecepcionStep && recepcionCompleted);
-                        const isActive = index === currentStageIndex;
-                        const isFuture = index > currentStageIndex;
-
-                        return (
-                          <div key={stage.id} className="relative flex gap-4 pb-7 last:pb-0">
-                            {index < WORKSHOP_STAGES.length - 1 ? (
-                              <div
-                              className={`absolute left-5 top-10 h-[calc(100%-4px)] w-px ${
-                                  isCompleted ? "bg-alert-green/60" : "border-l border-dashed border-border-dark"
-                                }`}
-                              ></div>
-                            ) : null}
-
-                            <button
-                              type="button"
-                              onClick={() => setDraft((prev) => ({ ...prev, currentStage: stage.id }))}
-                              className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
-                                isActive
-                                  ? "border-alert-amber bg-alert-amber text-background-dark shadow-[0_0_20px_rgba(242,163,0,0.28)]"
-                                  : isCompleted
-                                    ? "border-alert-green bg-alert-green/20 text-alert-green"
-                                    : "border-border-dark bg-background-dark text-slate-500"
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[20px]">{stage.icon}</span>
-                            </button>
-
-                            <div
-                              className={`flex-1 rounded-2xl border p-4 transition-all ${
-                                isActive
-                                  ? "border-alert-amber/30 bg-alert-amber/10"
-                                  : isCompleted
-                                    ? "border-alert-green/30 bg-alert-green/10"
-                                    : "border-transparent bg-transparent opacity-70 hover:opacity-100"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <h4 className={`text-lg font-bold ${isFuture ? "text-slate-300" : "text-white"}`}>{stage.label}</h4>
-                                    {!isActive && isCompleted ? (
-                                      <span className="rounded-md bg-alert-green px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-background-dark">
-                                        Completado
-                                      </span>
-                                    ) : null}
-                                    {isActive ? (
-                                      <span className="rounded-md bg-alert-amber px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-background-dark">
-                                        En progreso
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  <p className="mt-1 text-sm text-slate-400">
-                                    {isCompleted
-                                      ? index === 0
-                                        ? record.folio_seguro
-                                          ? `Completado: ${record.folio_seguro} asignado a OT #${record.folio_ot || record.folio_recep}`
-                                          : `Completado ${formatDateTime(record.fecha_recep)}`
-                                        : `Etapa completada antes de ${WORKSHOP_STAGES[currentStageIndex]?.label.toLowerCase()}`
-                                      : isActive
-                                        ? draft.updatedAt
-                                          ? relativeTime(draft.updatedAt)
-                                          : "Listo para registrar avances"
-                                        : "Pendiente por iniciar"}
-                                  </p>
-                                  {index === 0 ? (
-                                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
-                                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-primary">
-                                        <span className="material-symbols-outlined text-[16px]">person</span>
-                                      </span>
-                                      {record.nb_cliente || "Cliente registrado"}
-                                    </div>
-                                  ) : null}
-                                  {isActive ? (
-                                    <div className="mt-4 max-w-xs">
-                                      <div className="h-2 overflow-hidden rounded-full bg-background-dark">
-                                        <div className="h-full rounded-full bg-alert-amber" style={{ width: `${progressValue}%` }}></div>
-                                      </div>
-                                      <span className="mt-2 block text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                                        Progreso estimado
-                                      </span>
-                                    </div>
-                                  ) : null}
-                                </div>
-                                <button
-                                  type="button"
-                                  className="text-slate-500 transition-colors hover:text-primary"
-                                  title="Notificar progreso"
-                                >
-                                  <span className="material-symbols-outlined">chat</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </article>
-                </section>
-
-                <section className="xl:col-span-3 space-y-6">
                   <article className="rounded-2xl border border-border-dark bg-surface-dark p-5">
                     <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-white">
                       <span className="material-symbols-outlined text-primary">manage_accounts</span>
@@ -766,6 +648,121 @@ export default function TallerGestion() {
                       className="hidden"
                       onChange={handleUploadPhoto}
                     />
+                  </article>
+                </section>
+
+                <section className="xl:col-span-9">
+                  <article className="rounded-2xl border border-border-dark bg-surface-dark p-5 sm:p-6">
+                    <div className="mb-6 flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-2xl font-bold text-white">Linea de tiempo</h3>
+                        <p className="mt-1 text-sm text-slate-400">Selecciona la etapa activa para reflejar el avance operativo.</p>
+                      </div>
+                      <span className="rounded-full border border-border-dark bg-background-dark px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        {completedCount} completadas
+                      </span>
+                    </div>
+
+                    <div className="relative">
+                      {WORKSHOP_STAGES.map((stage, index) => {
+                        const isRecepcionStep = stage.id === "recepcionado";
+                        const isCompleted = index < currentStageIndex || (isRecepcionStep && recepcionCompleted);
+                        const isActive = index === currentStageIndex;
+                        const isFuture = index > currentStageIndex;
+
+                        return (
+                          <div key={stage.id} className="relative flex gap-4 pb-7 last:pb-0">
+                            {index < WORKSHOP_STAGES.length - 1 ? (
+                              <div
+                                className={`absolute left-5 top-10 h-[calc(100%-4px)] w-px ${
+                                  isCompleted ? "bg-alert-green/60" : "border-l border-dashed border-border-dark"
+                                }`}
+                              ></div>
+                            ) : null}
+
+                            <button
+                              type="button"
+                              onClick={() => setDraft((prev) => ({ ...prev, currentStage: stage.id }))}
+                              className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
+                                isActive
+                                  ? "border-alert-amber bg-alert-amber text-background-dark shadow-[0_0_20px_rgba(242,163,0,0.28)]"
+                                  : isCompleted
+                                    ? "border-alert-green bg-alert-green/20 text-alert-green"
+                                    : "border-border-dark bg-background-dark text-slate-500"
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[20px]">{stage.icon}</span>
+                            </button>
+
+                            <div
+                              className={`flex-1 rounded-2xl border p-4 transition-all ${
+                                isActive
+                                  ? "border-alert-amber/30 bg-alert-amber/10"
+                                  : isCompleted
+                                    ? "border-alert-green/30 bg-alert-green/10"
+                                    : "border-transparent bg-transparent opacity-70 hover:opacity-100"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h4 className={`text-lg font-bold ${isFuture ? "text-slate-300" : "text-white"}`}>{stage.label}</h4>
+                                    {!isActive && isCompleted ? (
+                                      <span className="rounded-md bg-alert-green px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-background-dark">
+                                        Completado
+                                      </span>
+                                    ) : null}
+                                    {isActive ? (
+                                      <span className="rounded-md bg-alert-amber px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-background-dark">
+                                        En progreso
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1 text-sm text-slate-400">
+                                    {isCompleted
+                                      ? index === 0
+                                        ? record.folio_seguro
+                                          ? `Completado: ${record.folio_seguro} asignado a OT #${record.folio_ot || record.folio_recep}`
+                                          : `Completado ${formatDateTime(record.fecha_recep)}`
+                                        : `Etapa completada antes de ${WORKSHOP_STAGES[currentStageIndex]?.label.toLowerCase()}`
+                                      : isActive
+                                        ? draft.updatedAt
+                                          ? relativeTime(draft.updatedAt)
+                                          : "Listo para registrar avances"
+                                        : "Pendiente por iniciar"}
+                                  </p>
+                                  {index === 0 ? (
+                                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+                                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-primary">
+                                        <span className="material-symbols-outlined text-[16px]">person</span>
+                                      </span>
+                                      {record.nb_cliente || "Cliente registrado"}
+                                    </div>
+                                  ) : null}
+                                  {isActive ? (
+                                    <div className="mt-4 max-w-xs">
+                                      <div className="h-2 overflow-hidden rounded-full bg-background-dark">
+                                        <div className="h-full rounded-full bg-alert-amber" style={{ width: `${progressValue}%` }}></div>
+                                      </div>
+                                      <span className="mt-2 block text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                                        Progreso estimado
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="text-slate-500 transition-colors hover:text-primary"
+                                  title="Notificar progreso"
+                                >
+                                  <span className="material-symbols-outlined">chat</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </article>
                 </section>
               </div>

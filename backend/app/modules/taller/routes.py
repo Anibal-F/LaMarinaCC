@@ -343,11 +343,73 @@ def _get_recepcion_reference(conn, recepcion_id: int) -> dict[str, Any]:
     return row
 
 
+def _get_station_context(conn, estacion_id: int) -> dict[str, Any]:
+    conn.row_factory = dict_row
+    row = conn.execute(
+        """
+        SELECT es.id, es.nb_estacion, es.area_id, ta.nb_area, ta.etapa_id, te.nb_etapa, te.clave, te.orden
+        FROM taller_estaciones es
+        JOIN taller_areas ta ON ta.id = es.area_id
+        JOIN taller_etapas te ON te.id = ta.etapa_id
+        WHERE es.id = %s
+        LIMIT 1
+        """,
+        (estacion_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Estacion no encontrada")
+    return row
+
+
 def _is_workshop_status(status_value: str | None) -> bool:
     normalized = str(status_value or "").strip().lower()
     if not normalized:
         return True
     return any(value in normalized for value in ("recepcion", "valuacion", "autorizacion", "taller"))
+
+
+def _sync_assignment_to_ot_stage(
+    conn,
+    recepcion_id: int | None,
+    etapa_id: int | None,
+    area_id: int | None,
+    estacion_id: int | None,
+    personal_id: int | None,
+) -> None:
+    if recepcion_id is None or etapa_id is None:
+        return
+    _sync_ot_stages(conn, recepcion_id)
+    conn.execute(
+        """
+        UPDATE taller_ot_etapas
+        SET area_id = COALESCE(%s, area_id),
+            estacion_id = %s,
+            personal_id_responsable = %s,
+            fecha_inicio = COALESCE(fecha_inicio, NOW()),
+            estatus = CASE
+                WHEN UPPER(COALESCE(estatus, '')) = 'PENDIENTE' THEN 'EN_PROCESO'
+                ELSE estatus
+            END,
+            updated_at = NOW()
+        WHERE recepcion_id = %s AND etapa_id = %s
+        """,
+        (area_id, estacion_id, personal_id, recepcion_id, etapa_id),
+    )
+
+
+def _clear_assignment_from_ot_stage(conn, recepcion_id: int | None, etapa_id: int | None, estacion_id: int | None) -> None:
+    if recepcion_id is None or etapa_id is None:
+        return
+    conn.execute(
+        """
+        UPDATE taller_ot_etapas
+        SET estacion_id = CASE WHEN estacion_id = %s THEN NULL ELSE estacion_id END,
+            personal_id_responsable = CASE WHEN estacion_id = %s THEN NULL ELSE personal_id_responsable END,
+            updated_at = NOW()
+        WHERE recepcion_id = %s AND etapa_id = %s
+        """,
+        (estacion_id, estacion_id, recepcion_id, etapa_id),
+    )
 
 
 def _sync_ot_stages(conn, recepcion_id: int) -> list[dict[str, Any]]:
@@ -1029,18 +1091,31 @@ def list_estacion_asignaciones(
 def create_estacion_asignacion(payload: EstacionAsignacionPayload):
     _ensure_taller_schema()
     with get_connection() as conn:
-        _validate_reference(conn, "taller_estaciones", payload.estacion_id, "Estacion no encontrada")
+        station_context = _get_station_context(conn, payload.estacion_id)
         _validate_reference(conn, "taller_personal", payload.personal_id, "Personal no encontrado")
         if payload.recepcion_id is not None:
             _get_recepcion_reference(conn, payload.recepcion_id)
-        if payload.etapa_id is not None:
-            _validate_reference(conn, "taller_etapas", payload.etapa_id, "Etapa no encontrada")
+        resolved_etapa_id = payload.etapa_id or station_context["etapa_id"]
+        if resolved_etapa_id is not None:
+            if resolved_etapa_id != station_context["etapa_id"]:
+                raise HTTPException(status_code=400, detail="La etapa no corresponde al area de la estacion")
+            _validate_reference(conn, "taller_etapas", resolved_etapa_id, "Etapa no encontrada")
 
         if payload.activa:
+            previous_assignments = conn.execute(
+                """
+                SELECT recepcion_id, etapa_id, estacion_id
+                FROM taller_estacion_asignaciones
+                WHERE estacion_id = %s AND activa = TRUE
+                """,
+                (payload.estacion_id,),
+            ).fetchall()
             conn.execute(
                 "UPDATE taller_estacion_asignaciones SET activa = FALSE, fecha_fin = COALESCE(fecha_fin, NOW()) WHERE estacion_id = %s AND activa = TRUE",
                 (payload.estacion_id,),
             )
+            for previous in previous_assignments:
+                _clear_assignment_from_ot_stage(conn, previous[0], previous[1], previous[2])
 
         conn.row_factory = dict_row
         row = conn.execute(
@@ -1056,12 +1131,21 @@ def create_estacion_asignacion(payload: EstacionAsignacionPayload):
                 payload.personal_id,
                 payload.recepcion_id,
                 (payload.folio_ot or "").strip() or None,
-                payload.etapa_id,
+                resolved_etapa_id,
                 payload.fecha_inicio,
                 payload.fecha_fin,
                 payload.activa,
             ),
         ).fetchone()
+        if payload.activa:
+            _sync_assignment_to_ot_stage(
+                conn,
+                payload.recepcion_id,
+                resolved_etapa_id,
+                station_context["area_id"],
+                payload.estacion_id,
+                payload.personal_id,
+            )
     return row
 
 
@@ -1069,28 +1153,37 @@ def create_estacion_asignacion(payload: EstacionAsignacionPayload):
 def update_estacion_asignacion(asignacion_id: int, payload: EstacionAsignacionPayload):
     _ensure_taller_schema()
     with get_connection() as conn:
-        _validate_reference(conn, "taller_estaciones", payload.estacion_id, "Estacion no encontrada")
+        station_context = _get_station_context(conn, payload.estacion_id)
         _validate_reference(conn, "taller_personal", payload.personal_id, "Personal no encontrado")
         if payload.recepcion_id is not None:
             _get_recepcion_reference(conn, payload.recepcion_id)
-        if payload.etapa_id is not None:
-            _validate_reference(conn, "taller_etapas", payload.etapa_id, "Etapa no encontrada")
+        resolved_etapa_id = payload.etapa_id or station_context["etapa_id"]
+        if resolved_etapa_id is not None:
+            if resolved_etapa_id != station_context["etapa_id"]:
+                raise HTTPException(status_code=400, detail="La etapa no corresponde al area de la estacion")
+            _validate_reference(conn, "taller_etapas", resolved_etapa_id, "Etapa no encontrada")
+
+        current_assignment = conn.execute(
+            """
+            SELECT id, estacion_id, recepcion_id, etapa_id
+            FROM taller_estacion_asignaciones
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (asignacion_id,),
+        ).fetchone()
+        if not current_assignment:
+            raise HTTPException(status_code=404, detail="Asignacion no encontrada")
 
         if payload.activa:
-            current = conn.execute(
-                "SELECT estacion_id FROM taller_estacion_asignaciones WHERE id = %s LIMIT 1",
-                (asignacion_id,),
-            ).fetchone()
-            if not current:
-                raise HTTPException(status_code=404, detail="Asignacion no encontrada")
             conn.execute(
                 "UPDATE taller_estacion_asignaciones SET activa = FALSE, fecha_fin = COALESCE(fecha_fin, NOW()) WHERE estacion_id = %s AND activa = TRUE AND id <> %s",
                 (payload.estacion_id, asignacion_id),
             )
-            if current[0] != payload.estacion_id:
+            if current_assignment[1] != payload.estacion_id:
                 conn.execute(
                     "UPDATE taller_estacion_asignaciones SET activa = FALSE, fecha_fin = COALESCE(fecha_fin, NOW()) WHERE estacion_id = %s AND activa = TRUE AND id <> %s",
-                    (current[0], asignacion_id),
+                    (current_assignment[1], asignacion_id),
                 )
 
         conn.row_factory = dict_row
@@ -1113,13 +1206,23 @@ def update_estacion_asignacion(asignacion_id: int, payload: EstacionAsignacionPa
                 payload.personal_id,
                 payload.recepcion_id,
                 (payload.folio_ot or "").strip() or None,
-                payload.etapa_id,
+                resolved_etapa_id,
                 payload.fecha_inicio,
                 payload.fecha_fin,
                 payload.activa,
                 asignacion_id,
             ),
         ).fetchone()
+        _clear_assignment_from_ot_stage(conn, current_assignment[2], current_assignment[3], current_assignment[1])
+        if payload.activa:
+            _sync_assignment_to_ot_stage(
+                conn,
+                payload.recepcion_id,
+                resolved_etapa_id,
+                station_context["area_id"],
+                payload.estacion_id,
+                payload.personal_id,
+            )
     if not row:
         raise HTTPException(status_code=404, detail="Asignacion no encontrada")
     return row
@@ -1129,10 +1232,121 @@ def update_estacion_asignacion(asignacion_id: int, payload: EstacionAsignacionPa
 def delete_estacion_asignacion(asignacion_id: int):
     _ensure_taller_schema()
     with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT recepcion_id, etapa_id, estacion_id
+            FROM taller_estacion_asignaciones
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (asignacion_id,),
+        ).fetchone()
         result = conn.execute("DELETE FROM taller_estacion_asignaciones WHERE id = %s", (asignacion_id,))
+        if row and result.rowcount:
+            _clear_assignment_from_ot_stage(conn, row[0], row[1], row[2])
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Asignacion no encontrada")
     return None
+
+
+@router.get("/areas/{area_id}/ots-disponibles")
+def list_ots_disponibles_por_area(area_id: int):
+    _ensure_taller_schema()
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        area = conn.execute(
+            """
+            SELECT ta.id, ta.nb_area, ta.etapa_id, te.clave, te.nb_etapa, te.orden
+            FROM taller_areas ta
+            JOIN taller_etapas te ON te.id = ta.etapa_id
+            WHERE ta.id = %s
+            LIMIT 1
+            """,
+            (area_id,),
+        ).fetchone()
+        if not area:
+            raise HTTPException(status_code=404, detail="Area no encontrada")
+
+        recepciones = conn.execute(
+            """
+            SELECT r.id, r.folio_recep, r.fecha_recep, r.nb_cliente, r.placas,
+                   r.vehiculo, r.vehiculo_marca, r.vehiculo_modelo, r.vehiculo_anio, r.estatus,
+                   he.folio_seguro,
+                   COALESCE(NULLIF(he.folio_ot, ''), r.folio_recep) AS folio_ot
+            FROM recepciones r
+            LEFT JOIN LATERAL (
+                SELECT folio_seguro, folio_ot
+                FROM historical_entries
+                WHERE folio_recep = r.folio_recep
+                ORDER BY id DESC
+                LIMIT 1
+            ) he ON TRUE
+            ORDER BY r.fecha_recep ASC, r.id ASC
+            """
+        ).fetchall()
+
+        candidates: list[dict[str, Any]] = []
+        for recepcion in recepciones:
+            if not _is_workshop_status(recepcion.get("estatus")):
+                continue
+
+            stages = _sync_ot_stages(conn, recepcion["id"])
+            current_stage = next((stage for stage in stages if stage["etapa_id"] == area["etapa_id"]), None)
+            if not current_stage:
+                continue
+
+            current_status = str(current_stage.get("estatus") or "").upper()
+            if current_status == "COMPLETADO":
+                continue
+
+            if current_stage.get("estacion_id"):
+                continue
+
+            active_assignment = conn.execute(
+                """
+                SELECT 1
+                FROM taller_estacion_asignaciones
+                WHERE recepcion_id = %s AND etapa_id = %s AND activa = TRUE
+                LIMIT 1
+                """,
+                (recepcion["id"], area["etapa_id"]),
+            ).fetchone()
+            if active_assignment:
+                continue
+
+            if area["orden"] > 1:
+                previous_stage = next((stage for stage in stages if stage["orden"] == area["orden"] - 1), None)
+                if not previous_stage or str(previous_stage.get("estatus") or "").upper() != "COMPLETADO":
+                    continue
+
+            candidates.append(
+                {
+                    "recepcion_id": recepcion["id"],
+                    "folio_ot": recepcion["folio_ot"],
+                    "folio_recep": recepcion["folio_recep"],
+                    "folio_seguro": recepcion.get("folio_seguro"),
+                    "placas": recepcion.get("placas"),
+                    "cliente": recepcion.get("nb_cliente"),
+                    "vehiculo": (
+                        " ".join(
+                            part
+                            for part in [recepcion.get("vehiculo_marca"), recepcion.get("vehiculo_modelo"), recepcion.get("vehiculo_anio")]
+                            if part
+                        ).strip()
+                        or recepcion.get("vehiculo")
+                    ),
+                    "etapa_objetivo_id": area["etapa_id"],
+                    "etapa_objetivo": area["nb_etapa"],
+                    "estatus_etapa": current_status,
+                    "progreso": current_stage.get("progreso") or 0,
+                    "fecha_recep": recepcion.get("fecha_recep"),
+                }
+            )
+
+    return {
+        "area": area,
+        "items": candidates,
+    }
 
 
 @router.get("/ordenes/{recepcion_id}/etapas")
@@ -1380,6 +1594,7 @@ def get_areas_trabajo_dashboard():
             estaciones = conn.execute(
                 """
                 SELECT es.id, es.nb_estacion, es.tipo_estacion, es.estatus, es.activo,
+                       tea.id AS asignacion_id,
                        tea.recepcion_id, tea.folio_ot, tea.fecha_inicio,
                        tp.nb_personal,
                        r.vehiculo, r.vehiculo_marca, r.vehiculo_modelo, r.vehiculo_anio,
@@ -1431,6 +1646,11 @@ def get_areas_trabajo_dashboard():
                 mapped_stations.append(
                     {
                         "id": station["id"],
+                        "assignment_id": station.get("asignacion_id"),
+                        "recepcion_id": station.get("recepcion_id"),
+                        "area_id": area["id"],
+                        "etapa_id": area["etapa_id"],
+                        "etapa_clave": area["clave"],
                         "name": station["nb_estacion"],
                         "subtitle": station.get("tipo_estacion") or ("Disponible para asignacion" if not is_occupied else area["nb_etapa"]),
                         "status": station_status,
@@ -1450,6 +1670,9 @@ def get_areas_trabajo_dashboard():
             result_areas.append(
                 {
                     "id": area["id"],
+                    "etapa_id": area["etapa_id"],
+                    "etapa_clave": area["clave"],
+                    "etapa_nombre": area["nb_etapa"],
                     "icon": (
                         "format_paint"
                         if area["clave"] == "pintura"

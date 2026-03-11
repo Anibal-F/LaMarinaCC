@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import Toast from "../../components/Toast.jsx";
 
 function statusBadge(status) {
   if (status === "delayed") return "bg-alert-red text-white";
@@ -15,6 +16,12 @@ export default function AreasTrabajo() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dashboard, setDashboard] = useState({ areas: [], totals: { occupied: 0, free: 0, stations: 0, delayed: 0 } });
+  const [toast, setToast] = useState(null);
+  const [assignmentModal, setAssignmentModal] = useState(null);
+  const [assignmentOptions, setAssignmentOptions] = useState({ ots: [], personal: [] });
+  const [assignmentForm, setAssignmentForm] = useState({ recepcionId: "", personalId: "" });
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
 
   const loadDashboard = async () => {
     try {
@@ -39,6 +46,104 @@ export default function AreasTrabajo() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const openAssignmentModal = async (area, station) => {
+    try {
+      setAssignmentLoading(true);
+      setAssignmentModal({ area, station });
+      setAssignmentForm({ recepcionId: "", personalId: "" });
+      const [otsRes, personalRes] = await Promise.all([
+        fetch(`${import.meta.env.VITE_API_URL}/taller/areas/${area.id}/ots-disponibles`),
+        fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/personal?activo=true`)
+      ]);
+      if (!otsRes.ok) throw new Error("No se pudieron cargar las OTs disponibles.");
+      if (!personalRes.ok) throw new Error("No se pudo cargar el personal disponible.");
+
+      const otsPayload = await otsRes.json();
+      const personalPayload = await personalRes.json();
+      const filteredPersonal = Array.isArray(personalPayload)
+        ? personalPayload.filter((item) => String(item.etapa_id) === String(area.etapa_id))
+        : [];
+
+      setAssignmentOptions({
+        ots: Array.isArray(otsPayload?.items) ? otsPayload.items : [],
+        personal: filteredPersonal
+      });
+    } catch (err) {
+      setToast({ type: "error", message: err.message || "No se pudo abrir la asignacion." });
+      setAssignmentModal(null);
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
+
+  const handleCreateAssignment = async () => {
+    if (!assignmentModal) return;
+    if (!assignmentForm.recepcionId || !assignmentForm.personalId) {
+      setToast({ type: "error", message: "Selecciona una OT y un tecnico para continuar." });
+      return;
+    }
+    const selectedOt = assignmentOptions.ots.find((item) => String(item.recepcion_id) === String(assignmentForm.recepcionId));
+    if (!selectedOt) {
+      setToast({ type: "error", message: "La OT seleccionada ya no esta disponible." });
+      return;
+    }
+
+    try {
+      setAssignmentSaving(true);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/estaciones/asignaciones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          estacion_id: assignmentModal.station.id,
+          personal_id: Number(assignmentForm.personalId),
+          recepcion_id: Number(assignmentForm.recepcionId),
+          folio_ot: selectedOt.folio_ot,
+          etapa_id: assignmentModal.area.etapa_id,
+          activa: true
+        })
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.detail || "No se pudo asignar la OT a la estacion.");
+      }
+      setAssignmentModal(null);
+      setAssignmentOptions({ ots: [], personal: [] });
+      setAssignmentForm({ recepcionId: "", personalId: "" });
+      await loadDashboard();
+      setToast({ type: "success", message: "OT asignada a la estacion." });
+    } catch (err) {
+      setToast({ type: "error", message: err.message || "No se pudo asignar la OT a la estacion." });
+    } finally {
+      setAssignmentSaving(false);
+    }
+  };
+
+  const handleReleaseAssignment = async (station) => {
+    if (!station.assignment_id) {
+      setToast({ type: "error", message: "La estacion no tiene una asignacion activa para liberar." });
+      return;
+    }
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/estaciones/asignaciones/${station.assignment_id}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.detail || "No se pudo liberar la estacion.");
+      }
+      await loadDashboard();
+      setToast({ type: "success", message: "Estacion liberada." });
+    } catch (err) {
+      setToast({ type: "error", message: err.message || "No se pudo liberar la estacion." });
+    }
+  };
 
   const filteredAreas = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -211,9 +316,14 @@ export default function AreasTrabajo() {
 
                           {station.status === "free" ? (
                             <div className="p-6 text-center">
-                              <div className="mx-auto mb-3 size-11 rounded-full border border-border-dark bg-background-dark flex items-center justify-center text-slate-500">
+                              <button
+                                type="button"
+                                className="mx-auto mb-3 size-11 rounded-full border border-border-dark bg-background-dark flex items-center justify-center text-slate-500 hover:text-white hover:border-primary hover:bg-primary/10 transition-colors"
+                                onClick={() => openAssignmentModal(group, station)}
+                                title="Asignar OT"
+                              >
                                 <span className="material-symbols-outlined">add</span>
-                              </div>
+                              </button>
                               <p className="text-xs text-slate-500 mb-3">Disponible para asignacion</p>
                             </div>
                           ) : (
@@ -244,6 +354,22 @@ export default function AreasTrabajo() {
                                   Tecnico: <span className="text-white font-semibold">{station.tech || "Sin asignar"}</span>
                                 </span>
                                 {station.status === "delayed" ? <span className="text-alert-red font-bold">Atencion</span> : null}
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  className="flex-1 rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-[11px] font-bold text-slate-300 hover:text-white hover:border-primary transition-colors"
+                                  onClick={() => openAssignmentModal(group, station)}
+                                >
+                                  Reasignar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-alert-red/40 bg-alert-red/10 px-3 py-2 text-[11px] font-bold text-alert-red hover:bg-alert-red/20"
+                                  onClick={() => handleReleaseAssignment(station)}
+                                >
+                                  Liberar
+                                </button>
                               </div>
                             </div>
                           )}
@@ -302,6 +428,124 @@ export default function AreasTrabajo() {
           </div>
         </main>
       </div>
+
+      {assignmentModal ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-background-dark/80 backdrop-blur-sm px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-border-dark bg-surface-dark shadow-2xl shadow-black/30">
+            <div className="flex items-start justify-between gap-4 border-b border-border-dark px-6 py-5">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Asignar OT</p>
+                <h3 className="mt-2 text-xl font-bold text-white">{assignmentModal.station.name}</h3>
+                <p className="text-sm text-slate-400">
+                  {assignmentModal.area.title} · {assignmentModal.area.etapa_nombre || assignmentModal.area.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-border-dark p-2 text-slate-400 hover:text-white"
+                onClick={() => setAssignmentModal(null)}
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-5 px-6 py-5">
+              {assignmentLoading ? (
+                <p className="text-sm text-slate-400">Cargando opciones disponibles...</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">OT disponible</span>
+                      <select
+                        className="w-full rounded-lg border border-border-dark bg-background-dark px-4 py-2.5 text-sm text-white"
+                        value={assignmentForm.recepcionId}
+                        onChange={(event) => setAssignmentForm((prev) => ({ ...prev, recepcionId: event.target.value }))}
+                      >
+                        <option value="">Selecciona una OT</option>
+                        {assignmentOptions.ots.map((item) => (
+                          <option key={item.recepcion_id} value={item.recepcion_id}>
+                            {item.folio_ot} · {item.vehiculo || item.placas || "OT disponible"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Tecnico</span>
+                      <select
+                        className="w-full rounded-lg border border-border-dark bg-background-dark px-4 py-2.5 text-sm text-white"
+                        value={assignmentForm.personalId}
+                        onChange={(event) => setAssignmentForm((prev) => ({ ...prev, personalId: event.target.value }))}
+                      >
+                        <option value="">Selecciona un tecnico</option>
+                        {assignmentOptions.personal.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nb_personal}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {assignmentForm.recepcionId ? (
+                    <div className="rounded-xl border border-border-dark bg-background-dark/60 p-4">
+                      {assignmentOptions.ots
+                        .filter((item) => String(item.recepcion_id) === String(assignmentForm.recepcionId))
+                        .map((item) => (
+                          <div key={item.recepcion_id} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Vehiculo</p>
+                              <p className="mt-1 text-white font-semibold">{item.vehiculo || "-"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Cliente</p>
+                              <p className="mt-1 text-white font-semibold">{item.cliente || "-"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Placas</p>
+                              <p className="mt-1 text-slate-300">{item.placas || "-"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Reporte / Siniestro</p>
+                              <p className="mt-1 text-slate-300">{item.folio_seguro || "-"}</p>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  ) : null}
+
+                  {assignmentOptions.ots.length === 0 ? (
+                    <div className="rounded-xl border border-border-dark bg-background-dark/60 p-4 text-sm text-slate-400">
+                      No hay OTs disponibles para esta area. Solo aparecen las que ya completaron la etapa anterior.
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-border-dark px-6 py-4">
+              <button
+                type="button"
+                className="rounded-lg border border-border-dark px-4 py-2 text-slate-300 hover:text-white"
+                onClick={() => setAssignmentModal(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-primary px-4 py-2 font-bold text-white hover:bg-primary/90 disabled:opacity-50"
+                onClick={handleCreateAssignment}
+                disabled={assignmentLoading || assignmentSaving || assignmentOptions.ots.length === 0}
+              >
+                {assignmentSaving ? "Asignando..." : "Asignar OT"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toast ? <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} /> : null}
     </div>
   );
 }

@@ -6,8 +6,6 @@ import AppHeader from "../../components/AppHeader.jsx";
 import { resolveMediaUrl } from "../../utils/media.js";
 
 const PAGE_SIZE = 8;
-const ACTIVE_WORKSHOP_STATUS = ["recepcion", "valuacion", "autorizacion", "taller"];
-
 function parseDate(value) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -44,12 +42,6 @@ function daysInShop(value) {
   return Math.max(0, Math.floor(diffMs / dayMs));
 }
 
-function isWorkshopRecord(record) {
-  const status = String(record?.estatus || "").trim().toLowerCase();
-  if (!status) return true;
-  return ACTIVE_WORKSHOP_STATUS.some((value) => status.includes(value));
-}
-
 function dayBadgeClasses(days) {
   if (days >= 4) return "bg-alert-red/20 text-alert-red animate-pulse";
   if (days >= 2) return "bg-alert-amber/20 text-alert-amber";
@@ -78,12 +70,12 @@ export default function Taller() {
     try {
       setLoading(true);
       setError("");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/dashboard/autos-en-sitio`);
       if (!response.ok) {
         throw new Error("No se pudo cargar el listado de taller.");
       }
       const payload = await response.json();
-      const recepcionados = (Array.isArray(payload) ? payload : []).filter(isWorkshopRecord);
+      const recepcionados = Array.isArray(payload) ? payload : [];
       setRecords(recepcionados);
       setPage(1);
     } catch (err) {
@@ -216,8 +208,7 @@ export default function Taller() {
   const pendingAssign = useMemo(
     () =>
       records.filter((record) => {
-        const status = String(record.estatus || "").toLowerCase();
-        return !status.includes("taller");
+        return !record.personal_responsable || !record.estacion_actual;
       }).length,
     [records]
   );
@@ -352,9 +343,13 @@ export default function Taller() {
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <p className="text-sm font-semibold text-white">{record.vehiculo || "-"}</p>
+                             <p className="text-sm font-semibold text-white">{record.vehiculo || "-"}</p>
                               <p className="text-[11px] text-slate-400">
-                                {[record.vehiculo_anio, record.vehiculo_tipo].filter(Boolean).join(" - ") || "Sin detalle"}
+                                {[
+                                  record.etapa_actual_nombre || "Sin etapa",
+                                  record.personal_responsable || "Sin responsable",
+                                  record.estacion_actual || "Sin estacion"
+                                ].join(" - ")}
                               </p>
                             </td>
                             <td className="px-4 py-3 text-xs font-mono uppercase text-slate-300">

@@ -317,7 +317,7 @@ def _fetch_catalog_row(sql: str, params: tuple[Any, ...]) -> dict[str, Any]:
 def _validate_reference(conn, table: str, item_id: int, detail: str) -> None:
     row = conn.execute(f"SELECT 1 FROM {table} WHERE id = %s LIMIT 1", (item_id,)).fetchone()
     if not row:
-      raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=404, detail=detail)
 
 
 def _get_recepcion_reference(conn, recepcion_id: int) -> dict[str, Any]:
@@ -341,6 +341,13 @@ def _get_recepcion_reference(conn, recepcion_id: int) -> dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="Recepcion no encontrada")
     return row
+
+
+def _is_workshop_status(status_value: str | None) -> bool:
+    normalized = str(status_value or "").strip().lower()
+    if not normalized:
+        return True
+    return any(value in normalized for value in ("recepcion", "valuacion", "autorizacion", "taller"))
 
 
 def _sync_ot_stages(conn, recepcion_id: int) -> list[dict[str, Any]]:
@@ -1209,3 +1216,196 @@ def create_ot_nota(recepcion_id: int, etapa_id: int, payload: OtNotaPayload):
             (ot_stage["id"], payload.nota.strip(), (payload.creado_por or "").strip() or None),
         ).fetchone()
     return row
+
+
+@router.get("/dashboard/autos-en-sitio")
+def get_autos_en_sitio_dashboard():
+    _ensure_taller_schema()
+    items: list[dict[str, Any]] = []
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        recepciones = conn.execute(
+            """
+            SELECT r.id, r.folio_recep, r.fecha_recep, r.nb_cliente, r.tel_cliente, r.seguro, r.placas,
+                   r.vehiculo, r.vehiculo_marca, r.vehiculo_modelo, r.vehiculo_anio, r.vehiculo_tipo,
+                   r.vehiculo_color, r.estatus,
+                   he.folio_seguro,
+                   COALESCE(NULLIF(he.folio_ot, ''), r.folio_recep) AS folio_ot
+            FROM recepciones r
+            LEFT JOIN LATERAL (
+                SELECT folio_seguro, folio_ot
+                FROM historical_entries
+                WHERE folio_recep = r.folio_recep
+                ORDER BY id DESC
+                LIMIT 1
+            ) he ON TRUE
+            ORDER BY r.fecha_recep DESC, r.id DESC
+            """
+        ).fetchall()
+
+        for recepcion in recepciones:
+            if not _is_workshop_status(recepcion.get("estatus")):
+                continue
+            stages = _sync_ot_stages(conn, recepcion["id"])
+            current_stage = next((row for row in stages if str(row.get("estatus") or "").upper() == "EN_PROCESO"), None)
+            if current_stage is None:
+                current_stage = next((row for row in stages if str(row.get("estatus") or "").upper() == "PENDIENTE"), None)
+            if current_stage is None and stages:
+                current_stage = stages[-1]
+
+            active_assignment = conn.execute(
+                """
+                SELECT tea.id, tea.estacion_id, es.nb_estacion, tea.personal_id, tp.nb_personal
+                FROM taller_estacion_asignaciones tea
+                JOIN taller_estaciones es ON es.id = tea.estacion_id
+                JOIN taller_personal tp ON tp.id = tea.personal_id
+                WHERE tea.recepcion_id = %s AND tea.activa = TRUE
+                ORDER BY tea.created_at DESC, tea.id DESC
+                LIMIT 1
+                """,
+                (recepcion["id"],),
+            ).fetchone()
+
+            summary = dict(recepcion)
+            summary["etapa_actual"] = current_stage["clave"] if current_stage else None
+            summary["etapa_actual_nombre"] = current_stage["nb_etapa"] if current_stage else None
+            summary["progreso_actual"] = current_stage["progreso"] if current_stage else 0
+            summary["taller_estatus"] = current_stage["estatus"] if current_stage else "PENDIENTE"
+            summary["personal_responsable"] = (
+                current_stage.get("personal_responsable")
+                or (active_assignment["nb_personal"] if active_assignment else None)
+            )
+            summary["estacion_actual"] = (
+                current_stage.get("nb_estacion")
+                or (active_assignment["nb_estacion"] if active_assignment else None)
+            )
+            summary["dias_taller"] = None
+            items.append(summary)
+
+    return items
+
+
+@router.get("/dashboard/areas-trabajo")
+def get_areas_trabajo_dashboard():
+    _ensure_taller_schema()
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        areas = conn.execute(
+            """
+            SELECT ta.id, ta.nb_area, ta.capacidad_maxima, ta.activo, ta.etapa_id, te.clave, te.nb_etapa, te.orden
+            FROM taller_areas ta
+            JOIN taller_etapas te ON te.id = ta.etapa_id
+            WHERE ta.activo = TRUE
+            ORDER BY te.orden ASC, ta.nb_area ASC
+            """
+        ).fetchall()
+
+        result_areas: list[dict[str, Any]] = []
+        total_stations = 0
+        total_occupied = 0
+        total_free = 0
+        delayed_count = 0
+
+        for area in areas:
+            estaciones = conn.execute(
+                """
+                SELECT es.id, es.nb_estacion, es.tipo_estacion, es.estatus, es.activo,
+                       tea.recepcion_id, tea.folio_ot, tea.fecha_inicio,
+                       tp.nb_personal,
+                       r.vehiculo, r.vehiculo_marca, r.vehiculo_modelo, r.vehiculo_anio,
+                       ote.progreso, ote.estatus AS ot_estatus
+                FROM taller_estaciones es
+                LEFT JOIN LATERAL (
+                    SELECT tea.*
+                    FROM taller_estacion_asignaciones tea
+                    WHERE tea.estacion_id = es.id AND tea.activa = TRUE
+                    ORDER BY tea.created_at DESC, tea.id DESC
+                    LIMIT 1
+                ) tea ON TRUE
+                LEFT JOIN taller_personal tp ON tp.id = tea.personal_id
+                LEFT JOIN recepciones r ON r.id = tea.recepcion_id
+                LEFT JOIN LATERAL (
+                    SELECT ote.progreso, ote.estatus
+                    FROM taller_ot_etapas ote
+                    WHERE ote.recepcion_id = tea.recepcion_id
+                      AND ote.estacion_id = es.id
+                      AND ote.etapa_id = %s
+                    ORDER BY ote.updated_at DESC, ote.id DESC
+                    LIMIT 1
+                ) ote ON TRUE
+                WHERE es.area_id = %s AND es.activo = TRUE
+                ORDER BY es.nb_estacion ASC
+                """,
+                (area["etapa_id"], area["id"]),
+            ).fetchall()
+
+            mapped_stations: list[dict[str, Any]] = []
+            occupied_count = 0
+            for station in estaciones:
+                is_occupied = bool(station.get("recepcion_id"))
+                total_stations += 1
+                if is_occupied:
+                    occupied_count += 1
+                    total_occupied += 1
+                else:
+                    total_free += 1
+
+                progress = int(station.get("progreso") or 0)
+                station_status = "free"
+                if is_occupied:
+                    station_status = "occupied"
+                    if progress >= 90 and str(station.get("ot_estatus") or "").upper() != "COMPLETADO":
+                        station_status = "delayed"
+                        delayed_count += 1
+
+                mapped_stations.append(
+                    {
+                        "id": station["id"],
+                        "name": station["nb_estacion"],
+                        "subtitle": station.get("tipo_estacion") or ("Disponible para asignacion" if not is_occupied else area["nb_etapa"]),
+                        "status": station_status,
+                        "order": f"OT #{station['folio_ot']}" if station.get("folio_ot") else None,
+                        "vehicle": (
+                            " ".join(
+                                part for part in [station.get("vehiculo_marca"), station.get("vehiculo_modelo"), station.get("vehiculo_anio")] if part
+                            ).strip()
+                            or station.get("vehiculo")
+                        ),
+                        "task": area["nb_etapa"],
+                        "progress": progress,
+                        "tech": station.get("nb_personal"),
+                    }
+                )
+
+            result_areas.append(
+                {
+                    "id": area["id"],
+                    "icon": (
+                        "format_paint"
+                        if area["clave"] == "pintura"
+                        else "construction"
+                        if area["clave"] == "carroceria"
+                        else "auto_fix_high"
+                    ),
+                    "iconClass": (
+                        "text-violet-400"
+                        if area["clave"] == "pintura"
+                        else "text-blue-400"
+                        if area["clave"] == "carroceria"
+                        else "text-amber-400"
+                    ),
+                    "title": area["nb_area"],
+                    "capacity": f"{occupied_count}/{len(estaciones) or area['capacidad_maxima']}",
+                    "stations": mapped_stations,
+                }
+            )
+
+        return {
+            "areas": result_areas,
+            "totals": {
+                "occupied": total_occupied,
+                "free": total_free,
+                "stations": total_stations,
+                "delayed": delayed_count,
+            },
+        }

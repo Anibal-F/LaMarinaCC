@@ -538,6 +538,72 @@ export default function Sidebar() {
                 folder
               </span>
             </NavLink>
+            <NavLink
+              to="/catalogos/etapas-taller"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Etapas Taller</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">timeline</span>
+            </NavLink>
+            <NavLink
+              to="/catalogos/checklist-taller"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Checklist Taller</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">fact_check</span>
+            </NavLink>
+            <NavLink
+              to="/catalogos/areas-taller"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Áreas Taller</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">home_repair_service</span>
+            </NavLink>
+            <NavLink
+              to="/catalogos/estaciones-trabajo"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Estaciones Trabajo</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">grid_view</span>
+            </NavLink>
+            <NavLink
+              to="/catalogos/puestos-taller"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Puestos Taller</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">badge</span>
+            </NavLink>
+            <NavLink
+              to="/catalogos/personal-taller"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Personal Taller</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">groups</span>
+            </NavLink>
           </>
         ) : null}
         <button

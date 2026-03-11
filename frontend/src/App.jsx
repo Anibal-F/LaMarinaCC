@@ -19,6 +19,12 @@ import CatalogoAseguradoras from "./pages/Catalogos/Aseguradoras.jsx";
 import CatalogoPartesAuto from "./pages/Catalogos/PartesAuto.jsx";
 import CatalogoEstatusValuacion from "./pages/Catalogos/EstatusValuacion.jsx";
 import CatalogoExpedientes from "./pages/Catalogos/Expedientes.jsx";
+import CatalogoEtapasTaller from "./pages/Catalogos/EtapasTaller.jsx";
+import CatalogoChecklistTaller from "./pages/Catalogos/ChecklistTaller.jsx";
+import CatalogoAreasTaller from "./pages/Catalogos/AreasTaller.jsx";
+import CatalogoEstacionesTrabajo from "./pages/Catalogos/EstacionesTrabajo.jsx";
+import CatalogoPuestosTaller from "./pages/Catalogos/PuestosTaller.jsx";
+import CatalogoPersonalTaller from "./pages/Catalogos/PersonalTaller.jsx";
 import HistorialIngresos from "./pages/Reportes/HistorialIngresos.jsx";
 import ListadoVehiculosValuacion from "./pages/Valuacion/ListadoVehiculos.jsx";
 import ValuarVehiculo from "./pages/Valuacion/ValuarVehiculo.jsx";
@@ -122,6 +128,30 @@ export default function App() {
         <Route
           path="/catalogos/expedientes"
           element={authenticated ? <CatalogoExpedientes /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/etapas-taller"
+          element={authenticated ? <CatalogoEtapasTaller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/checklist-taller"
+          element={authenticated ? <CatalogoChecklistTaller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/areas-taller"
+          element={authenticated ? <CatalogoAreasTaller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/estaciones-trabajo"
+          element={authenticated ? <CatalogoEstacionesTrabajo /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/puestos-taller"
+          element={authenticated ? <CatalogoPuestosTaller /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/personal-taller"
+          element={authenticated ? <CatalogoPersonalTaller /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/reportes/historial"

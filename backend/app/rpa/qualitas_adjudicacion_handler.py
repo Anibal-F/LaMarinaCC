@@ -93,6 +93,7 @@ class QualitasAdjudicacionHandler:
     def __init__(self, page: Page):
         self.page = page
         self.resultados: List[ResultadoAdjudicacion] = []
+        self.wsreportid: str = ""  # Almacenar el ID del expediente encontrado
     
     async def buscar_expediente(self, id_expediente: str = None, num_reporte: str = None) -> bool:
         """
@@ -173,18 +174,33 @@ class QualitasAdjudicacionHandler:
                 print(f"[Adjudicacion] ✗ No se encontraron resultados para: {valor_busqueda}")
                 return False
             
-            # Verificar que el valor está en los resultados
+            # Verificar que el valor está en los resultados y extraer wsreportid
             filas = await tabla.all()
+            fila_objetivo = None
+            
             for fila in filas:
                 texto = await fila.text_content()
                 if valor_busqueda in texto:
                     print(f"[Adjudicacion] ✓ Registro encontrado: {valor_busqueda}")
-                    return True
+                    fila_objetivo = fila
+                    break
             
-            # Si no se encontró exactamente, verificar si hay al menos una fila
-            # (puede que el formato en la tabla sea diferente)
-            if len(filas) > 0:
-                print(f"[Adjudicacion] ✓ Resultados encontrados (filas: {len(filas)})")
+            # Si no se encontró exactamente, usar la primera fila
+            if not fila_objetivo and len(filas) > 0:
+                fila_objetivo = filas[0]
+                print(f"[Adjudicacion] ✓ Usando primera fila (filas: {len(filas)})")
+            
+            # Extraer wsreportid de la fila
+            if fila_objetivo:
+                try:
+                    # Buscar el input hidden con wereportid en la fila
+                    wsreportid = await fila_objetivo.eval_on_selector('input[name="wereportid"]', 'el => el.value')
+                    if wsreportid:
+                        self.wsreportid = wsreportid
+                        print(f"[Adjudicacion] wsreportid extraído: {wsreportid}")
+                except Exception as e:
+                    print(f"[Adjudicacion] ⚠ No se pudo extraer wsreportid: {e}")
+                
                 return True
             
             print(f"[Adjudicacion] ✗ Registro no encontrado en resultados: {valor_busqueda}")
@@ -269,10 +285,25 @@ class QualitasAdjudicacionHandler:
                 print(f"[Adjudicacion] ✗ Modal no está visible")
                 return False
             
-            # Llenar campos ocultos
-            await self.page.fill('#wsreporteid', datos.wsreportid)
-            await self.page.fill('#registered_f_app', datos.registered_f_app)
-            await self.page.fill('#QrFlag', datos.qr_flag)
+            # Llenar campos ocultos (usar evaluate para campos hidden)
+            print(f"[Adjudicacion] Configurando campos ocultos...")
+            
+            # Determinar qué wsreportid usar (prioridad: datos > self.wsreportid > campo actual)
+            wsreportid_a_usar = datos.wsreportid or self.wsreportid
+            
+            # Obtener el wsreportid del campo hidden (ya viene del expediente)
+            wsreportid_actual = await self.page.eval_on_selector('#wsreporteid', 'el => el.value')
+            if not wsreportid_actual and wsreportid_a_usar:
+                await self.page.eval_on_selector('#wsreporteid', f'(el, val) => el.value = val', wsreportid_a_usar)
+                print(f"[Adjudicacion] wsreportid establecido: {wsreportid_a_usar}")
+            else:
+                print(f"[Adjudicacion] wsreportid ya existe en formulario: {wsreportid_actual}")
+            
+            # Otros campos hidden
+            if datos.registered_f_app:
+                await self.page.eval_on_selector('#registered_f_app', f'(el, val) => el.value = val', datos.registered_f_app)
+            if datos.qr_flag:
+                await self.page.eval_on_selector('#QrFlag', f'(el, val) => el.value = val', datos.qr_flag)
             
             # Datos del contratante (readonly, pero verificar)
             if datos.contratante:

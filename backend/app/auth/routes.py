@@ -17,7 +17,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     name: str
     user_name: str
-    email: str
+    email: str | None = None
     profile: str
 
 
@@ -25,7 +25,7 @@ class RegisterRequest(BaseModel):
     name: str
     user_name: str
     password: str
-    email: str
+    email: str | None = None
     profile: str = "Administrador"
     profile_id: int | None = None
     status: bool = True
@@ -34,7 +34,7 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     name: str
     user_name: str
-    email: str
+    email: str | None = None
     profile: str
     status: bool
 
@@ -84,6 +84,7 @@ def login(payload: LoginRequest):
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest):
     hashed_password = pwd_context.hash(payload.password)
+    normalized_email = (payload.email or "").strip() or None
 
     with get_connection() as conn:
         profile_name = payload.profile
@@ -100,10 +101,10 @@ def register(payload: RegisterRequest):
             """
             SELECT 1
             FROM users
-            WHERE user_name = %s OR email = %s
+            WHERE user_name = %s OR (%s IS NOT NULL AND email = %s)
             LIMIT 1
             """,
-            (payload.user_name, payload.email),
+            (payload.user_name, normalized_email, normalized_email),
         ).fetchone()
 
         if exists:
@@ -119,7 +120,7 @@ def register(payload: RegisterRequest):
                 payload.name,
                 payload.user_name,
                 hashed_password,
-                payload.email,
+                normalized_email,
                 profile_name,
                 payload.profile_id,
                 payload.status,

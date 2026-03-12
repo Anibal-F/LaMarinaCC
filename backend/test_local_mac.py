@@ -51,7 +51,7 @@ else:
 
 DATOS_ORDEN = {
     # Número de reporte/siniestro (obligatorio)
-    "num_reporte": "04260407947",  # <-- Cambia esto
+    "num_reporte": "407947",  # <-- Cambia esto
     
     # Datos del cliente
     "nombre": "JOSE LUIS",

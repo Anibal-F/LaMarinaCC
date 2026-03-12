@@ -81,6 +81,8 @@ def update_user(user_id: int, payload: dict):
 
     if "password" in updates:
         updates["password"] = pwd_context.hash(str(updates["password"]))
+    if "email" in updates:
+        updates["email"] = (str(updates["email"]).strip() if updates["email"] is not None else "") or None
 
     fields = ", ".join(f"{key} = %s" for key in updates)
     values = list(updates.values()) + [user_id]

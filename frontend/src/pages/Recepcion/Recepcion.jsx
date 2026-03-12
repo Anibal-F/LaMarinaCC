@@ -323,7 +323,7 @@ export default function Recepcion() {
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
+        <main className="min-w-0 flex-1 flex flex-col overflow-hidden bg-background-dark">
           <AppHeader
             title="Listado de Recepción de Vehiculos"
             showSearch
@@ -346,7 +346,7 @@ export default function Recepcion() {
               </>
             }
           />
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+          <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-6">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mr-2">
                 Filtrar por estatus:

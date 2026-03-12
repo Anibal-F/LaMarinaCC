@@ -2013,7 +2013,7 @@ export default function RecepcionForm() {
                                   className="hidden"
                                   type="file"
                                   accept="image/*"
-                                  multiple
+                                  capture="environment"
                                   onChange={addFiles(setDamageRightFiles)}
                                 />
                               </label>
@@ -2088,7 +2088,7 @@ export default function RecepcionForm() {
                                   className="hidden"
                                   type="file"
                                   accept="image/*"
-                                  multiple
+                                  capture="environment"
                                   onChange={addFiles(setDamageLeftFiles)}
                                 />
                               </label>
@@ -2214,7 +2214,7 @@ export default function RecepcionForm() {
                                   className="hidden"
                                   type="file"
                                   accept="image/*"
-                                  multiple
+                                  capture="environment"
                                   onChange={addFiles(setPreexistRightFiles)}
                                 />
                               </label>
@@ -2289,7 +2289,7 @@ export default function RecepcionForm() {
                                   className="hidden"
                                   type="file"
                                   accept="image/*"
-                                  multiple
+                                  capture="environment"
                                   onChange={addFiles(setPreexistLeftFiles)}
                                 />
                               </label>

@@ -28,15 +28,15 @@ export default function AppHeader({
 
   return (
     <header className="h-16 border-b border-border-dark flex items-center justify-between px-6 shrink-0 bg-background-dark/80 backdrop-blur-md z-10">
-      <div className="flex items-center flex-1 max-w-xl gap-6">
+      <div className="min-w-0 flex items-center flex-1 max-w-xl gap-6">
         {title ? (
-          <div className="flex flex-col">
-            <h2 className="text-xl font-bold text-white whitespace-nowrap">{title}</h2>
+          <div className="min-w-0 flex flex-col">
+            <h2 className="text-xl font-bold text-white truncate md:whitespace-nowrap">{title}</h2>
             {subtitle ? <span className="text-xs text-slate-400">{subtitle}</span> : null}
           </div>
         ) : null}
         {showSearch ? (
-          <div className="relative w-full group">
+          <div className="relative min-w-0 w-full group">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xl group-focus-within:text-primary transition-colors">
               search
             </span>

@@ -21,11 +21,19 @@ export default function Login() {
     event.preventDefault();
     setError("");
 
+    const normalizedCredential = credential.trim();
+    const normalizedPassword = password.trim();
+
+    if (!normalizedCredential || !normalizedPassword) {
+      setError("Captura usuario/correo y contraseña.");
+      return;
+    }
+
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_name: credential, password })
+        body: JSON.stringify({ user_name: normalizedCredential, password: normalizedPassword })
       });
 
       if (!response.ok) {

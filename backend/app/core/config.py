@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     aws_transcribe_bucket: str = ""
     aws_transcribe_language_code: str = "es-MX"
+    aws_transcribe_identify_language: bool = False
+    aws_transcribe_language_options: str = "es-US,es-ES"
     aws_transcribe_timeout_seconds: int = 120
     aws_transcribe_poll_seconds: int = 2
     whatsapp_graph_api_base_url: str = "https://graph.facebook.com"

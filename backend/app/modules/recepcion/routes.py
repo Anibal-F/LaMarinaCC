@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime
 from io import BytesIO
 import json
@@ -1501,12 +1502,24 @@ async def transcribe_audio(file: UploadFile = File(...)):
         )
 
         media_uri = f"s3://{bucket}/{object_key}"
-        transcribe_client.start_transcription_job(
-            TranscriptionJobName=job_name,
-            LanguageCode=settings.aws_transcribe_language_code,
-            Media={"MediaFileUri": media_uri},
-            MediaFormat=media_format,
-        )
+        start_job_payload = {
+            "TranscriptionJobName": job_name,
+            "Media": {"MediaFileUri": media_uri},
+            "MediaFormat": media_format,
+        }
+        if settings.aws_transcribe_identify_language:
+            language_options = [
+                item.strip()
+                for item in (settings.aws_transcribe_language_options or "").split(",")
+                if item.strip()
+            ]
+            start_job_payload["IdentifyLanguage"] = True
+            if language_options:
+                start_job_payload["LanguageOptions"] = language_options
+        else:
+            start_job_payload["LanguageCode"] = settings.aws_transcribe_language_code
+
+        transcribe_client.start_transcription_job(**start_job_payload)
 
         deadline = time.time() + max(10, settings.aws_transcribe_timeout_seconds)
         transcript_file_uri = ""
@@ -1526,7 +1539,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Transcribe falló: {reason}",
                 )
-            time.sleep(max(1, settings.aws_transcribe_poll_seconds))
+            await asyncio.sleep(max(1, settings.aws_transcribe_poll_seconds))
 
         if not transcript_file_uri:
             raise HTTPException(

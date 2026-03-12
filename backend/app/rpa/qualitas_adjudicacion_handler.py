@@ -149,8 +149,9 @@ class QualitasAdjudicacionHandler:
         """
         # Determinar qué campo de búsqueda usar
         if num_reporte:
-            print(f"[Adjudicacion] Buscando por número de reporte: {num_reporte}")
-            valor_busqueda = str(num_reporte)
+            reporte_normalizado = "".join(ch for ch in str(num_reporte) if ch.isdigit())
+            valor_busqueda = reporte_normalizado[-6:] if reporte_normalizado else str(num_reporte).strip()[-6:]
+            print(f"[Adjudicacion] Buscando por número de reporte (últimos 6): {valor_busqueda}")
             campo_select = 'reporte'  # El valor en el select para buscar por reporte
         elif id_expediente:
             print(f"[Adjudicacion] Buscando por expediente: {id_expediente}")

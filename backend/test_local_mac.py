@@ -61,12 +61,15 @@ DATOS_ORDEN = {
     
     # Datos del vehículo
     "marca_qualitas_codigo": "DE",  # DE = Dodge, KA = KIA, CT = Chevrolet, etc.
+    "modelo_texto": "RAM 1500",
+    "color_vehiculo": "Blanco",
     "placa": "SINPLA",
     "anio_vehiculo": "2023",
     "nro_serie": "",
+    "es_hibrido_electrico": False,
     
     # Datos de la orden
-    "estatus_exp_id": "1",  # 1=Piso, 2=Tránsito, 4=Express
+    "estatus_exp_id": "2",  # 1=Piso, 2=Tránsito, 4=Express
     "ingreso_grua": "0",    # 0=No, 1=Sí
     "ubicacion": "Taller Principal",
     

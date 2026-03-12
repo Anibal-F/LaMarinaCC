@@ -42,8 +42,9 @@ class DatosAdjudicacion:
     # Datos del vehículo (opcionales)
     marca_taller_id: Optional[str] = None  # ID de marca del taller (solo si es "Otro")
     modelo_id: str = ""  # ID del modelo del vehículo
+    modelo_texto: str = ""  # Texto visible del modelo (ej: RAM 1500)
     anio_vehiculo: str = ""
-    color_vehiculo: str = ""  # Valor hex del color
+    color_vehiculo: str = ""  # Valor o texto visible del color
     economico: str = ""
     nro_serie: str = ""
     es_hibrido_electrico: bool = False
@@ -94,6 +95,46 @@ class QualitasAdjudicacionHandler:
         self.page = page
         self.resultados: List[ResultadoAdjudicacion] = []
         self.wsreportid: str = ""  # Almacenar el ID del expediente encontrado
+
+    async def _select_option_flexible(self, selector: str, desired_value: str, log_label: str) -> bool:
+        desired = (desired_value or "").strip()
+        if not desired:
+            return False
+
+        try:
+            await self.page.select_option(selector, desired)
+            print(f"[Adjudicacion] {log_label} seleccionado por valor: {desired}")
+            return True
+        except Exception:
+            pass
+
+        options = await self.page.eval_on_selector_all(
+            f"{selector} option",
+            """
+            options => options.map(option => ({
+                value: option.value || '',
+                label: (option.label || option.textContent || '').trim()
+            }))
+            """,
+        )
+
+        normalized_desired = desired.strip().lower()
+        for option in options:
+            value = str(option.get("value") or "")
+            label = str(option.get("label") or "")
+            if not value:
+                continue
+            if (
+                value.strip().lower() == normalized_desired
+                or label.strip().lower() == normalized_desired
+                or normalized_desired in label.strip().lower()
+            ):
+                await self.page.select_option(selector, value)
+                print(f"[Adjudicacion] {log_label} seleccionado por etiqueta: {label}")
+                return True
+
+        print(f"[Adjudicacion] {log_label} no encontrado: {desired}")
+        return False
     
     async def buscar_expediente(self, id_expediente: str = None, num_reporte: str = None) -> bool:
         """
@@ -305,13 +346,9 @@ class QualitasAdjudicacionHandler:
             if datos.qr_flag:
                 await self.page.eval_on_selector('#QrFlag', f'(el, val) => el.value = val', datos.qr_flag)
             
-            # Datos del contratante (readonly, pero verificar)
-            if datos.contratante:
-                await self.page.fill('#contratante', datos.contratante)
+            # Contratante: se deja vacio. El campo es readonly y no es necesario para este flujo.
             
-            # Vehículo de referencia (readonly)
-            if datos.vehiculo_referencia:
-                await self.page.fill('#vehiculo-cntr', datos.vehiculo_referencia)
+            # Vehiculo de referencia: se deja vacio. El campo es readonly y no es necesario para este flujo.
             
             # Datos del cliente
             await self.page.fill('#nombre', datos.nombre)
@@ -344,8 +381,9 @@ class QualitasAdjudicacionHandler:
                 await asyncio.sleep(0.5)
             
             # Modelo - Esperar a que cargue y seleccionar
-            if datos.modelo_id:
-                print(f"[Adjudicacion] Seleccionando modelo: {datos.modelo_id}")
+            if datos.modelo_id or datos.modelo_texto:
+                modelo_objetivo = datos.modelo_id or datos.modelo_texto
+                print(f"[Adjudicacion] Seleccionando modelo: {modelo_objetivo}")
                 # Esperar a que el select de modelo tenga opciones
                 await self.page.wait_for_function(
                     """() => {
@@ -354,7 +392,11 @@ class QualitasAdjudicacionHandler:
                     }""",
                     timeout=5000
                 )
-                await self.page.select_option('#gos_vehiculo_modelo_id_adjudicacion', datos.modelo_id)
+                await self._select_option_flexible(
+                    '#gos_vehiculo_modelo_id_adjudicacion',
+                    modelo_objetivo,
+                    "Modelo",
+                )
             
             # Año (readonly, pero verificar)
             if datos.anio_vehiculo:
@@ -365,20 +407,13 @@ class QualitasAdjudicacionHandler:
             # Color (dropdown)
             if datos.color_vehiculo:
                 print(f"[Adjudicacion] Seleccionando color: {datos.color_vehiculo}")
-                await self.page.select_option('#color_vehiculo_adjudicacion', datos.color_vehiculo)
+                await self._select_option_flexible(
+                    '#color_vehiculo_adjudicacion',
+                    datos.color_vehiculo,
+                    "Color",
+                )
             
-            # Placa
-            await self.page.fill('#placa', datos.placa)
-            
-            # Económico (opcional)
-            if datos.economico:
-                await self.page.fill('#economico', datos.economico)
-            
-            # Número de serie (readonly, pero verificar)
-            if datos.nro_serie:
-                current_serie = await self.page.input_value('#nro_serie')
-                if not current_serie:
-                    await self.page.fill('#nro_serie', datos.nro_serie)
+            # Placa, economico y numero de serie: se dejan vacios en este flujo.
             
             # Es híbrido o eléctrico
             if datos.es_hibrido_electrico:

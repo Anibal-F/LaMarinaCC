@@ -79,7 +79,7 @@ export default function AdminUsers() {
       const matchesQuery =
         !normalizedQuery ||
         user.user_name.toLowerCase().includes(normalizedQuery) ||
-        user.email.toLowerCase().includes(normalizedQuery);
+        String(user.email || "").toLowerCase().includes(normalizedQuery);
 
       const matchesStatus =
         statusFilter === "all" ||
@@ -121,9 +121,7 @@ export default function AdminUsers() {
     if (!form.user_name.trim()) {
       errors.user_name = "Usuario requerido";
     }
-    if (!form.email.trim()) {
-      errors.email = "Correo requerido";
-    } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) {
+    if (form.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) {
       errors.email = "Correo inválido";
     }
     if (!editingId && !form.password.trim()) {
@@ -261,7 +259,7 @@ export default function AdminUsers() {
                 ) : null}
                 <input
                   className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
-                  placeholder="Correo"
+                  placeholder="Correo (opcional)"
                   value={form.email}
                   onChange={(event) => setForm({ ...form, email: event.target.value })}
                 />
@@ -375,7 +373,7 @@ export default function AdminUsers() {
                         {user.name || "-"}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{user.user_name}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">{user.email}</td>
+                      <td className="px-4 py-3 text-sm text-slate-300">{user.email || "-"}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">
                         {user.profile_name || user.profile || "-"}
                       </td>
@@ -405,7 +403,7 @@ export default function AdminUsers() {
                               setForm({
                                 name: user.name || "",
                                 user_name: user.user_name,
-                                email: user.email,
+                                email: user.email || "",
                                 password: "",
                                 profile_id: user.profile_id ? String(user.profile_id) : "",
                                 status: Boolean(user.status)

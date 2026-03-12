@@ -6,7 +6,7 @@ import { createSession, isAuthenticated } from "../../utils/auth.js";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [userName, setUserName] = useState("");
+  const [credential, setCredential] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -25,7 +25,7 @@ export default function Login() {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_name: userName, password })
+        body: JSON.stringify({ user_name: credential, password })
       });
 
       if (!response.ok) {
@@ -64,18 +64,19 @@ export default function Login() {
               <form className="space-y-5" onSubmit={handleSubmit}>
                 <div className="flex flex-col gap-2">
                   <label className="text-white text-sm font-bold uppercase tracking-wider opacity-80">
-                    Correo Electrónico
+                    Usuario o Correo
                   </label>
                   <div className="flex w-full items-stretch rounded-lg group transition-all">
                     <input
                       className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg rounded-r-none border-r-0 text-white focus:outline-0 focus:ring-1 focus:ring-[#00527a] border-[#394c56] bg-[#1b2328] h-14 placeholder:text-[#9ab0bc]/40 px-4 text-base font-normal leading-normal transition-all"
-                      placeholder="ejemplo@lamarina.com"
-                      type="email"
-                      value={userName}
-                      onChange={(event) => setUserName(event.target.value)}
+                      placeholder="usuario o correo@lamarina.com"
+                      type="text"
+                      autoComplete="username"
+                      value={credential}
+                      onChange={(event) => setCredential(event.target.value)}
                     />
                     <div className="text-[#9ab0bc] flex border border-[#394c56] border-l-0 bg-[#1b2328] items-center justify-center px-4 rounded-r-lg">
-                      <span className="material-symbols-outlined text-xl">mail</span>
+                      <span className="material-symbols-outlined text-xl">person</span>
                     </div>
                   </div>
                 </div>

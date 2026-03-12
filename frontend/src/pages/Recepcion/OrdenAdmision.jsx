@@ -183,6 +183,8 @@ export default function OrdenAdmision() {
   const [adjudicacionModal, setAdjudicacionModal] = useState(null);
   const [adjudicando, setAdjudicando] = useState(false);
   const [adjudicacionResult, setAdjudicacionResult] = useState(null);
+  const [estatusExp, setEstatusExp] = useState("1"); // 1=Piso, 2=Tránsito
+  const [ingresoGrua, setIngresoGrua] = useState("0"); // 0=No, 1=Sí
   
   const [form, setForm] = useState({
     reporte_siniestro: "",
@@ -1054,8 +1056,8 @@ export default function OrdenAdmision() {
         color_vehiculo: obtenerCodigoColor(record.color_vehiculo),
         placa: record.placas || "",
         nro_serie: record.serie_auto || "",
-        estatus_exp_id: "1", // Piso por defecto
-        ingreso_grua: "0",
+        estatus_exp_id: estatusExp, // Valor seleccionado por el usuario
+        ingreso_grua: ingresoGrua, // Valor seleccionado por el usuario
         ubicacion: "Taller Principal",
         contratante: record.nb_cliente || "",
         vehiculo_referencia: `${record.marca_vehiculo || ""} ${record.tipo_vehiculo || ""} ${record.modelo_anio || ""}`.trim(),
@@ -2177,6 +2179,39 @@ export default function OrdenAdmision() {
                 <p className="text-xs text-slate-400">Placas: {adjudicacionModal.placas}</p>
               </div>
               
+              {/* Campos adicionales requeridos por Qualitas */}
+              {!adjudicando && !adjudicacionResult && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Estatus del Expediente *
+                    </label>
+                    <select
+                      className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                      value={estatusExp}
+                      onChange={(e) => setEstatusExp(e.target.value)}
+                    >
+                      <option value="1">Piso</option>
+                      <option value="2">Tránsito</option>
+                    </select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Ingreso por Grúa *
+                    </label>
+                    <select
+                      className="w-full bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                      value={ingresoGrua}
+                      onChange={(e) => setIngresoGrua(e.target.value)}
+                    >
+                      <option value="0">No</option>
+                      <option value="1">Sí</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              
               {adjudicando ? (
                 <div className="flex items-center gap-3 py-4">
                   <span className="material-symbols-outlined text-2xl text-primary animate-spin">refresh</span>
@@ -2211,6 +2246,8 @@ export default function OrdenAdmision() {
                 onClick={() => {
                   setAdjudicacionModal(null);
                   setAdjudicacionResult(null);
+                  setEstatusExp("1");
+                  setIngresoGrua("0");
                 }}
                 disabled={adjudicando}
               >

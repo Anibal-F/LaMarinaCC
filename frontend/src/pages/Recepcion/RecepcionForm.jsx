@@ -11,6 +11,63 @@ const MIN_OBSERVATION_RECORDING_MS = 800;
 const DEFAULT_DAMAGE_CANVAS_ZOOM = 1;
 const MOBILE_DEFAULT_DAMAGE_CANVAS_ZOOM = 3.5;
 const MAX_DAMAGE_CANVAS_ZOOM = 3.5;
+const INVENTORY_SECTIONS = [
+  {
+    key: "interiores",
+    title: "Interiores",
+    items: [
+      { key: "documentos", label: "Documentos" },
+      { key: "radio", label: "Radio" },
+      { key: "pantalla", label: "Pantalla" },
+      { key: "encendedor", label: "Encendedor" },
+      { key: "tapetes_tela", label: "Tapetes tela" },
+      { key: "tapetes_plastico", label: "Tapetes plástico" }
+    ]
+  },
+  {
+    key: "motor",
+    title: "Motor",
+    items: [
+      { key: "bateria", label: "Batería" },
+      { key: "computadora", label: "Computadora" },
+      { key: "tapones_depositos", label: "Tapones depósitos" }
+    ]
+  },
+  {
+    key: "exteriores",
+    title: "Exteriores",
+    items: [
+      { key: "antena", label: "Antena" },
+      { key: "polveras", label: "Polveras" },
+      { key: "centro_rin", label: "Centro de rin" },
+      { key: "placas_item", label: "Placas" }
+    ]
+  },
+  {
+    key: "cajuela",
+    title: "Cajuela",
+    items: [
+      { key: "herramienta", label: "Herramienta" },
+      { key: "reflejantes", label: "Reflejantes" },
+      { key: "cables_pasa_corriente", label: "Cables pasa corriente" },
+      { key: "llanta_refaccion", label: "Llanta de refacción" },
+      { key: "llave_l_cruceta", label: "Llave L o cruceta" },
+      { key: "extintor", label: "Extintor" },
+      { key: "gato", label: "Gato" }
+    ]
+  }
+];
+
+const createInventoryState = () => {
+  const items = INVENTORY_SECTIONS.flatMap((section) => section.items);
+  return items.reduce(
+    (acc, item) => {
+      acc[item.key] = { cantidad: "", estado: "" };
+      return acc;
+    },
+    { comentario: "" }
+  );
+};
 
 const resolveApiBaseUrl = () => {
   const configured = import.meta.env.VITE_API_URL || "/api";
@@ -51,6 +108,7 @@ export default function RecepcionForm() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [aseguradoras, setAseguradoras] = useState([]);
   const [fuelLevelIndex, setFuelLevelIndex] = useState(2);
+  const [activeTab, setActiveTab] = useState("general");
   const [form, setForm] = useState({
     folio_recep: "",
     fecha_recep: new Date().toISOString().slice(0, 16),
@@ -70,6 +128,7 @@ export default function RecepcionForm() {
     estado_mecanico: "",
     observaciones: ""
   });
+  const [inventoryForm, setInventoryForm] = useState(createInventoryState);
   const [videoFile, setVideoFile] = useState(null);
   const [damageRightFiles, setDamageRightFiles] = useState([]);
   const [damageLeftFiles, setDamageLeftFiles] = useState([]);
@@ -202,6 +261,16 @@ export default function RecepcionForm() {
     const incoming = (transcript || "").trim();
     if (!incoming) return current || "";
     return existing ? `${existing}\n${incoming}` : incoming;
+  };
+
+  const updateInventoryItem = (key, field, value) => {
+    setInventoryForm((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || { cantidad: "", estado: "" }),
+        [field]: value
+      }
+    }));
   };
 
   const stopAudioStream = () => {
@@ -381,12 +450,18 @@ export default function RecepcionForm() {
       fecha_entregaestim: form.fecha_entregaestim
         ? new Date(form.fecha_entregaestim).toISOString()
         : null,
-      estatus: form.estatus || "Recepcionado"
+      estatus: form.estatus || "Recepcionado",
+      inventario: {
+        ...inventoryForm,
+        nivel_gas: fuelLevels[fuelLevelIndex],
+        comentario: inventoryForm.comentario || null
+      }
     }),
     [
       form,
       fuelLevelIndex,
       reporteSiniestro,
+      inventoryForm,
       damagePartsSiniestro,
       damagePartsPreexist,
       damageObsSiniestro,
@@ -464,7 +539,12 @@ export default function RecepcionForm() {
         setDamagePartsPreexist(data.partes_preexistentes || []);
         setDamageObsSiniestro(data.observaciones_siniestro || "");
         setDamageObsPreexist(data.observaciones_preexistentes || "");
-        const levelIdx = fuelLevels.findIndex((level) => level === data.nivel_gas);
+        setInventoryForm({
+          ...createInventoryState(),
+          ...(data.inventario || {}),
+        });
+        const inventoryFuelLevel = data?.inventario?.nivel_gas || data.nivel_gas;
+        const levelIdx = fuelLevels.findIndex((level) => level === inventoryFuelLevel);
         setFuelLevelIndex(levelIdx >= 0 ? levelIdx : 2);
 
         const mediaResponse = await fetch(
@@ -1489,6 +1569,32 @@ export default function RecepcionForm() {
               </>
             }
           />
+          <div className="border-b border-border-dark bg-background-dark/40 px-6">
+            <div className="mx-auto flex max-w-7xl gap-8">
+              <button
+                type="button"
+                className={`py-4 text-xs font-bold uppercase tracking-widest transition-all ${
+                  activeTab === "general"
+                    ? "border-b-2 border-primary text-primary"
+                    : "border-b-2 border-transparent text-slate-400 hover:text-white"
+                }`}
+                onClick={() => setActiveTab("general")}
+              >
+                Información General
+              </button>
+              <button
+                type="button"
+                className={`py-4 text-xs font-bold uppercase tracking-widest transition-all ${
+                  activeTab === "inventario"
+                    ? "border-b-2 border-primary text-primary"
+                    : "border-b-2 border-transparent text-slate-400 hover:text-white"
+                }`}
+                onClick={() => setActiveTab("inventario")}
+              >
+                Inventario y Estado
+              </button>
+            </div>
+          </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
             {error ? (
               <div className="fixed right-6 top-20 z-50 rounded-lg border border-alert-red/40 bg-alert-red/10 px-4 py-3 text-sm text-alert-red shadow-lg">
@@ -1501,6 +1607,8 @@ export default function RecepcionForm() {
               </div>
             ) : null}
             <form className="max-w-7xl mx-auto grid grid-cols-12 gap-8 pb-12">
+              {activeTab === "general" ? (
+                <>
               <div className="col-span-12 lg:col-span-5 space-y-8">
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold text-primary uppercase tracking-widest flex items-center gap-2">
@@ -2439,6 +2547,170 @@ export default function RecepcionForm() {
                   </div>
                 </div>
               </div>
+                </>
+              ) : (
+                <div className="col-span-12 grid grid-cols-12 gap-6">
+                  <div className="col-span-12 xl:col-span-4 space-y-6">
+                    {INVENTORY_SECTIONS.filter((section) => ["interiores", "motor"].includes(section.key)).map((section) => (
+                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
+                        <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
+                          <h3 className="text-xs font-bold uppercase tracking-widest text-white">{section.title}</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-background-dark/40 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                              <tr>
+                                <th className="px-4 py-3">Descripción</th>
+                                <th className="px-4 py-3 w-24">Cant.</th>
+                                <th className="px-4 py-3 w-14 text-center">Sí</th>
+                                <th className="px-4 py-3 w-14 text-center">No</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border-dark">
+                              {section.items.map((item) => (
+                                <tr key={item.key} className="text-xs text-slate-300">
+                                  <td className="px-4 py-3">{item.label}</td>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      className="w-full rounded-md border border-border-dark bg-background-dark px-2 py-1 text-xs text-white"
+                                      type="text"
+                                      value={inventoryForm[item.key]?.cantidad || ""}
+                                      onChange={(event) => updateInventoryItem(item.key, "cantidad", event.target.value)}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <input
+                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      type="radio"
+                                      name={`${item.key}_estado`}
+                                      checked={inventoryForm[item.key]?.estado === "si"}
+                                      onChange={() => updateInventoryItem(item.key, "estado", "si")}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <input
+                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      type="radio"
+                                      name={`${item.key}_estado`}
+                                      checked={inventoryForm[item.key]?.estado === "no"}
+                                      onChange={() => updateInventoryItem(item.key, "estado", "no")}
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                  <div className="col-span-12 xl:col-span-5 space-y-6">
+                    {INVENTORY_SECTIONS.filter((section) => ["exteriores", "cajuela"].includes(section.key)).map((section) => (
+                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
+                        <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
+                          <h3 className="text-xs font-bold uppercase tracking-widest text-white">{section.title}</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-background-dark/40 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                              <tr>
+                                <th className="px-4 py-3">Descripción</th>
+                                <th className="px-4 py-3 w-24">Cant.</th>
+                                <th className="px-4 py-3 w-14 text-center">Sí</th>
+                                <th className="px-4 py-3 w-14 text-center">No</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border-dark">
+                              {section.items.map((item) => (
+                                <tr key={item.key} className="text-xs text-slate-300">
+                                  <td className="px-4 py-3">{item.label}</td>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      className="w-full rounded-md border border-border-dark bg-background-dark px-2 py-1 text-xs text-white"
+                                      type="text"
+                                      value={inventoryForm[item.key]?.cantidad || ""}
+                                      onChange={(event) => updateInventoryItem(item.key, "cantidad", event.target.value)}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <input
+                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      type="radio"
+                                      name={`${item.key}_estado`}
+                                      checked={inventoryForm[item.key]?.estado === "si"}
+                                      onChange={() => updateInventoryItem(item.key, "estado", "si")}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <input
+                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      type="radio"
+                                      name={`${item.key}_estado`}
+                                      checked={inventoryForm[item.key]?.estado === "no"}
+                                      onChange={() => updateInventoryItem(item.key, "estado", "no")}
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                  <div className="col-span-12 xl:col-span-3 space-y-6">
+                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
+                      <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-white">Medidor de gasolina</h3>
+                      </div>
+                      <div className="relative flex min-h-[24rem] flex-col items-center justify-center p-6">
+                        <span className="mb-3 text-xs font-bold text-slate-500">F</span>
+                        <div className="relative flex h-72 w-16 flex-col justify-end overflow-hidden rounded-full border border-border-dark bg-background-dark">
+                          <div className="absolute inset-0 flex flex-col justify-between py-4 opacity-20">
+                            {[0, 1, 2, 3].map((mark) => (
+                              <div key={mark} className="border-t border-slate-500" />
+                            ))}
+                          </div>
+                          <div
+                            className="w-full border-t-2 border-primary bg-primary/45 transition-all"
+                            style={{ height: `${((fuelLevelIndex + 1) / fuelLevels.length) * 100}%` }}
+                          />
+                        </div>
+                        <span className="mt-3 text-xs font-bold text-slate-500">E</span>
+                        <div className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md bg-primary px-2 py-1 text-[10px] font-bold uppercase text-white [writing-mode:vertical-rl]">
+                          {fuelLevels[fuelLevelIndex]}
+                        </div>
+                        <div className="mt-6 w-full">
+                          <input
+                            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-background-dark accent-primary"
+                            max="4"
+                            min="0"
+                            step="1"
+                            type="range"
+                            value={fuelLevelIndex}
+                            onChange={(event) => setFuelLevelIndex(Number(event.target.value))}
+                          />
+                        </div>
+                      </div>
+                    </section>
+                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
+                      <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-white">Comentario</h3>
+                      </div>
+                      <div className="p-4">
+                        <textarea
+                          className="h-56 w-full rounded-lg border border-border-dark bg-background-dark p-3 text-xs text-white focus:ring-1 focus:ring-primary"
+                          placeholder="Escriba sus observaciones aquí..."
+                          value={inventoryForm.comentario || ""}
+                          onChange={(event) =>
+                            setInventoryForm((prev) => ({ ...prev, comentario: event.target.value }))
+                          }
+                        />
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              )}
             </form>
           </div>
         </main>

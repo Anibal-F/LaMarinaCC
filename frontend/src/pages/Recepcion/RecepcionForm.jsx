@@ -58,6 +58,8 @@ const INVENTORY_SECTIONS = [
   }
 ];
 
+const BODY_STYLE_OPTIONS = ["Sedán", "Hatchback", "SUV", "PickUp", "Caja Seca", "Mini Van"];
+
 const createInventoryState = () => {
   const items = INVENTORY_SECTIONS.flatMap((section) => section.items);
   return items.reduce(
@@ -1358,12 +1360,15 @@ export default function RecepcionForm() {
   };
 
   useEffect(() => {
-    if (!damageSvgMarkup) return;
-    applySvgSelection(siniestroSvgRef, damagePartsSiniestro, "siniestro");
-    applySvgSelection(preexistSvgRef, damagePartsPreexist, "preexistente");
-    fitSvgToZones(siniestroSvgRef);
-    fitSvgToZones(preexistSvgRef);
-  }, [damageSvgMarkup, damagePartsSiniestro, damagePartsPreexist]);
+    if (!damageSvgMarkup || activeTab !== "general") return;
+    const raf = window.requestAnimationFrame(() => {
+      applySvgSelection(siniestroSvgRef, damagePartsSiniestro, "siniestro");
+      applySvgSelection(preexistSvgRef, damagePartsPreexist, "preexistente");
+      fitSvgToZones(siniestroSvgRef);
+      fitSvgToZones(preexistSvgRef);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [damageSvgMarkup, damagePartsSiniestro, damagePartsPreexist, activeTab]);
 
   useEffect(() => {
     if (!damageSvgMarkup || !damageModalOpen) return;
@@ -1758,62 +1763,15 @@ export default function RecepcionForm() {
                       addLabel="Agregar modelo"
                     />
                     <div className="space-y-1.5">
-                      <SearchableSelect
-                        label="Tipo / Carrocería"
-                        value={form.vehiculo_tipo}
-                        onChange={(value) => {
-                          setTipoError("");
-                          setForm((prev) => ({ ...prev, vehiculo_tipo: value }));
-                        }}
-                        options={Array.from(new Set(modelosFiltrados.map((modelo) => modelo.nb_modelo))).sort((a, b) => a.localeCompare(b, "es-MX"))}
-                        placeholder={form.vehiculo_marca ? "Selecciona tipo / carrocería" : "Selecciona primero una marca"}
-                        error={tipoError}
-                        onAdd={async (nombreTipo) => {
-                          setTipoError("");
-                          const nbTipo = String(nombreTipo || "").trim();
-                          if (!nbTipo) {
-                            setTipoError("Escribe el tipo / carrocería.");
-                            return;
-                          }
-                          if (!form.vehiculo_marca) {
-                            setTipoError("Selecciona primero una marca.");
-                            return;
-                          }
-
-                          const marca = marcasAutos.find(
-                            (item) => String(item.nb_marca || "").trim() === String(form.vehiculo_marca || "").trim()
-                          );
-                          if (!marca?.id) {
-                            setTipoError("No se encontró la marca seleccionada.");
-                            return;
-                          }
-
-                          try {
-                            const response = await fetch(`${import.meta.env.VITE_API_URL}/catalogos/modelos-autos`, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ marca_id: Number(marca.id), nb_modelo: nbTipo })
-                            });
-                            if (!response.ok) {
-                              const payload = await response.json().catch(() => null);
-                              throw new Error(payload?.detail || "No se pudo crear el tipo / carrocería");
-                            }
-                            const created = await response.json();
-                            setModelosAutos((prev) => {
-                              if (prev.some((item) => Number(item.id) === Number(created.id))) return prev;
-                              return [...prev, created];
-                            });
-                            setForm((prev) => ({ ...prev, vehiculo_tipo: created.nb_modelo || nbTipo }));
-                          } catch (err) {
-                            setTipoError(err.message || "No se pudo crear el tipo / carrocería");
-                          }
-                        }}
-                        addLabel="Agregar tipo"
-                        emptyLabel={
-                          form.vehiculo_marca
-                            ? "Sin tipos registrados para esta marca"
-                            : "Selecciona una marca para ver tipos"
-                        }
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Año</label>
+                      <input
+                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                        placeholder="2026"
+                        type="number"
+                        min="1900"
+                        max="2099"
+                        value={form.vehiculo_anio}
+                        onChange={(event) => setForm((prev) => ({ ...prev, vehiculo_anio: event.target.value }))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1847,28 +1805,20 @@ export default function RecepcionForm() {
                         onChange={(event) => setForm({ ...form, kilometraje: event.target.value })}
                       />
                     </div>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase">
-                          Nivel de Combustible
-                        </label>
-                        <span className="text-xs font-bold text-white bg-primary/20 px-2 py-0.5 rounded">
-                          {fuelLevels[fuelLevelIndex]}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-xs font-bold text-slate-500">E</span>
-                        <input
-                          className="w-full h-2 bg-background-dark rounded-lg appearance-none cursor-pointer accent-primary"
-                          max="4"
-                          min="0"
-                          step="1"
-                          type="range"
-                          value={fuelLevelIndex}
-                          onChange={(event) => setFuelLevelIndex(Number(event.target.value))}
-                        />
-                        <span className="text-xs font-bold text-slate-500">F</span>
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Carrocería</label>
+                      <select
+                        className="w-full bg-background-dark border-border-dark rounded-lg px-3 py-2 text-sm text-white"
+                        value={form.vehiculo_tipo}
+                        onChange={(event) => setForm((prev) => ({ ...prev, vehiculo_tipo: event.target.value }))}
+                      >
+                        <option value="">Selecciona carrocería</option>
+                        {BODY_STYLE_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Entrega Estimada</label>

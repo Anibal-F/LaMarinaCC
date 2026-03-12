@@ -383,41 +383,45 @@ export default function Recepcion() {
             {error ? <p className="text-sm text-alert-red">{error}</p> : null}
             {notice ? <p className="text-sm text-alert-green">{notice}</p> : null}
 
-            <div className="overflow-hidden bg-surface-dark border border-border-dark rounded-xl">
-              <table className="min-w-full text-left border-collapse">
+            <div
+              className="bg-surface-dark border border-border-dark rounded-xl overflow-x-auto overflow-y-hidden custom-scrollbar overscroll-x-contain touch-pan-x"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
+              <div className="min-w-max">
+              <table className="min-w-[1480px] w-max text-left border-collapse">
                 <thead>
                   <tr className="bg-background-dark/50">
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[110px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Folio
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[200px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Fecha/Hora ingreso
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[240px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Cliente
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[160px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Teléfono
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[260px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Vehiculo (Marca/Modelo)
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[130px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Placas
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[140px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Seguro
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[180px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Entrega estimada
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[140px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Estatus
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                    <th className="min-w-[140px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark whitespace-nowrap">
                       Daños
                     </th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-right">
+                    <th className="min-w-[210px] px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-right whitespace-nowrap">
                       Acciones
                     </th>
                   </tr>
@@ -425,11 +429,11 @@ export default function Recepcion() {
                 <tbody>
                   {filtered.map((record) => (
                     <tr key={record.id} className="border-b border-border-dark/50 hover:bg-white/5">
-                      <td className="px-4 py-3 text-sm text-primary font-bold">#{record.folio_recep}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">{record.fecha_recep}</td>
-                      <td className="px-4 py-3 text-sm text-white font-semibold">{record.nb_cliente}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">{record.tel_cliente || "-"}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">
+                      <td className="min-w-[110px] px-4 py-3 text-sm text-primary font-bold whitespace-nowrap">#{record.folio_recep}</td>
+                      <td className="min-w-[200px] px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{record.fecha_recep}</td>
+                      <td className="min-w-[240px] px-4 py-3 text-sm text-white font-semibold whitespace-nowrap">{record.nb_cliente}</td>
+                      <td className="min-w-[160px] px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{record.tel_cliente || "-"}</td>
+                      <td className="min-w-[260px] px-4 py-3 text-sm text-slate-300 whitespace-nowrap">
                         {record.vehiculo}
                         <span className="text-[10px] text-slate-500 block">
                           {[record.vehiculo_tipo, record.vehiculo_anio]
@@ -440,10 +444,10 @@ export default function Recepcion() {
                           <span className="text-[10px] text-slate-500 block">{record.color}</span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-300 font-mono uppercase">{record.placas}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">{record.seguro}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">{record.fecha_entregaestim}</td>
-                      <td className="px-4 py-3">
+                      <td className="min-w-[130px] px-4 py-3 text-xs text-slate-300 font-mono uppercase whitespace-nowrap">{record.placas}</td>
+                      <td className="min-w-[140px] px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{record.seguro}</td>
+                      <td className="min-w-[180px] px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{record.fecha_entregaestim}</td>
+                      <td className="min-w-[140px] px-4 py-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                             record.estatus === "En Valuacion"
@@ -458,7 +462,7 @@ export default function Recepcion() {
                           {record.estatus}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-300">
+                      <td className="min-w-[140px] px-4 py-3 text-sm text-slate-300 whitespace-nowrap">
                         {record.danos_siniestro_count || record.danos_preexistentes_count ? (
                           <span className="text-xs font-semibold text-slate-200">
                             S:{record.danos_siniestro_count || 0} · P:
@@ -468,7 +472,7 @@ export default function Recepcion() {
                           <span className="text-[10px] text-slate-500">Sin daños</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="min-w-[210px] px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
                             className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-slate-400 transition-colors disabled:opacity-60"
@@ -524,6 +528,7 @@ export default function Recepcion() {
                   ) : null}
                 </tbody>
               </table>
+              </div>
             </div>
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest px-2">
               <p>Mostrando {filtered.length} de {records.length} registros</p>

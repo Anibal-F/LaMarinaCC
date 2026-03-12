@@ -1052,8 +1052,9 @@ export default function OrdenAdmision() {
         email_cliente: record.email_cliente || "",
         marca_qualitas_codigo: obtenerCodigoMarcaQualitas(record.marca_vehiculo),
         modelo_id: "",
+        modelo_texto: record.tipo_vehiculo || "",
         anio_vehiculo: record.modelo_anio || "",
-        color_vehiculo: obtenerCodigoColor(record.color_vehiculo),
+        color_vehiculo: record.color_vehiculo || "",
         placa: record.placas || "",
         nro_serie: record.serie_auto || "",
         estatus_exp_id: estatusExp, // Valor seleccionado por el usuario
@@ -2262,7 +2263,7 @@ export default function OrdenAdmision() {
                   disabled={adjudicando}
                 >
                   <span className="material-symbols-outlined text-sm">play_arrow</span>
-                  {adjudicando ? "Ejecutando..." : "Ejecutar RPA"}
+                  {adjudicando ? "Ejecutando..." : "Adjudicar"}
                 </button>
               )}
             </div>

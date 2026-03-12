@@ -135,6 +135,33 @@ class QualitasAdjudicacionHandler:
 
         print(f"[Adjudicacion] {log_label} no encontrado: {desired}")
         return False
+
+    async def _select_bootstrap_option_by_search(self, selector: str, desired_text: str, log_label: str) -> bool:
+        desired = (desired_text or "").strip()
+        if not desired:
+            return False
+
+        try:
+            toggle = self.page.locator(f"button[data-id='{selector.lstrip('#')}']").first
+            await toggle.click()
+            menu = self.page.locator(".bootstrap-select.show .dropdown-menu.show").last
+            await menu.wait_for(state="visible", timeout=5000)
+
+            search_input = menu.locator(".bs-searchbox input").first
+            await search_input.fill("")
+            await search_input.fill(desired)
+            await asyncio.sleep(0.4)
+
+            first_option = menu.locator("ul.dropdown-menu.inner.show li:not(.hidden) a.dropdown-item").first
+            await first_option.wait_for(state="visible", timeout=5000)
+            option_text = (await first_option.locator(".text").text_content() or "").strip()
+            await first_option.click()
+            await asyncio.sleep(0.2)
+            print(f"[Adjudicacion] {log_label} seleccionado por búsqueda: {option_text}")
+            return True
+        except Exception as exc:
+            print(f"[Adjudicacion] {log_label} no se pudo seleccionar por búsqueda: {exc}")
+            return False
     
     async def buscar_expediente(self, id_expediente: str = None, num_reporte: str = None) -> bool:
         """
@@ -381,11 +408,10 @@ class QualitasAdjudicacionHandler:
                 await self.page.select_option('#gos_vehiculo_marca_id_adjudicacion', datos.marca_taller_id)
                 await asyncio.sleep(0.5)
             
-            # Modelo - Esperar a que cargue y seleccionar
+            # Modelo - usar la búsqueda visible del bootstrap-select y tomar la primera coincidencia.
             if datos.modelo_id or datos.modelo_texto:
-                modelo_objetivo = datos.modelo_id or datos.modelo_texto
+                modelo_objetivo = datos.modelo_texto or datos.modelo_id
                 print(f"[Adjudicacion] Seleccionando modelo: {modelo_objetivo}")
-                # Esperar a que el select de modelo tenga opciones
                 await self.page.wait_for_function(
                     """() => {
                         const select = document.querySelector('#gos_vehiculo_modelo_id_adjudicacion');
@@ -393,11 +419,22 @@ class QualitasAdjudicacionHandler:
                     }""",
                     timeout=5000
                 )
-                await self._select_option_flexible(
-                    '#gos_vehiculo_modelo_id_adjudicacion',
-                    modelo_objetivo,
-                    "Modelo",
-                )
+                modelo_seleccionado = False
+                if datos.modelo_texto:
+                    modelo_seleccionado = await self._select_bootstrap_option_by_search(
+                        '#gos_vehiculo_modelo_id_adjudicacion',
+                        datos.modelo_texto,
+                        "Modelo",
+                    )
+                if not modelo_seleccionado:
+                    fallback_objetivo = datos.modelo_id or datos.modelo_texto
+                    modelo_seleccionado = await self._select_option_flexible(
+                        '#gos_vehiculo_modelo_id_adjudicacion',
+                        fallback_objetivo,
+                        "Modelo",
+                    )
+                if not modelo_seleccionado:
+                    print(f"[Adjudicacion] ⚠ No se encontró coincidencia de modelo para: {modelo_objetivo}")
             
             # Año (readonly, pero verificar)
             if datos.anio_vehiculo:

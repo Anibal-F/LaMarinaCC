@@ -93,13 +93,15 @@ export default function RecepcionForm() {
   const fuelLevels = [
     "Tanque Vacio",
     "1/8 Tanque",
-    "1/4 Tanque",
+    "2/8 Tanque",
     "3/8 Tanque",
-    "1/2 Tanque",
-    "3/4 Tanque",
+    "4/8 Tanque",
+    "5/8 Tanque",
+    "6/8 Tanque",
+    "7/8 Tanque",
     "Tanque Lleno"
   ];
-  const fuelLevelShortLabels = ["E", "1/8", "1/4", "3/8", "1/2", "3/4", "F"];
+  const fuelLevelShortLabels = ["E", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "F"];
   const storedUser = getSession();
   const displayUserName = storedUser?.name || storedUser?.user_name || "Usuario";
   const [error, setError] = useState("");

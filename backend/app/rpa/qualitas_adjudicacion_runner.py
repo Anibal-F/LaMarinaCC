@@ -127,6 +127,7 @@ def dict_to_datos_adjudicacion(data: Dict[str, Any]) -> DatosAdjudicacion:
         marca_qualitas_codigo=data.get('marca_qualitas_codigo', ''),
         marca_taller_id=data.get('marca_taller_id'),
         modelo_id=data.get('modelo_id', ''),
+        modelo_texto=data.get('modelo_texto', ''),
         anio_vehiculo=str(data.get('anio_vehiculo', '')),
         color_vehiculo=data.get('color_vehiculo', ''),
         placa=data.get('placa', ''),

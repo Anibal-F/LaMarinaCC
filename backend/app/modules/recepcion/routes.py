@@ -959,6 +959,286 @@ def ensure_recepcion_media_table(conn):
     )
 
 
+def ensure_inventario_recepcion_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS inventario_recepcion (
+            id BIGSERIAL PRIMARY KEY,
+            recepcion_id BIGINT NOT NULL UNIQUE REFERENCES recepciones(id) ON DELETE CASCADE,
+            folio_recep VARCHAR(20),
+            placas VARCHAR(20),
+            folio_seguro VARCHAR(100),
+            documentos_cantidad TEXT,
+            documentos_estado VARCHAR(8),
+            radio_cantidad TEXT,
+            radio_estado VARCHAR(8),
+            pantalla_cantidad TEXT,
+            pantalla_estado VARCHAR(8),
+            encendedor_cantidad TEXT,
+            encendedor_estado VARCHAR(8),
+            tapetes_tela_cantidad TEXT,
+            tapetes_tela_estado VARCHAR(8),
+            tapetes_plastico_cantidad TEXT,
+            tapetes_plastico_estado VARCHAR(8),
+            bateria_cantidad TEXT,
+            bateria_estado VARCHAR(8),
+            computadora_cantidad TEXT,
+            computadora_estado VARCHAR(8),
+            tapones_depositos_cantidad TEXT,
+            tapones_depositos_estado VARCHAR(8),
+            antena_cantidad TEXT,
+            antena_estado VARCHAR(8),
+            polveras_cantidad TEXT,
+            polveras_estado VARCHAR(8),
+            centro_rin_cantidad TEXT,
+            centro_rin_estado VARCHAR(8),
+            placas_item_cantidad TEXT,
+            placas_item_estado VARCHAR(8),
+            herramienta_cantidad TEXT,
+            herramienta_estado VARCHAR(8),
+            reflejantes_cantidad TEXT,
+            reflejantes_estado VARCHAR(8),
+            cables_pasa_corriente_cantidad TEXT,
+            cables_pasa_corriente_estado VARCHAR(8),
+            llanta_refaccion_cantidad TEXT,
+            llanta_refaccion_estado VARCHAR(8),
+            llave_l_cruceta_cantidad TEXT,
+            llave_l_cruceta_estado VARCHAR(8),
+            extintor_cantidad TEXT,
+            extintor_estado VARCHAR(8),
+            gato_cantidad TEXT,
+            gato_estado VARCHAR(8),
+            nivel_gas VARCHAR(50),
+            comentario TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_inventario_recepcion_folio
+        ON inventario_recepcion(folio_recep)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_inventario_recepcion_placas
+        ON inventario_recepcion(placas)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_inventario_recepcion_folio_seguro
+        ON inventario_recepcion(folio_seguro)
+        """
+    )
+
+
+def _inventory_item_payload(item: Optional[dict[str, Any]]) -> tuple[Optional[str], Optional[str]]:
+    if not item:
+        return None, None
+    cantidad = item.get("cantidad")
+    estado = item.get("estado")
+    normalized_estado = str(estado).strip().lower() if estado is not None else None
+    if normalized_estado not in {"si", "no"}:
+        normalized_estado = None
+    return (
+        str(cantidad).strip() if cantidad is not None and str(cantidad).strip() else None,
+        normalized_estado,
+    )
+
+
+def _upsert_inventario_recepcion(
+    conn,
+    recepcion_id: int,
+    folio_recep: Optional[str],
+    placas: Optional[str],
+    folio_seguro: Optional[str],
+    inventario: Optional[dict[str, Any]],
+):
+    ensure_inventario_recepcion_table(conn)
+    if not inventario:
+        return
+
+    documentos_cantidad, documentos_estado = _inventory_item_payload(inventario.get("documentos"))
+    radio_cantidad, radio_estado = _inventory_item_payload(inventario.get("radio"))
+    pantalla_cantidad, pantalla_estado = _inventory_item_payload(inventario.get("pantalla"))
+    encendedor_cantidad, encendedor_estado = _inventory_item_payload(inventario.get("encendedor"))
+    tapetes_tela_cantidad, tapetes_tela_estado = _inventory_item_payload(inventario.get("tapetes_tela"))
+    tapetes_plastico_cantidad, tapetes_plastico_estado = _inventory_item_payload(inventario.get("tapetes_plastico"))
+    bateria_cantidad, bateria_estado = _inventory_item_payload(inventario.get("bateria"))
+    computadora_cantidad, computadora_estado = _inventory_item_payload(inventario.get("computadora"))
+    tapones_depositos_cantidad, tapones_depositos_estado = _inventory_item_payload(inventario.get("tapones_depositos"))
+    antena_cantidad, antena_estado = _inventory_item_payload(inventario.get("antena"))
+    polveras_cantidad, polveras_estado = _inventory_item_payload(inventario.get("polveras"))
+    centro_rin_cantidad, centro_rin_estado = _inventory_item_payload(inventario.get("centro_rin"))
+    placas_item_cantidad, placas_item_estado = _inventory_item_payload(inventario.get("placas_item"))
+    herramienta_cantidad, herramienta_estado = _inventory_item_payload(inventario.get("herramienta"))
+    reflejantes_cantidad, reflejantes_estado = _inventory_item_payload(inventario.get("reflejantes"))
+    cables_pasa_corriente_cantidad, cables_pasa_corriente_estado = _inventory_item_payload(
+        inventario.get("cables_pasa_corriente")
+    )
+    llanta_refaccion_cantidad, llanta_refaccion_estado = _inventory_item_payload(inventario.get("llanta_refaccion"))
+    llave_l_cruceta_cantidad, llave_l_cruceta_estado = _inventory_item_payload(inventario.get("llave_l_cruceta"))
+    extintor_cantidad, extintor_estado = _inventory_item_payload(inventario.get("extintor"))
+    gato_cantidad, gato_estado = _inventory_item_payload(inventario.get("gato"))
+
+    conn.execute(
+        """
+        INSERT INTO inventario_recepcion (
+            recepcion_id,
+            folio_recep,
+            placas,
+            folio_seguro,
+            documentos_cantidad,
+            documentos_estado,
+            radio_cantidad,
+            radio_estado,
+            pantalla_cantidad,
+            pantalla_estado,
+            encendedor_cantidad,
+            encendedor_estado,
+            tapetes_tela_cantidad,
+            tapetes_tela_estado,
+            tapetes_plastico_cantidad,
+            tapetes_plastico_estado,
+            bateria_cantidad,
+            bateria_estado,
+            computadora_cantidad,
+            computadora_estado,
+            tapones_depositos_cantidad,
+            tapones_depositos_estado,
+            antena_cantidad,
+            antena_estado,
+            polveras_cantidad,
+            polveras_estado,
+            centro_rin_cantidad,
+            centro_rin_estado,
+            placas_item_cantidad,
+            placas_item_estado,
+            herramienta_cantidad,
+            herramienta_estado,
+            reflejantes_cantidad,
+            reflejantes_estado,
+            cables_pasa_corriente_cantidad,
+            cables_pasa_corriente_estado,
+            llanta_refaccion_cantidad,
+            llanta_refaccion_estado,
+            llave_l_cruceta_cantidad,
+            llave_l_cruceta_estado,
+            extintor_cantidad,
+            extintor_estado,
+            gato_cantidad,
+            gato_estado,
+            nivel_gas,
+            comentario,
+            updated_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, NOW()
+        )
+        ON CONFLICT (recepcion_id) DO UPDATE SET
+            folio_recep = EXCLUDED.folio_recep,
+            placas = EXCLUDED.placas,
+            folio_seguro = EXCLUDED.folio_seguro,
+            documentos_cantidad = EXCLUDED.documentos_cantidad,
+            documentos_estado = EXCLUDED.documentos_estado,
+            radio_cantidad = EXCLUDED.radio_cantidad,
+            radio_estado = EXCLUDED.radio_estado,
+            pantalla_cantidad = EXCLUDED.pantalla_cantidad,
+            pantalla_estado = EXCLUDED.pantalla_estado,
+            encendedor_cantidad = EXCLUDED.encendedor_cantidad,
+            encendedor_estado = EXCLUDED.encendedor_estado,
+            tapetes_tela_cantidad = EXCLUDED.tapetes_tela_cantidad,
+            tapetes_tela_estado = EXCLUDED.tapetes_tela_estado,
+            tapetes_plastico_cantidad = EXCLUDED.tapetes_plastico_cantidad,
+            tapetes_plastico_estado = EXCLUDED.tapetes_plastico_estado,
+            bateria_cantidad = EXCLUDED.bateria_cantidad,
+            bateria_estado = EXCLUDED.bateria_estado,
+            computadora_cantidad = EXCLUDED.computadora_cantidad,
+            computadora_estado = EXCLUDED.computadora_estado,
+            tapones_depositos_cantidad = EXCLUDED.tapones_depositos_cantidad,
+            tapones_depositos_estado = EXCLUDED.tapones_depositos_estado,
+            antena_cantidad = EXCLUDED.antena_cantidad,
+            antena_estado = EXCLUDED.antena_estado,
+            polveras_cantidad = EXCLUDED.polveras_cantidad,
+            polveras_estado = EXCLUDED.polveras_estado,
+            centro_rin_cantidad = EXCLUDED.centro_rin_cantidad,
+            centro_rin_estado = EXCLUDED.centro_rin_estado,
+            placas_item_cantidad = EXCLUDED.placas_item_cantidad,
+            placas_item_estado = EXCLUDED.placas_item_estado,
+            herramienta_cantidad = EXCLUDED.herramienta_cantidad,
+            herramienta_estado = EXCLUDED.herramienta_estado,
+            reflejantes_cantidad = EXCLUDED.reflejantes_cantidad,
+            reflejantes_estado = EXCLUDED.reflejantes_estado,
+            cables_pasa_corriente_cantidad = EXCLUDED.cables_pasa_corriente_cantidad,
+            cables_pasa_corriente_estado = EXCLUDED.cables_pasa_corriente_estado,
+            llanta_refaccion_cantidad = EXCLUDED.llanta_refaccion_cantidad,
+            llanta_refaccion_estado = EXCLUDED.llanta_refaccion_estado,
+            llave_l_cruceta_cantidad = EXCLUDED.llave_l_cruceta_cantidad,
+            llave_l_cruceta_estado = EXCLUDED.llave_l_cruceta_estado,
+            extintor_cantidad = EXCLUDED.extintor_cantidad,
+            extintor_estado = EXCLUDED.extintor_estado,
+            gato_cantidad = EXCLUDED.gato_cantidad,
+            gato_estado = EXCLUDED.gato_estado,
+            nivel_gas = EXCLUDED.nivel_gas,
+            comentario = EXCLUDED.comentario,
+            updated_at = NOW()
+        """,
+        (
+            recepcion_id,
+            folio_recep,
+            placas,
+            folio_seguro,
+            documentos_cantidad,
+            documentos_estado,
+            radio_cantidad,
+            radio_estado,
+            pantalla_cantidad,
+            pantalla_estado,
+            encendedor_cantidad,
+            encendedor_estado,
+            tapetes_tela_cantidad,
+            tapetes_tela_estado,
+            tapetes_plastico_cantidad,
+            tapetes_plastico_estado,
+            bateria_cantidad,
+            bateria_estado,
+            computadora_cantidad,
+            computadora_estado,
+            tapones_depositos_cantidad,
+            tapones_depositos_estado,
+            antena_cantidad,
+            antena_estado,
+            polveras_cantidad,
+            polveras_estado,
+            centro_rin_cantidad,
+            centro_rin_estado,
+            placas_item_cantidad,
+            placas_item_estado,
+            herramienta_cantidad,
+            herramienta_estado,
+            reflejantes_cantidad,
+            reflejantes_estado,
+            cables_pasa_corriente_cantidad,
+            cables_pasa_corriente_estado,
+            llanta_refaccion_cantidad,
+            llanta_refaccion_estado,
+            llave_l_cruceta_cantidad,
+            llave_l_cruceta_estado,
+            extintor_cantidad,
+            extintor_estado,
+            gato_cantidad,
+            gato_estado,
+            inventario.get("nivel_gas"),
+            inventario.get("comentario"),
+        ),
+    )
+
+
 def _ensure_expediente_for_report(conn, reporte_siniestro: str) -> int:
     conn.row_factory = dict_row
     row = conn.execute(
@@ -2243,6 +2523,7 @@ class RecepcionCreate(BaseModel):
     folio_seguro: Optional[str] = None
     folio_ot: Optional[str] = None
     fecha_entrega: Optional[datetime] = None
+    inventario: Optional[dict[str, Any]] = None
 
 
 class RecepcionUpdate(BaseModel):
@@ -2275,6 +2556,7 @@ class RecepcionUpdate(BaseModel):
     folio_seguro: Optional[str] = None
     folio_ot: Optional[str] = None
     fecha_entrega: Optional[datetime] = None
+    inventario: Optional[dict[str, Any]] = None
 
 
 class WhatsAppRecepcionSendRequest(BaseModel):
@@ -2336,6 +2618,7 @@ def get_next_folio():
 def get_registro(recepcion_id: int):
     with get_connection() as conn:
         conn.row_factory = dict_row
+        ensure_inventario_recepcion_table(conn)
         row = conn.execute(
             """
             SELECT
@@ -2382,8 +2665,83 @@ def get_registro(recepcion_id: int):
             """,
             (recepcion_id,),
         ).fetchone()
+        inventory_row = conn.execute(
+            """
+            SELECT
+                documentos_cantidad,
+                documentos_estado,
+                radio_cantidad,
+                radio_estado,
+                pantalla_cantidad,
+                pantalla_estado,
+                encendedor_cantidad,
+                encendedor_estado,
+                tapetes_tela_cantidad,
+                tapetes_tela_estado,
+                tapetes_plastico_cantidad,
+                tapetes_plastico_estado,
+                bateria_cantidad,
+                bateria_estado,
+                computadora_cantidad,
+                computadora_estado,
+                tapones_depositos_cantidad,
+                tapones_depositos_estado,
+                antena_cantidad,
+                antena_estado,
+                polveras_cantidad,
+                polveras_estado,
+                centro_rin_cantidad,
+                centro_rin_estado,
+                placas_item_cantidad,
+                placas_item_estado,
+                herramienta_cantidad,
+                herramienta_estado,
+                reflejantes_cantidad,
+                reflejantes_estado,
+                cables_pasa_corriente_cantidad,
+                cables_pasa_corriente_estado,
+                llanta_refaccion_cantidad,
+                llanta_refaccion_estado,
+                llave_l_cruceta_cantidad,
+                llave_l_cruceta_estado,
+                extintor_cantidad,
+                extintor_estado,
+                gato_cantidad,
+                gato_estado,
+                nivel_gas,
+                comentario
+            FROM inventario_recepcion
+            WHERE recepcion_id = %s
+            LIMIT 1
+            """,
+            (recepcion_id,),
+        ).fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
+    row["inventario"] = {
+        "documentos": {"cantidad": inventory_row.get("documentos_cantidad") if inventory_row else None, "estado": inventory_row.get("documentos_estado") if inventory_row else None},
+        "radio": {"cantidad": inventory_row.get("radio_cantidad") if inventory_row else None, "estado": inventory_row.get("radio_estado") if inventory_row else None},
+        "pantalla": {"cantidad": inventory_row.get("pantalla_cantidad") if inventory_row else None, "estado": inventory_row.get("pantalla_estado") if inventory_row else None},
+        "encendedor": {"cantidad": inventory_row.get("encendedor_cantidad") if inventory_row else None, "estado": inventory_row.get("encendedor_estado") if inventory_row else None},
+        "tapetes_tela": {"cantidad": inventory_row.get("tapetes_tela_cantidad") if inventory_row else None, "estado": inventory_row.get("tapetes_tela_estado") if inventory_row else None},
+        "tapetes_plastico": {"cantidad": inventory_row.get("tapetes_plastico_cantidad") if inventory_row else None, "estado": inventory_row.get("tapetes_plastico_estado") if inventory_row else None},
+        "bateria": {"cantidad": inventory_row.get("bateria_cantidad") if inventory_row else None, "estado": inventory_row.get("bateria_estado") if inventory_row else None},
+        "computadora": {"cantidad": inventory_row.get("computadora_cantidad") if inventory_row else None, "estado": inventory_row.get("computadora_estado") if inventory_row else None},
+        "tapones_depositos": {"cantidad": inventory_row.get("tapones_depositos_cantidad") if inventory_row else None, "estado": inventory_row.get("tapones_depositos_estado") if inventory_row else None},
+        "antena": {"cantidad": inventory_row.get("antena_cantidad") if inventory_row else None, "estado": inventory_row.get("antena_estado") if inventory_row else None},
+        "polveras": {"cantidad": inventory_row.get("polveras_cantidad") if inventory_row else None, "estado": inventory_row.get("polveras_estado") if inventory_row else None},
+        "centro_rin": {"cantidad": inventory_row.get("centro_rin_cantidad") if inventory_row else None, "estado": inventory_row.get("centro_rin_estado") if inventory_row else None},
+        "placas_item": {"cantidad": inventory_row.get("placas_item_cantidad") if inventory_row else None, "estado": inventory_row.get("placas_item_estado") if inventory_row else None},
+        "herramienta": {"cantidad": inventory_row.get("herramienta_cantidad") if inventory_row else None, "estado": inventory_row.get("herramienta_estado") if inventory_row else None},
+        "reflejantes": {"cantidad": inventory_row.get("reflejantes_cantidad") if inventory_row else None, "estado": inventory_row.get("reflejantes_estado") if inventory_row else None},
+        "cables_pasa_corriente": {"cantidad": inventory_row.get("cables_pasa_corriente_cantidad") if inventory_row else None, "estado": inventory_row.get("cables_pasa_corriente_estado") if inventory_row else None},
+        "llanta_refaccion": {"cantidad": inventory_row.get("llanta_refaccion_cantidad") if inventory_row else None, "estado": inventory_row.get("llanta_refaccion_estado") if inventory_row else None},
+        "llave_l_cruceta": {"cantidad": inventory_row.get("llave_l_cruceta_cantidad") if inventory_row else None, "estado": inventory_row.get("llave_l_cruceta_estado") if inventory_row else None},
+        "extintor": {"cantidad": inventory_row.get("extintor_cantidad") if inventory_row else None, "estado": inventory_row.get("extintor_estado") if inventory_row else None},
+        "gato": {"cantidad": inventory_row.get("gato_cantidad") if inventory_row else None, "estado": inventory_row.get("gato_estado") if inventory_row else None},
+        "nivel_gas": inventory_row.get("nivel_gas") if inventory_row else None,
+        "comentario": inventory_row.get("comentario") if inventory_row else None,
+    }
     return row
 
 
@@ -3013,6 +3371,15 @@ def create_registro(payload: RecepcionCreate):
                 ),
             )
 
+            _upsert_inventario_recepcion(
+                conn,
+                row[0],
+                generated_folio,
+                payload.placas,
+                payload.folio_seguro,
+                payload.inventario,
+            )
+
     return {"id": row[0], "folio_recep": generated_folio}
 
 
@@ -3136,6 +3503,15 @@ def update_registro(recepcion_id: int, payload: RecepcionUpdate):
                 updated.get("folio_recep"),
                 current.get("folio_recep"),
             ),
+        )
+
+        _upsert_inventario_recepcion(
+            conn,
+            recepcion_id,
+            updated.get("folio_recep"),
+            updated.get("placas"),
+            next_folio_seguro,
+            payload.inventario,
         )
 
     return {"id": recepcion_id}

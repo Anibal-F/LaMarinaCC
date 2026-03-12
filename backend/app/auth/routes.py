@@ -49,6 +49,12 @@ def _verify_password(plain_password: str, stored_password: str) -> bool:
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest):
+    credential = (payload.user_name or "").strip()
+    normalized_email = credential.lower()
+
+    if not credential or not (payload.password or "").strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuario/correo y contraseña requeridos")
+
     with get_connection() as conn:
         row = conn.execute(
             """
@@ -61,10 +67,10 @@ def login(payload: LoginRequest):
                 u.status
             FROM users u
             LEFT JOIN profiles p ON p.id = u.profile_id
-            WHERE u.user_name = %s OR u.email = %s
+            WHERE TRIM(u.user_name) = %s OR LOWER(TRIM(COALESCE(u.email, ''))) = %s
             LIMIT 1
             """,
-            (payload.user_name, payload.user_name),
+            (credential, normalized_email),
         ).fetchone()
 
     if not row:
@@ -75,7 +81,7 @@ def login(payload: LoginRequest):
     if status_flag is False:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inactivo")
 
-    if not _verify_password(payload.password, password):
+    if not _verify_password(payload.password.strip(), password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
 
     return LoginResponse(name=name, user_name=user_name, email=email, profile=profile)

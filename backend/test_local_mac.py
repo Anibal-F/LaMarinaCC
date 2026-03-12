@@ -210,8 +210,54 @@ async def main():
     print(json.dumps(DATOS_ORDEN, indent=2, ensure_ascii=False))
     print()
     
-    confirm = input(f"{Colors.YELLOW}¿Proceder? (s/n): {Colors.END}").strip().lower()
-    if confirm not in ['s', 'si', 'yes', 'y']:
+    # Menú de opciones
+    print(f"{Colors.CYAN}Opciones:{Colors.END}")
+    print(f"  1. Ejecutar con estos datos")
+    print(f"  2. Cambiar Estatus (actual: {DATOS_ORDEN['estatus_exp_id']} = {'Piso' if DATOS_ORDEN['estatus_exp_id'] == '1' else 'Tránsito'})")
+    print(f"  3. Cambiar Ingreso Grúa (actual: {DATOS_ORDEN['ingreso_grua']} = {'No' if DATOS_ORDEN['ingreso_grua'] == '0' else 'Sí'})")
+    print(f"  4. Cambiar número de reporte")
+    print(f"  5. Cancelar")
+    
+    opcion = input(f"\n{Colors.YELLOW}Selecciona (1-5): {Colors.END}").strip()
+    
+    if opcion == "2":
+        print(f"\n  1 = Piso")
+        print(f"  2 = Tránsito")
+        nuevo = input("Estatus: ").strip()
+        if nuevo in ["1", "2"]:
+            DATOS_ORDEN["estatus_exp_id"] = nuevo
+            log_success(f"Estatus cambiado a: {'Piso' if nuevo == '1' else 'Tránsito'}")
+        else:
+            log_error("Opción inválida")
+    elif opcion == "3":
+        print(f"\n  0 = No")
+        print(f"  1 = Sí")
+        nuevo = input("Ingreso Grúa: ").strip()
+        if nuevo in ["0", "1"]:
+            DATOS_ORDEN["ingreso_grua"] = nuevo
+            log_success(f"Ingreso Grúa cambiado a: {'Sí' if nuevo == '1' else 'No'}")
+        else:
+            log_error("Opción inválida")
+    elif opcion == "4":
+        nuevo = input("Nuevo número de reporte: ").strip()
+        if nuevo:
+            DATOS_ORDEN["num_reporte"] = nuevo
+            log_success(f"Reporte cambiado a: {nuevo}")
+    elif opcion == "5":
+        print("Cancelado")
+        return
+    elif opcion not in ["1", "", "s", "si"]:
+        log_error("Opción inválida")
+        return
+    
+    # Mostrar datos finales
+    print(f"\n{Colors.GREEN}Datos finales:{Colors.END}")
+    print(f"  Reporte: {DATOS_ORDEN['num_reporte']}")
+    print(f"  Estatus: {'Piso' if DATOS_ORDEN['estatus_exp_id'] == '1' else 'Tránsito'}")
+    print(f"  Ingreso Grúa: {'Sí' if DATOS_ORDEN['ingreso_grua'] == '1' else 'No'}")
+    
+    confirm = input(f"\n{Colors.YELLOW}¿Proceder con la adjudicación? (s/n): {Colors.END}").strip().lower()
+    if confirm not in ['s', 'si', 'yes', 'y', '']:
         print("Cancelado")
         return
     

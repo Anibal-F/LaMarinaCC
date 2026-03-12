@@ -1966,8 +1966,8 @@ def lookup_por_placas(placas: str):
                 "tel_cliente": orden.get("tel_cliente"),
                 "email_cliente": orden.get("email_cliente"),
                 "vehiculo_marca": orden.get("marca_vehiculo"),
-                "vehiculo_modelo": orden.get("modelo_anio"),
-                "vehiculo_anio": None,
+                "vehiculo_modelo": orden.get("tipo_vehiculo"),
+                "vehiculo_anio": orden.get("modelo_anio"),
                 "vehiculo_tipo": orden.get("tipo_vehiculo"),
                 "vehiculo_color": orden.get("color_vehiculo"),
                 "placas": orden.get("placas"),
@@ -2563,7 +2563,7 @@ class WhatsAppRecepcionSendRequest(BaseModel):
     phones: list[str]
 
 
-def _next_recepcion_folio(conn) -> str:
+def _sync_recepcion_folio_sequence(conn) -> None:
     conn.execute(
         """
         CREATE SEQUENCE IF NOT EXISTS recepcion_folio_seq
@@ -2572,7 +2572,7 @@ def _next_recepcion_folio(conn) -> str:
         MINVALUE 5000
         """
     )
-    row = conn.execute(
+    conn.execute(
         """
         WITH max_recepciones AS (
             SELECT COALESCE(MAX(folio_recep::bigint), 4999) AS max_value
@@ -2599,8 +2599,29 @@ def _next_recepcion_folio(conn) -> str:
                 true
             ) AS current_value
         )
-        SELECT nextval('recepcion_folio_seq') AS next_folio
+        SELECT current_value
         FROM synced
+        """
+    ).fetchone()
+
+
+def _peek_recepcion_folio(conn) -> str:
+    _sync_recepcion_folio_sequence(conn)
+    row = conn.execute(
+        """
+        SELECT COALESCE(last_value, 4999) + 1 AS next_folio
+        FROM recepcion_folio_seq
+        """
+    ).fetchone()
+    next_folio = row[0] if row else 5000
+    return str(next_folio)
+
+
+def _next_recepcion_folio(conn) -> str:
+    _sync_recepcion_folio_sequence(conn)
+    row = conn.execute(
+        """
+        SELECT nextval('recepcion_folio_seq') AS next_folio
         """
     ).fetchone()
     next_folio = row[0] if row else 5000
@@ -2610,7 +2631,7 @@ def _next_recepcion_folio(conn) -> str:
 @router.get("/registros/next-folio")
 def get_next_folio():
     with get_connection() as conn:
-        folio = _next_recepcion_folio(conn)
+        folio = _peek_recepcion_folio(conn)
     return {"folio_recep": folio}
 
 

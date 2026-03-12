@@ -273,6 +273,10 @@ export default function RecepcionForm() {
     }));
   };
 
+  const handleFuelLevelSelect = (index) => {
+    setFuelLevelIndex(index);
+  };
+
   const stopAudioStream = () => {
     if (!audioStreamRef.current) return;
     audioStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -2549,47 +2553,47 @@ export default function RecepcionForm() {
               </div>
                 </>
               ) : (
-                <div className="col-span-12 grid grid-cols-12 gap-6">
+                <div className="col-span-12 grid grid-cols-12 gap-6 xl:gap-7">
                   <div className="col-span-12 xl:col-span-4 space-y-6">
                     {INVENTORY_SECTIONS.filter((section) => ["interiores", "motor"].includes(section.key)).map((section) => (
-                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
-                        <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
-                          <h3 className="text-xs font-bold uppercase tracking-widest text-white">{section.title}</h3>
+                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                        <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
+                          <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">{section.title}</h3>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left">
-                            <thead className="bg-background-dark/40 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                            <thead className="bg-background-dark/40 text-[11px] font-bold uppercase tracking-widest text-slate-500">
                               <tr>
-                                <th className="px-4 py-3">Descripción</th>
-                                <th className="px-4 py-3 w-24">Cant.</th>
-                                <th className="px-4 py-3 w-14 text-center">Sí</th>
-                                <th className="px-4 py-3 w-14 text-center">No</th>
+                                <th className="px-5 py-3.5">Descripción</th>
+                                <th className="px-4 py-3.5 w-28">Cant.</th>
+                                <th className="px-4 py-3.5 w-16 text-center">Sí</th>
+                                <th className="px-4 py-3.5 w-16 text-center">No</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border-dark">
                               {section.items.map((item) => (
-                                <tr key={item.key} className="text-xs text-slate-300">
-                                  <td className="px-4 py-3">{item.label}</td>
-                                  <td className="px-4 py-3">
+                                <tr key={item.key} className="text-sm text-slate-200">
+                                  <td className="px-5 py-3.5">{item.label}</td>
+                                  <td className="px-4 py-3.5">
                                     <input
-                                      className="w-full rounded-md border border-border-dark bg-background-dark px-2 py-1 text-xs text-white"
+                                      className="w-full rounded-md border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
                                       type="text"
                                       value={inventoryForm[item.key]?.cantidad || ""}
                                       onChange={(event) => updateInventoryItem(item.key, "cantidad", event.target.value)}
                                     />
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3.5 text-center">
                                     <input
-                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
                                       type="radio"
                                       name={`${item.key}_estado`}
                                       checked={inventoryForm[item.key]?.estado === "si"}
                                       onChange={() => updateInventoryItem(item.key, "estado", "si")}
                                     />
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3.5 text-center">
                                     <input
-                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
                                       type="radio"
                                       name={`${item.key}_estado`}
                                       checked={inventoryForm[item.key]?.estado === "no"}
@@ -2606,44 +2610,44 @@ export default function RecepcionForm() {
                   </div>
                   <div className="col-span-12 xl:col-span-5 space-y-6">
                     {INVENTORY_SECTIONS.filter((section) => ["exteriores", "cajuela"].includes(section.key)).map((section) => (
-                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
-                        <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
-                          <h3 className="text-xs font-bold uppercase tracking-widest text-white">{section.title}</h3>
+                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                        <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
+                          <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">{section.title}</h3>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left">
-                            <thead className="bg-background-dark/40 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                            <thead className="bg-background-dark/40 text-[11px] font-bold uppercase tracking-widest text-slate-500">
                               <tr>
-                                <th className="px-4 py-3">Descripción</th>
-                                <th className="px-4 py-3 w-24">Cant.</th>
-                                <th className="px-4 py-3 w-14 text-center">Sí</th>
-                                <th className="px-4 py-3 w-14 text-center">No</th>
+                                <th className="px-5 py-3.5">Descripción</th>
+                                <th className="px-4 py-3.5 w-28">Cant.</th>
+                                <th className="px-4 py-3.5 w-16 text-center">Sí</th>
+                                <th className="px-4 py-3.5 w-16 text-center">No</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border-dark">
                               {section.items.map((item) => (
-                                <tr key={item.key} className="text-xs text-slate-300">
-                                  <td className="px-4 py-3">{item.label}</td>
-                                  <td className="px-4 py-3">
+                                <tr key={item.key} className="text-sm text-slate-200">
+                                  <td className="px-5 py-3.5">{item.label}</td>
+                                  <td className="px-4 py-3.5">
                                     <input
-                                      className="w-full rounded-md border border-border-dark bg-background-dark px-2 py-1 text-xs text-white"
+                                      className="w-full rounded-md border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
                                       type="text"
                                       value={inventoryForm[item.key]?.cantidad || ""}
                                       onChange={(event) => updateInventoryItem(item.key, "cantidad", event.target.value)}
                                     />
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3.5 text-center">
                                     <input
-                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
                                       type="radio"
                                       name={`${item.key}_estado`}
                                       checked={inventoryForm[item.key]?.estado === "si"}
                                       onChange={() => updateInventoryItem(item.key, "estado", "si")}
                                     />
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3.5 text-center">
                                     <input
-                                      className="border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
                                       type="radio"
                                       name={`${item.key}_estado`}
                                       checked={inventoryForm[item.key]?.estado === "no"}
@@ -2659,16 +2663,28 @@ export default function RecepcionForm() {
                     ))}
                   </div>
                   <div className="col-span-12 xl:col-span-3 space-y-6">
-                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
-                      <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
-                        <h3 className="text-xs font-bold uppercase tracking-widest text-white">Medidor de gasolina</h3>
+                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                      <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
+                        <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">Medidor de gasolina</h3>
                       </div>
-                      <div className="relative flex min-h-[24rem] flex-col items-center justify-center p-6">
-                        <span className="mb-3 text-xs font-bold text-slate-500">F</span>
-                        <div className="relative flex h-72 w-16 flex-col justify-end overflow-hidden rounded-full border border-border-dark bg-background-dark">
+                      <div className="relative flex min-h-[27rem] flex-col items-center justify-center gap-5 p-6">
+                        <span className="text-sm font-bold text-slate-500">F</span>
+                        <div className="relative flex h-80 w-20 flex-col justify-end overflow-hidden rounded-full border border-border-dark bg-background-dark">
                           <div className="absolute inset-0 flex flex-col justify-between py-4 opacity-20">
                             {[0, 1, 2, 3].map((mark) => (
                               <div key={mark} className="border-t border-slate-500" />
+                            ))}
+                          </div>
+                          <div className="absolute inset-0 z-10 flex flex-col">
+                            {[4, 3, 2, 1, 0].map((index) => (
+                              <button
+                                key={index}
+                                type="button"
+                                className="flex-1 border-b border-transparent last:border-b-0"
+                                onClick={() => handleFuelLevelSelect(index)}
+                                aria-label={`Seleccionar ${fuelLevels[index]}`}
+                                title={fuelLevels[index]}
+                              />
                             ))}
                           </div>
                           <div
@@ -2676,11 +2692,11 @@ export default function RecepcionForm() {
                             style={{ height: `${((fuelLevelIndex + 1) / fuelLevels.length) * 100}%` }}
                           />
                         </div>
-                        <span className="mt-3 text-xs font-bold text-slate-500">E</span>
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md bg-primary px-2 py-1 text-[10px] font-bold uppercase text-white [writing-mode:vertical-rl]">
+                        <span className="text-sm font-bold text-slate-500">E</span>
+                        <div className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md bg-primary px-2 py-1.5 text-[10px] font-bold uppercase text-white [writing-mode:vertical-rl]">
                           {fuelLevels[fuelLevelIndex]}
                         </div>
-                        <div className="mt-6 w-full">
+                        <div className="w-full space-y-3">
                           <input
                             className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-background-dark accent-primary"
                             max="4"
@@ -2690,16 +2706,32 @@ export default function RecepcionForm() {
                             value={fuelLevelIndex}
                             onChange={(event) => setFuelLevelIndex(Number(event.target.value))}
                           />
+                          <div className="grid grid-cols-5 gap-2">
+                            {fuelLevels.map((label, index) => (
+                              <button
+                                key={label}
+                                type="button"
+                                className={`rounded-md border px-2 py-2 text-[11px] font-bold uppercase transition-colors ${
+                                  fuelLevelIndex === index
+                                    ? "border-primary bg-primary/20 text-white"
+                                    : "border-border-dark bg-background-dark text-slate-400 hover:text-white"
+                                }`}
+                                onClick={() => handleFuelLevelSelect(index)}
+                              >
+                                {index === 0 ? "E" : index === fuelLevels.length - 1 ? "F" : `${index}/4`}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </section>
-                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark">
-                      <div className="border-b border-border-dark bg-primary/15 px-4 py-3">
-                        <h3 className="text-xs font-bold uppercase tracking-widest text-white">Comentario</h3>
+                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                      <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
+                        <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">Comentario</h3>
                       </div>
-                      <div className="p-4">
+                      <div className="p-5">
                         <textarea
-                          className="h-56 w-full rounded-lg border border-border-dark bg-background-dark p-3 text-xs text-white focus:ring-1 focus:ring-primary"
+                          className="h-64 w-full rounded-lg border border-border-dark bg-background-dark p-4 text-sm text-white focus:ring-1 focus:ring-primary"
                           placeholder="Escriba sus observaciones aquí..."
                           value={inventoryForm.comentario || ""}
                           onChange={(event) =>

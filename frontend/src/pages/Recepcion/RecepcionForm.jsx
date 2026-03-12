@@ -90,7 +90,16 @@ export default function RecepcionForm() {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
   const isEditMode = Boolean(editId);
-  const fuelLevels = ["Tanque Vacio", "1/4 Tanque", "1/2 Tanque", "3/4 Tanque", "Tanque Lleno"];
+  const fuelLevels = [
+    "Tanque Vacio",
+    "1/8 Tanque",
+    "1/4 Tanque",
+    "3/8 Tanque",
+    "1/2 Tanque",
+    "3/4 Tanque",
+    "Tanque Lleno"
+  ];
+  const fuelLevelShortLabels = ["E", "1/8", "1/4", "3/8", "1/2", "3/4", "F"];
   const storedUser = getSession();
   const displayUserName = storedUser?.name || storedUser?.user_name || "Usuario";
   const [error, setError] = useState("");
@@ -1574,7 +1583,7 @@ export default function RecepcionForm() {
             }
           />
           <div className="border-b border-border-dark bg-background-dark/40 px-6">
-            <div className="mx-auto flex max-w-7xl gap-8">
+            <div className="mx-auto flex w-full max-w-[1700px] gap-8">
               <button
                 type="button"
                 className={`py-4 text-xs font-bold uppercase tracking-widest transition-all ${
@@ -1610,7 +1619,7 @@ export default function RecepcionForm() {
                 {success}
               </div>
             ) : null}
-            <form className="max-w-7xl mx-auto grid grid-cols-12 gap-8 pb-12">
+            <form className="mx-auto grid w-full max-w-[1700px] grid-cols-12 gap-8 pb-12">
               {activeTab === "general" ? (
                 <>
               <div className="col-span-12 lg:col-span-5 space-y-8">
@@ -2671,12 +2680,12 @@ export default function RecepcionForm() {
                         <span className="text-sm font-bold text-slate-500">F</span>
                         <div className="relative flex h-80 w-20 flex-col justify-end overflow-hidden rounded-full border border-border-dark bg-background-dark">
                           <div className="absolute inset-0 flex flex-col justify-between py-4 opacity-20">
-                            {[0, 1, 2, 3].map((mark) => (
+                            {Array.from({ length: fuelLevels.length - 1 }, (_, mark) => (
                               <div key={mark} className="border-t border-slate-500" />
                             ))}
                           </div>
                           <div className="absolute inset-0 z-10 flex flex-col">
-                            {[4, 3, 2, 1, 0].map((index) => (
+                            {Array.from({ length: fuelLevels.length }, (_, position) => fuelLevels.length - 1 - position).map((index) => (
                               <button
                                 key={index}
                                 type="button"
@@ -2689,7 +2698,9 @@ export default function RecepcionForm() {
                           </div>
                           <div
                             className="w-full border-t-2 border-primary bg-primary/45 transition-all"
-                            style={{ height: `${((fuelLevelIndex + 1) / fuelLevels.length) * 100}%` }}
+                            style={{
+                              height: `${fuelLevelIndex === 0 ? 0 : (fuelLevelIndex / (fuelLevels.length - 1)) * 100}%`
+                            }}
                           />
                         </div>
                         <span className="text-sm font-bold text-slate-500">E</span>
@@ -2699,7 +2710,7 @@ export default function RecepcionForm() {
                         <div className="w-full space-y-3">
                           <input
                             className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-background-dark accent-primary"
-                            max="4"
+                            max={fuelLevels.length - 1}
                             min="0"
                             step="1"
                             type="range"
@@ -2718,7 +2729,7 @@ export default function RecepcionForm() {
                                 }`}
                                 onClick={() => handleFuelLevelSelect(index)}
                               >
-                                {index === 0 ? "E" : index === fuelLevels.length - 1 ? "F" : `${index}/4`}
+                                {fuelLevelShortLabels[index]}
                               </button>
                             ))}
                           </div>

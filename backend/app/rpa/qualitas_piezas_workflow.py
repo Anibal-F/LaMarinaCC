@@ -83,7 +83,7 @@ class QualitasPiezasWorkflow:
             try:
                 # Configurar sesión
                 session_manager = QualitasSessionManager()
-                session_path = session_manager.session_dir / "qualitas_session.json"
+                session_path = session_manager.get_session_path("default")
                 
                 # Verificar si existe sesión
                 if use_existing_session and session_path.exists():

@@ -37,6 +37,8 @@ class PiezaBase(BaseModel):
     proveedor_id: Optional[int] = None
     numero_orden: Optional[str] = None
     numero_reporte: Optional[str] = None
+    paqueteria: Optional[str] = None
+    guia_paqueteria: Optional[str] = None
     fecha_promesa: Optional[datetime] = None
     fecha_estatus: Optional[datetime] = None
     estatus: Optional[str] = None

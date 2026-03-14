@@ -56,6 +56,9 @@ class PiezaInfo:
     entregado: bool
     portal: bool
     tipo_registro: str  # 'Proceso de Surtido' o 'Reasignada/Cancelada'
+    # Datos de paquetería
+    paqueteria: Optional[str] = None
+    guia_paqueteria: Optional[str] = None
 
 
 @dataclass
@@ -87,47 +90,86 @@ class QualitasPiezasExtractor:
             Lista de órdenes con sus piezas
         """
         resultados = []
+        ordenes_procesadas = 0
         
         # 1. Navegar al tab Tránsito
         print("[PiezasExtractor] Navegando al tab Tránsito...")
         await self._navigate_to_transito_tab()
         
-        # 2. Extraer lista de órdenes del tab Tránsito
-        print("[PiezasExtractor] Extrayendo lista de órdenes...")
-        ordenes = await self._extract_ordenes_list()
-        print(f"[PiezasExtractor] Se encontraron {len(ordenes)} órdenes en tránsito")
-        
-        if not ordenes:
-            return resultados
-        
-        # Limitar si se especificó
-        if max_ordenes:
-            ordenes = ordenes[:max_ordenes]
-            print(f"[PiezasExtractor] Procesando solo las primeras {max_ordenes} órdenes")
-        
-        # 3. Procesar cada orden
-        for i, orden in enumerate(ordenes, 1):
-            try:
-                print(f"\n[PiezasExtractor] Procesando orden {i}/{len(ordenes)}: {orden['num_expediente']}")
+        # Procesar página por página
+        pagina = 1
+        while True:
+            print(f"\n[PiezasExtractor] === Procesando página {pagina} ===")
+            
+            # 2. Extraer lista de órdenes de la página actual
+            print("[PiezasExtractor] Extrayendo lista de órdenes...")
+            ordenes = await self._extract_ordenes_list()
+            print(f"[PiezasExtractor] Se encontraron {len(ordenes)} órdenes en página {pagina}")
+            
+            if not ordenes:
+                print(f"[PiezasExtractor] No hay órdenes en página {pagina}, terminando...")
+                break
+            
+            # 3. Procesar cada orden de esta página
+            for i, orden in enumerate(ordenes, 1):
+                # Verificar límite de órdenes
+                if max_ordenes and ordenes_procesadas >= max_ordenes:
+                    print(f"[PiezasExtractor] Límite de {max_ordenes} órdenes alcanzado")
+                    return resultados
                 
-                orden_con_piezas = await self._process_single_orden(orden)
-                if orden_con_piezas and orden_con_piezas.piezas:
-                    resultados.append(orden_con_piezas)
-                    print(f"  ✓ Extraídas {len(orden_con_piezas.piezas)} piezas")
+                try:
+                    print(f"\n[PiezasExtractor] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {orden['num_expediente']}")
                     
-                    # Guardar en BD inmediatamente
-                    await self._save_to_database(orden_con_piezas)
-                else:
-                    print(f"  ⚠ No se encontraron piezas para esta orden")
+                    orden_con_piezas = await self._process_single_orden(orden)
+                    if orden_con_piezas and orden_con_piezas.piezas:
+                        resultados.append(orden_con_piezas)
+                        ordenes_procesadas += 1
+                        print(f"  ✓ Extraídas {len(orden_con_piezas.piezas)} piezas")
+                        
+                        # Guardar en BD inmediatamente
+                        await self._save_to_database(orden_con_piezas)
+                    else:
+                        print(f"  ⚠ No se encontraron piezas para esta orden")
+                    
+                    # Pequeña pausa entre órdenes
+                    await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    print(f"  ✗ Error procesando orden {orden['num_expediente']}: {e}")
+                    continue
+            
+            # 4. Verificar si hay siguiente página
+            siguiente_btn = self.page.locator('#pagina_siguiente_tabletransito')
+            
+            # Verificar si el botón existe y está habilitado
+            try:
+                is_visible = await siguiente_btn.is_visible()
+                is_disabled = await siguiente_btn.is_disabled()
                 
-                # Pequeña pausa entre órdenes
+                if not is_visible or is_disabled:
+                    print(f"[PiezasExtractor] No hay más páginas (botón deshabilitado o no visible)")
+                    break
+                
+                # Hacer clic en siguiente
+                print(f"[PiezasExtractor] Navegando a página {pagina + 1}...")
+                await siguiente_btn.click()
+                
+                # Esperar a que cargue la nueva página
+                await asyncio.sleep(2)
+                await self.page.wait_for_load_state('networkidle')
+                
+                # Esperar a que la tabla se actualice
+                await self.page.wait_for_selector('#tabletransito tbody tr', timeout=10000)
                 await asyncio.sleep(1)
                 
+                pagina += 1
+                
             except Exception as e:
-                print(f"  ✗ Error procesando orden {orden['num_expediente']}: {e}")
-                continue
+                print(f"[PiezasExtractor] Error navegando a siguiente página: {e}")
+                break
         
-        print(f"\n[PiezasExtractor] Total órdenes procesadas: {len(resultados)}")
+        print(f"\n[PiezasExtractor] Total páginas procesadas: {pagina}")
+        print(f"[PiezasExtractor] Total órdenes procesadas: {len(resultados)}")
         return resultados
     
     async def _navigate_to_transito_tab(self):
@@ -260,18 +302,17 @@ class QualitasPiezasExtractor:
             await new_page.wait_for_load_state('networkidle')
             await asyncio.sleep(1)
             
-            # 3. Extraer número de orden de la página
-            num_orden = await self._extract_num_orden(new_page)
-            
-            # 4. Extraer piezas de ambas tablas
+            # 3. Extraer piezas de ambas tablas (incluyendo datos de paquetería)
             piezas = await self._extract_piezas_from_page(new_page)
             
-            # 5. Cerrar pestaña y volver a la principal
+            # 4. Cerrar pestaña y volver a la principal
             await new_page.close()
             
+            # Usar num_expediente como numero_orden (es el número visible en Qualitas)
+            # y numero_reporte viene de la lista de tránsito
             return OrdenPiezas(
                 num_expediente=num_exp,
-                num_orden=num_orden,
+                num_orden=num_exp,  # El número de orden es el mismo que el expediente
                 numero_reporte=orden.get('numero_reporte'),
                 piezas=piezas,
                 fecha_extraccion=datetime.now()
@@ -498,6 +539,28 @@ class QualitasPiezasExtractor:
             except Exception as e:
                 print(f"    [Debug] Error leyendo checkboxes: {e}")
             
+            # Buscar icono de paquetería (solo en tabla de Proceso de Surtido)
+            paqueteria = None
+            guia_paqueteria = None
+            
+            if tipo_registro == 'Proceso de Surtido':
+                try:
+                    # Buscar el botón con icono de envío (fa-shipping-fast)
+                    shipping_btn = row.locator('button:has(i.fas.fa-shipping-fast), button[data-content*="Paquetería"]').first
+                    
+                    if await shipping_btn.is_visible():
+                        # Extraer datos del onclick
+                        onclick = await shipping_btn.get_attribute('onclick') or ''
+                        # El formato es: show_sent_date('2026-03-12 09:46:08','PAQUETE EXPRESS','211236920960')
+                        match = re.search(r"show_sent_date\('([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\)", onclick)
+                        if match:
+                            # fecha = match.group(1)  # No la necesitamos por ahora
+                            paqueteria = match.group(2)
+                            guia_paqueteria = match.group(3)
+                            print(f"    📦 Paquetería: {paqueteria}, Guía: {guia_paqueteria}")
+                except Exception as e:
+                    print(f"    [Debug] Error extrayendo paquetería: {e}")
+            
             return PiezaInfo(
                 nombre=nombre,
                 origen=origen,
@@ -513,7 +576,9 @@ class QualitasPiezasExtractor:
                 recibido=recibido,
                 entregado=entregado,
                 portal=portal,
-                tipo_registro=tipo_registro
+                tipo_registro=tipo_registro,
+                paqueteria=paqueteria,
+                guia_paqueteria=guia_paqueteria
             )
             
         except Exception as e:
@@ -709,8 +774,9 @@ class QualitasPiezasExtractor:
                                 numero_orden, numero_reporte,
                                 fecha_promesa, fecha_estatus, estatus, demeritos, ubicacion,
                                 devolucion_proveedor, recibido, entregado, portal,
-                                fuente, tipo_registro, num_expediente, id_externo
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                fuente, tipo_registro, num_expediente, id_externo,
+                                paqueteria, guia_paqueteria
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (id_externo, fuente) DO UPDATE SET
                                 numero_orden = EXCLUDED.numero_orden,
                                 numero_reporte = EXCLUDED.numero_reporte,
@@ -722,6 +788,8 @@ class QualitasPiezasExtractor:
                                 recibido = EXCLUDED.recibido,
                                 entregado = EXCLUDED.entregado,
                                 portal = EXCLUDED.portal,
+                                paqueteria = EXCLUDED.paqueteria,
+                                guia_paqueteria = EXCLUDED.guia_paqueteria,
                                 updated_at = CURRENT_TIMESTAMP
                         """, (
                             pieza.nombre, pieza.origen, pieza.numero_parte, pieza.observaciones,
@@ -729,7 +797,8 @@ class QualitasPiezasExtractor:
                             pieza.fecha_promesa, pieza.fecha_estatus,
                             pieza.estatus, pieza.demeritos, pieza.ubicacion,
                             pieza.devolucion_proveedor, pieza.recibido, pieza.entregado, pieza.portal,
-                            'Qualitas', pieza.tipo_registro, orden.num_expediente, id_externo
+                            'Qualitas', pieza.tipo_registro, orden.num_expediente, id_externo,
+                            pieza.paqueteria, pieza.guia_paqueteria
                         ))
                 
                 conn.commit()

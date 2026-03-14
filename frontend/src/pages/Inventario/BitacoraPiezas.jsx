@@ -26,6 +26,9 @@ const TIPO_REGISTRO_OPTIONS = ['Todos', 'Proceso de Surtido', 'Reasignada/Cancel
 // Componente Modal de Proveedor
 function ProveedorModal({ proveedor, isOpen, onClose }) {
   if (!isOpen || !proveedor) return null;
+  
+  const nombreLimpio = cleanProveedorNombre(proveedor.nombre);
+  const proveedorId = proveedor.id_externo || proveedor.id;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -45,7 +48,7 @@ function ProveedorModal({ proveedor, isOpen, onClose }) {
             <span className="material-symbols-outlined text-primary text-2xl">badge</span>
             <div>
               <p className="text-[10px] text-slate-500 uppercase tracking-wider">Identificador</p>
-              <p className="text-sm font-bold text-white">{proveedor.id}</p>
+              <p className="text-sm font-bold text-white">{proveedorId}</p>
             </div>
           </div>
           
@@ -53,7 +56,7 @@ function ProveedorModal({ proveedor, isOpen, onClose }) {
             <span className="material-symbols-outlined text-primary text-2xl">business</span>
             <div>
               <p className="text-[10px] text-slate-500 uppercase tracking-wider">Nombre</p>
-              <p className="text-sm font-bold text-white">{proveedor.nombre}</p>
+              <p className="text-sm font-bold text-white">{nombreLimpio}</p>
             </div>
           </div>
           
@@ -87,12 +90,21 @@ function ProveedorModal({ proveedor, isOpen, onClose }) {
   );
 }
 
+// Función para limpiar nombre de proveedor
+function cleanProveedorNombre(nombre) {
+  if (!nombre) return 'Sin Asignar';
+  // Remover CONTACT y todo lo que sigue
+  return nombre.split(/CONTACT/i)[0].trim() || 'Sin Asignar';
+}
+
 // Componente de celda de proveedor con ícono
 function ProveedorCell({ proveedor, onClickInfo }) {
+  const nombreLimpio = cleanProveedorNombre(proveedor.nombre);
+  
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-300 truncate max-w-[120px]" title={proveedor.nombre}>
-        {proveedor.id} {proveedor.nombre}
+      <span className="text-xs text-slate-300 truncate max-w-[120px]" title={nombreLimpio}>
+        {proveedor.id_externo || proveedor.id} {nombreLimpio}
       </span>
       <div className="flex items-center gap-1">
         <button
@@ -120,6 +132,33 @@ function ProveedorCell({ proveedor, onClickInfo }) {
           </span>
         </button>
       </div>
+    </div>
+  );
+}
+
+// Componente de celda de paquetería
+function PaqueteriaCell({ paqueteria, guia }) {
+  if (!paqueteria || !guia) return <span className="text-xs text-slate-500">-</span>;
+  
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        className="p-1 hover:bg-slate-700 rounded transition-colors"
+        title={`${paqueteria} - Guía: ${guia}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          // Copiar guía al portapapeles
+          navigator.clipboard.writeText(guia);
+          alert(`Guía ${guia} copiada al portapapeles`);
+        }}
+      >
+        <span className="material-symbols-outlined text-sm text-blue-400 hover:text-blue-300">
+          local_shipping
+        </span>
+      </button>
+      <span className="text-xs text-slate-400 truncate max-w-[80px]" title={guia}>
+        {guia}
+      </span>
     </div>
   );
 }
@@ -479,6 +518,7 @@ export default function BitacoraPiezas() {
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Reporte</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Observaciones</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Proveedor</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Paquetería</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Fecha Promesa</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Deméritos</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Estatus</th>
@@ -493,7 +533,7 @@ export default function BitacoraPiezas() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={17} className="px-3 py-8 text-center">
+                          <td colSpan={18} className="px-3 py-8 text-center">
                             <div className="flex items-center justify-center gap-2 text-slate-400">
                               <span className="material-symbols-outlined animate-spin">refresh</span>
                               <span className="text-sm">Cargando piezas...</span>
@@ -502,7 +542,7 @@ export default function BitacoraPiezas() {
                         </tr>
                       ) : pagedPiezas.length === 0 ? (
                         <tr>
-                          <td colSpan={17} className="px-3 py-8 text-center">
+                          <td colSpan={18} className="px-3 py-8 text-center">
                             <div className="flex flex-col items-center gap-2 text-slate-400">
                               <span className="material-symbols-outlined text-4xl">inventory_2</span>
                               <span className="text-sm">No hay piezas registradas</span>
@@ -534,6 +574,12 @@ export default function BitacoraPiezas() {
                               <ProveedorCell 
                                 proveedor={pieza.proveedor} 
                                 onClickInfo={() => openProveedorModal(pieza.proveedor)}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <PaqueteriaCell 
+                                paqueteria={pieza.paqueteria} 
+                                guia={pieza.guia_paqueteria}
                               />
                             </td>
                             <td className="px-3 py-2 text-xs text-slate-300">{formatDate(pieza.fecha_promesa)}</td>

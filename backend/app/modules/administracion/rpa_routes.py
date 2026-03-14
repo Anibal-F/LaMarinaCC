@@ -852,7 +852,8 @@ def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: boo
     try:
         # Construir comando
         cmd = [
-            "python3", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}"
+            "python3", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}",
+            "--use-db"  # Usar credenciales de BD
         ]
         
         if max_ordenes:

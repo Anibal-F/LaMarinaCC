@@ -21,9 +21,11 @@ from typing import Optional
 
 from playwright.async_api import async_playwright
 
-# Importar módulos existentes
+# Importar funciones del workflow existente
+from app.rpa.qualitas_full_workflow import (
+    load_credentials, get_credential, do_login
+)
 from app.rpa.qualitas_session_manager import QualitasSessionManager
-from app.rpa.qualitas_login_stealth import QualitasLoginManager
 from app.rpa.qualitas_piezas_extractor import QualitasPiezasExtractor, OrdenPiezas
 
 
@@ -46,7 +48,8 @@ class QualitasPiezasWorkflow:
     async def run(
         self,
         max_ordenes: Optional[int] = None,
-        use_existing_session: bool = True
+        use_existing_session: bool = True,
+        use_db: bool = True
     ) -> dict:
         """
         Ejecuta el workflow completo.
@@ -54,6 +57,7 @@ class QualitasPiezasWorkflow:
         Args:
             max_ordenes: Máximo de órdenes a procesar
             use_existing_session: Usar sesión guardada si existe
+            use_db: Usar credenciales de la base de datos
             
         Returns:
             Dict con resultados y estadísticas
@@ -64,47 +68,78 @@ class QualitasPiezasWorkflow:
         
         start_time = datetime.now()
         
+        # Cargar credenciales
+        if not load_credentials(use_db=use_db):
+            return {
+                "success": False,
+                "error": "No se pudieron cargar las credenciales de Qualitas",
+                "logs": "\n".join(self.logs)
+            }
+        
         async with async_playwright() as p:
             browser = None
             context = None
             
             try:
-                # 1. Intentar usar sesión existente
+                # Configurar sesión
                 session_manager = QualitasSessionManager()
-                session = session_manager.load_session()
+                session_path = session_manager.session_dir / "qualitas_session.json"
                 
-                if use_existing_session and session:
-                    self.log("✓ Sesión existente encontrada, reutilizando...")
-                    browser = await p.chromium.launch(
-                        headless=self.headless,
-                        slow_mo=self.slow_mo
-                    )
-                    context = await session_manager.create_context_with_session(browser)
-                    page = await context.new_page()
-                    
-                    # Verificar que la sesión sigue válida
-                    await page.goto("https://www.sistemaslaplataformalaguna.com/inicio")
+                # Verificar si existe sesión
+                if use_existing_session and session_path.exists():
+                    self.log("✓ Sesión existente encontrada")
+                    # No cargamos la sesión aquí, la usaremos en el contexto
+                
+                # Lanzar browser
+                browser = await p.chromium.launch(
+                    headless=self.headless,
+                    slow_mo=self.slow_mo,
+                    args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+                )
+                
+                # Crear contexto
+                if use_existing_session and session_path.exists():
+                    try:
+                        with open(session_path, 'r') as f:
+                            storage_state = json.load(f)
+                        context = await browser.new_context(storage_state=storage_state)
+                        self.log("✓ Contexto creado con sesión guardada")
+                    except Exception as e:
+                        self.log(f"⚠ Error cargando sesión: {e}, creando nuevo contexto")
+                        context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+                else:
+                    context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+                
+                page = await context.new_page()
+                
+                # Verificar sesión o hacer login
+                if use_existing_session and session_path.exists():
+                    dashboard_url = get_credential("QUALITAS_LOGIN_URL", use_db) or "https://proordersistem.com.mx/"
+                    await page.goto(f"{dashboard_url.rstrip('/')}/dashboard", wait_until="networkidle")
                     await asyncio.sleep(2)
                     
-                    if "login" in page.url.lower():
+                    # Verificar si redirigió al login
+                    if "login" in page.url.lower() or page.url.rstrip('/').endswith('proordersistem.com.mx/'):
                         self.log("⚠ Sesión expirada, requiere login")
-                        await browser.close()
-                        browser = None
-                        context = None
-                
-                # 2. Si no hay sesión válida, hacer login
-                if not browser:
-                    self.log("Iniciando nuevo login...")
-                    browser, context, page = await self._do_login(p)
+                        self.log("\n[1/3] LOGIN AUTOMÁTICO")
+                        success = await do_login(page, use_db=use_db)
+                        if not success:
+                            raise RuntimeError("Login fallido")
+                        
+                        # Guardar sesión
+                        await session_manager.save_session(context)
+                    else:
+                        self.log("✓ Sesión válida")
+                else:
+                    self.log("\n[1/3] LOGIN AUTOMÁTICO")
+                    success = await do_login(page, use_db=use_db)
+                    if not success:
+                        raise RuntimeError("Login fallido")
                     
-                    if not browser:
-                        return {
-                            "success": False,
-                            "error": "No se pudo iniciar sesión",
-                            "logs": "\n".join(self.logs)
-                        }
+                    # Guardar sesión
+                    await session_manager.save_session(context)
                 
-                # 3. Extraer piezas
+                # 2. Extraer piezas
                 self.log("\n" + "=" * 60)
                 self.log("EXTRAYENDO PIEZAS DE ÓRDENES EN TRÁNSITO")
                 self.log("=" * 60)
@@ -114,7 +149,7 @@ class QualitasPiezasWorkflow:
                 
                 self.resultados = ordenes
                 
-                # 4. Generar estadísticas
+                # 3. Generar estadísticas
                 total_piezas = sum(len(o.piezas) for o in ordenes)
                 piezas_surtido = sum(
                     1 for o in ordenes for p in o.piezas 
@@ -173,28 +208,6 @@ class QualitasPiezasWorkflow:
             finally:
                 if browser:
                     await browser.close()
-    
-    async def _do_login(self, playwright) -> tuple:
-        """Realiza el login en Qualitas"""
-        try:
-            login_manager = QualitasLoginManager(
-                headless=self.headless,
-                slow_mo=self.slow_mo
-            )
-            
-            # Intentar login automático
-            browser, context, page = await login_manager.login_auto()
-            
-            if not browser:
-                self.log("✗ No se pudo iniciar sesión automáticamente")
-                return None, None, None
-            
-            self.log("✓ Login exitoso")
-            return browser, context, page
-            
-        except Exception as e:
-            self.log(f"✗ Error en login: {e}")
-            return None, None, None
 
 
 def save_results(results: dict, output_dir: Path = None):
@@ -249,6 +262,12 @@ async def main():
         default=None,
         help='Directorio para guardar resultados'
     )
+    parser.add_argument(
+        '--use-db',
+        action='store_true',
+        default=True,
+        help='Usar credenciales desde la base de datos'
+    )
     
     args = parser.parse_args()
     
@@ -262,7 +281,8 @@ async def main():
     
     results = await workflow.run(
         max_ordenes=args.max_ordenes,
-        use_existing_session=True
+        use_existing_session=True,
+        use_db=args.use_db
     )
     
     # Guardar resultados

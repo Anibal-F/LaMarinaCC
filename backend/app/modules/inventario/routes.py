@@ -516,11 +516,17 @@ def health_check():
 async def extract_qualitas_piezas(
     background_tasks: BackgroundTasks,
     max_ordenes: int = Query(10, ge=1, le=50, description="Máximo de órdenes a procesar"),
-    api_key: str = Query(..., description="API Key para autenticación")
+    api_key: str = Query(..., description="API Key para autenticación"),
+    reset_checkpoint: bool = Query(False, description="Reiniciar checkpoint y empezar desde cero"),
+    max_retries: int = Query(3, ge=1, le=5, description="Máximo de reintentos automáticos")
 ):
     """
     Endpoint para ejecutar la extracción automática de piezas de Qualitas.
     Diseñado para ser llamado por un cronjob cada 4 horas.
+    
+    - Usa sistema de checkpoints para reanudar si se interrumpe
+    - Reintentos automáticos con backoff exponencial
+    - Máximo 30 minutos por intento
     
     Requiere api_key en query params para autenticación.
     """
@@ -530,36 +536,40 @@ async def extract_qualitas_piezas(
         raise HTTPException(status_code=401, detail="API Key inválida")
     
     try:
-        # Importar aquí para evitar circular imports
-        from playwright.async_api import async_playwright
         from app.rpa.qualitas_piezas_workflow import QualitasPiezasWorkflow
         
         print(f"[{datetime.now()}] Iniciando extracción automática de piezas Qualitas")
         print(f"  Max órdenes: {max_ordenes}")
+        print(f"  Max retries: {max_retries}")
+        print(f"  Reset checkpoint: {reset_checkpoint}")
         
-        workflow = QualitasPiezasWorkflow(headless=True, max_ordenes=max_ordenes)
-        resultados = await workflow.run()
+        workflow = QualitasPiezasWorkflow(headless=True, max_retries=max_retries)
         
-        total_piezas = sum(len(r.piezas) for r in resultados)
+        # Usar run_with_retries para reintentos automáticos
+        result = await workflow.run_with_retries(
+            max_ordenes=max_ordenes,
+            use_existing_session=True,
+            use_db=True,
+            max_total_time=1800,  # 30 minutos por intento
+            reset_checkpoint=reset_checkpoint
+        )
         
         return {
-            "success": True,
+            "success": result.get('success', False),
+            "partial_results": result.get('partial_results', False),
             "timestamp": datetime.now().isoformat(),
-            "ordenes_procesadas": len(resultados),
-            "total_piezas": total_piezas,
-            "detalle": [
-                {
-                    "num_expediente": r.num_expediente,
-                    "num_orden": r.num_orden,
-                    "numero_reporte": r.numero_reporte,
-                    "piezas_count": len(r.piezas)
-                }
-                for r in resultados
-            ]
+            "retries_used": result.get('retries_used', 0),
+            "checkpoint_stats": result.get('checkpoint_stats'),
+            "ordenes_procesadas": len(result.get('detalle_ordenes', [])),
+            "total_piezas": result.get('total_piezas', 0),
+            "detalle": result.get('detalle_ordenes', []),
+            "logs": result.get('logs', '')
         }
         
     except Exception as e:
         print(f"[{datetime.now()}] Error en extracción: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error en extracción: {str(e)}")
 
 

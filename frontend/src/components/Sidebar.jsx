@@ -363,17 +363,30 @@ export default function Sidebar() {
           ) : null}
         </button>
         {inventarioExpanded ? (
-          <NavLink
-            to="/inventario/bitacora-piezas"
-            className={({ isActive }) =>
-              `${navItemBase} ml-6 ${
-                isActive ? "text-white" : "text-slate-400 hover:text-white"
-              }`
-            }
-          >
-            {showLabels ? <span className="text-sm font-medium">Bitácora de Piezas</span> : null}
-            <span className="material-symbols-outlined text-[18px] ml-auto">table_view</span>
-          </NavLink>
+          <>
+            <NavLink
+              to="/inventario/bitacora-piezas"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Bitácora de Piezas</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">table_view</span>
+            </NavLink>
+            <NavLink
+              to="/inventario/paquetes-piezas"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Paquetes de Piezas</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">package_2</span>
+            </NavLink>
+          </>
         ) : null}
         {showLabels ? (
           <div className="pt-6 text-[10px] font-bold text-slate-500 uppercase px-3 py-2 tracking-widest">

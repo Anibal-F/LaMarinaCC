@@ -510,18 +510,40 @@ class QualitasPiezasExtractor:
     
     def _parse_proveedor(self, text: str) -> ProveedorInfo:
         """Parsea texto de proveedor: '14936 OZ AUTOMOTRIZ COUNTRY'"""
+        # Limpiar texto de elementos no deseados (iconos, botones, etc.)
+        # Remover palabras clave y sus variantes
+        cleaned = text.strip()
+        
+        # Remover CONTACT_ y todo lo que sigue (botones de contacto)
+        cleaned = re.split(r'CONTACT[_\s]', cleaned, flags=re.IGNORECASE)[0]
+        
+        # Remover iconos de FontAwesome (fas fa-*, far fa-*, etc.)
+        cleaned = re.sub(r'\s+fa[srbl]?\s+fa-\w+', '', cleaned, flags=re.IGNORECASE)
+        
+        # Remover palabras sueltas de iconos
+        cleaned = re.sub(r'\b(fas|far|fab|fa)\b', '', cleaned, flags=re.IGNORECASE)
+        
+        # Limpiar espacios extra
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
         # Intentar extraer ID numérico al inicio
-        match = re.match(r'^(\d+)\s+(.+)$', text.strip())
+        match = re.match(r'^(\d+)\s+(.+)$', cleaned)
         if match:
+            nombre_limpio = match.group(2).strip()
+            # Limitar nombre a 50 caracteres para evitar truncamiento feo
+            if len(nombre_limpio) > 50:
+                nombre_limpio = nombre_limpio[:47] + '...'
             return ProveedorInfo(
                 id_externo=int(match.group(1)),
-                nombre=match.group(2).strip()
+                nombre=nombre_limpio
             )
         
-        # Si no hay número, usar texto completo como nombre
+        # Si no hay número, usar texto limpio como nombre
+        if len(cleaned) > 50:
+            cleaned = cleaned[:47] + '...'
         return ProveedorInfo(
             id_externo=0,
-            nombre=text.strip()
+            nombre=cleaned
         )
     
     def _parse_fecha(self, text: str) -> Optional[datetime]:

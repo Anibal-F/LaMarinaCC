@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     volumes:
       - backend_media:/app/app/media
+    env_file:
+      - ./backend/.env
     environment:
       APP_NAME: ${APP_NAME:-LaMarinaCC}
       ENV: ${ENV:-prod}

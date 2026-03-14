@@ -618,6 +618,17 @@ export default function BitacoraPiezas() {
               </div>
             </div>
 
+            {/* Extracción automática de Qualitas - AHORA ARRIBA DE LA TABLA */}
+            {fuenteActiva === 'Qualitas' && (
+              <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
+                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-blue-500">cloud_download</span>
+                  Importar desde Qualitas
+                </h3>
+                <QualitasPiezasExtractor onExtractionComplete={fetchPiezas} />
+              </div>
+            )}
+
             {/* Indicadores */}
             {piezas.length > 0 && <IndicadoresPiezas piezas={piezas} />}
 
@@ -902,17 +913,6 @@ export default function BitacoraPiezas() {
                 </div>
               )}
             </div>
-
-            {/* Extracción automática de Qualitas */}
-            {fuenteActiva === 'Qualitas' && (
-              <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
-                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-blue-500">cloud_download</span>
-                  Importar desde Qualitas
-                </h3>
-                <QualitasPiezasExtractor onExtractionComplete={fetchPiezas} />
-              </div>
-            )}
 
             {/* Leyenda de indicadores (como en Qualitas) */}
             <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">

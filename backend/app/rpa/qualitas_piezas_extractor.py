@@ -16,11 +16,15 @@ Fecha: 2026-03-13
 """
 
 import asyncio
+import os
 import re
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
 from playwright.async_api import Page, expect
+
+# Forzar DATABASE_URL de RDS para el extractor de piezas
+os.environ['DATABASE_URL'] = 'postgresql+psycopg://LaMarinaCC:A355Fu584%24@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require'
 
 from app.core.db import get_connection
 

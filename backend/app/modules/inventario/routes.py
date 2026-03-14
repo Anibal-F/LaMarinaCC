@@ -34,6 +34,8 @@ class PiezaBase(BaseModel):
     numero_parte: Optional[str] = None
     observaciones: Optional[str] = None
     proveedor_id: Optional[int] = None
+    numero_orden: Optional[str] = None
+    numero_reporte: Optional[str] = None
     fecha_promesa: Optional[datetime] = None
     fecha_estatus: Optional[datetime] = None
     estatus: Optional[str] = None
@@ -59,6 +61,8 @@ class PiezaUpdate(BaseModel):
     numero_parte: Optional[str] = None
     observaciones: Optional[str] = None
     proveedor_id: Optional[int] = None
+    numero_orden: Optional[str] = None
+    numero_reporte: Optional[str] = None
     fecha_promesa: Optional[datetime] = None
     fecha_estatus: Optional[datetime] = None
     estatus: Optional[str] = None
@@ -261,16 +265,19 @@ def create_pieza(pieza: PiezaCreate):
                 cur.execute("""
                     INSERT INTO bitacora_piezas (
                         nombre, origen, numero_parte, observaciones, proveedor_id,
+                        numero_orden, numero_reporte,
                         fecha_promesa, fecha_estatus, estatus, demeritos, ubicacion,
                         devolucion_proveedor, recibido, entregado, portal,
                         fuente, tipo_registro, num_expediente, id_externo
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id_externo, fuente) DO UPDATE SET
                         nombre = EXCLUDED.nombre,
                         origen = EXCLUDED.origen,
                         numero_parte = EXCLUDED.numero_parte,
                         observaciones = EXCLUDED.observaciones,
                         proveedor_id = EXCLUDED.proveedor_id,
+                        numero_orden = EXCLUDED.numero_orden,
+                        numero_reporte = EXCLUDED.numero_reporte,
                         fecha_promesa = EXCLUDED.fecha_promesa,
                         fecha_estatus = EXCLUDED.fecha_estatus,
                         estatus = EXCLUDED.estatus,
@@ -286,7 +293,8 @@ def create_pieza(pieza: PiezaCreate):
                     RETURNING *
                 """, (
                     pieza.nombre, pieza.origen, pieza.numero_parte, pieza.observaciones, 
-                    pieza.proveedor_id, pieza.fecha_promesa, pieza.fecha_estatus, 
+                    pieza.proveedor_id, pieza.numero_orden, pieza.numero_reporte,
+                    pieza.fecha_promesa, pieza.fecha_estatus, 
                     pieza.estatus, pieza.demeritos, pieza.ubicacion,
                     pieza.devolucion_proveedor, pieza.recibido, pieza.entregado, pieza.portal,
                     pieza.fuente, pieza.tipo_registro, pieza.num_expediente, pieza.id_externo
@@ -323,6 +331,12 @@ def update_pieza(pieza_id: int, pieza: PiezaUpdate):
                 if pieza.proveedor_id is not None:
                     updates.append("proveedor_id = %s")
                     params.append(pieza.proveedor_id)
+                if pieza.numero_orden is not None:
+                    updates.append("numero_orden = %s")
+                    params.append(pieza.numero_orden)
+                if pieza.numero_reporte is not None:
+                    updates.append("numero_reporte = %s")
+                    params.append(pieza.numero_reporte)
                 if pieza.fecha_promesa is not None:
                     updates.append("fecha_promesa = %s")
                     params.append(pieza.fecha_promesa)

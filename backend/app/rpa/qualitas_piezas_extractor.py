@@ -63,6 +63,7 @@ class OrdenPiezas:
     """Órden con sus piezas extraídas"""
     num_expediente: str
     num_orden: Optional[str]
+    numero_reporte: Optional[str]  # Ej: "R: 04 0540704 25 A"
     piezas: List[PiezaInfo]
     fecha_extraccion: datetime
 
@@ -165,7 +166,7 @@ class QualitasPiezasExtractor:
     async def _extract_ordenes_list(self) -> List[Dict]:
         """
         Extrae la lista de órdenes del tab Tránsito.
-        Retorna lista con num_expediente y índice de fila.
+        Retorna lista con num_expediente, numero_reporte e índice de fila.
         """
         ordenes = []
         
@@ -181,15 +182,25 @@ class QualitasPiezasExtractor:
                 
                 # La primera celda con datos suele ser # Exp (índice 0 o 1)
                 num_exp = None
+                numero_reporte = None
+                
                 for j, cell in enumerate(cells[:3]):  # Revisar primeras 3 celdas
                     text = await cell.text_content()
-                    if text and text.strip().isdigit() and len(text.strip()) >= 6:
-                        num_exp = text.strip()
-                        break
+                    if not text:
+                        continue
+                    text = text.strip()
+                    
+                    # Buscar número de expediente (solo dígitos, 6+ caracteres)
+                    if text.isdigit() and len(text) >= 6:
+                        num_exp = text
+                    # Buscar número de reporte (contiene "R:" o "S:")
+                    elif 'R:' in text or 'S:' in text:
+                        numero_reporte = text
                 
                 if num_exp:
                     ordenes.append({
                         'num_expediente': num_exp,
+                        'numero_reporte': numero_reporte,
                         'row_index': i
                     })
                     
@@ -261,6 +272,7 @@ class QualitasPiezasExtractor:
             return OrdenPiezas(
                 num_expediente=num_exp,
                 num_orden=num_orden,
+                numero_reporte=orden.get('numero_reporte'),
                 piezas=piezas,
                 fecha_extraccion=datetime.now()
             )
@@ -680,10 +692,11 @@ class QualitasPiezasExtractor:
                         cur.execute("""
                             INSERT INTO bitacora_piezas (
                                 nombre, origen, numero_parte, observaciones, proveedor_id,
+                                numero_orden, numero_reporte,
                                 fecha_promesa, fecha_estatus, estatus, demeritos, ubicacion,
                                 devolucion_proveedor, recibido, entregado, portal,
                                 fuente, tipo_registro, num_expediente, id_externo
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (id_externo, fuente) DO UPDATE SET
                                 estatus = EXCLUDED.estatus,
                                 fecha_estatus = EXCLUDED.fecha_estatus,
@@ -696,7 +709,8 @@ class QualitasPiezasExtractor:
                                 updated_at = CURRENT_TIMESTAMP
                         """, (
                             pieza.nombre, pieza.origen, pieza.numero_parte, pieza.observaciones,
-                            proveedor_id, pieza.fecha_promesa, pieza.fecha_estatus,
+                            proveedor_id, orden.num_orden, orden.numero_reporte,
+                            pieza.fecha_promesa, pieza.fecha_estatus,
                             pieza.estatus, pieza.demeritos, pieza.ubicacion,
                             pieza.devolucion_proveedor, pieza.recibido, pieza.entregado, pieza.portal,
                             'Qualitas', pieza.tipo_registro, orden.num_expediente, id_externo

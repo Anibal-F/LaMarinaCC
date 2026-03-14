@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS bitacora_piezas (
     -- Relación con proveedor
     proveedor_id INTEGER REFERENCES proveedores(id) ON DELETE SET NULL,
     
+    -- Números de orden y reporte
+    numero_orden VARCHAR(50),               -- Número de orden (ej: 8530181)
+    numero_reporte VARCHAR(100),            -- Número de reporte/siniestro (ej: R: 04 0540704 25 A)
+    
     -- Fechas (separadas como solicitaste)
     fecha_promesa TIMESTAMP,                -- Fecha promesa de entrega
     fecha_estatus TIMESTAMP,                -- Fecha del estatus actual
@@ -103,6 +107,12 @@ CREATE INDEX IF NOT EXISTS idx_bitacora_piezas_tipo_registro
 CREATE INDEX IF NOT EXISTS idx_bitacora_piezas_num_exp 
     ON bitacora_piezas(num_expediente);
 
+CREATE INDEX IF NOT EXISTS idx_bitacora_piezas_numero_orden 
+    ON bitacora_piezas(numero_orden);
+
+CREATE INDEX IF NOT EXISTS idx_bitacora_piezas_numero_reporte 
+    ON bitacora_piezas(numero_reporte);
+
 CREATE INDEX IF NOT EXISTS idx_bitacora_piezas_fecha_ext 
     ON bitacora_piezas(fecha_extraccion DESC);
 
@@ -118,6 +128,10 @@ COMMENT ON TABLE bitacora_piezas IS 'Bitácora de piezas unificada de Qualitas y
 -- Vista con información completa incluyendo datos del proveedor
 -- =====================================================
 
+DROP VIEW IF EXISTS v_piezas_proceso_surtido;
+DROP VIEW IF EXISTS v_piezas_reasignadas_canceladas;
+DROP VIEW IF EXISTS v_bitacora_piezas_completa;
+
 CREATE OR REPLACE VIEW v_bitacora_piezas_completa AS
 SELECT 
     bp.id,
@@ -132,6 +146,10 @@ SELECT
     p.nombre AS proveedor_nombre,
     p.email AS proveedor_email,
     p.celular AS proveedor_celular,
+    
+    -- Nuevos campos de orden y reporte
+    bp.numero_orden,
+    bp.numero_reporte,
     
     -- Fechas
     bp.fecha_promesa,
@@ -221,6 +239,7 @@ ON CONFLICT (id_externo, fuente) DO NOTHING;
 -- Insertar piezas de ejemplo
 INSERT INTO bitacora_piezas (
     nombre, origen, numero_parte, observaciones, proveedor_id,
+    numero_orden, numero_reporte,
     fecha_promesa, fecha_estatus, estatus, demeritos, ubicacion,
     devolucion_proveedor, recibido, entregado, portal,
     fuente, tipo_registro, num_expediente, id_externo
@@ -228,6 +247,7 @@ INSERT INTO bitacora_piezas (
 (
     'ANTIGRAVILLA PUERTA DESLIZABLE DERECHA', 'ORIGINAL', 'AG-2024-001', '', 
     (SELECT id FROM proveedores WHERE id_externo = 14936 AND fuente = 'Qualitas'),
+    '8530181', 'R: 04 0540704 25 A',
     '2025-04-20 10:00:00', '2025-04-16 12:00:46', 'Cancelada', 0, 'ND',
     false, false, false, false,
     'Qualitas', 'Reasignada/Cancelada', 'EXP-001', 'Q-PZ-001'
@@ -235,6 +255,7 @@ INSERT INTO bitacora_piezas (
 (
     'FARO DELANTERO DERECHO', 'ORIGINAL', 'FD-2024-102', 'Urgente',
     (SELECT id FROM proveedores WHERE id_externo = 14937 AND fuente = 'Qualitas'),
+    '8543615', 'R: 04 0575682 25 T1',
     '2025-04-18 14:00:00', '2025-04-15 09:30:00', 'En Proceso', 150, 'ALMACEN',
     false, true, false, true,
     'Qualitas', 'Proceso de Surtido', 'EXP-002', 'Q-PZ-002'
@@ -242,6 +263,7 @@ INSERT INTO bitacora_piezas (
 (
     'PARACHOQUE TRASERO', 'GENERICO', 'PT-2024-055', 'Pintar match',
     (SELECT id FROM proveedores WHERE id_externo = 14938 AND fuente = 'Qualitas'),
+    '8553803', 'R: 04 0602113 25 A',
     '2025-04-22 11:00:00', '2025-04-14 16:45:00', 'Pendiente', 0, 'PENDIENTE',
     false, false, false, false,
     'Qualitas', 'Proceso de Surtido', 'EXP-003', 'Q-PZ-003'
@@ -255,5 +277,5 @@ ON CONFLICT (id_externo, fuente) DO NOTHING;
 
 SELECT 'Tablas creadas exitosamente!' AS resultado;
 SELECT ' - proveedores' AS tabla;
-SELECT ' - bitacora_piezas' AS tabla;
+SELECT ' - bitacora_piezas (con numero_orden y numero_reporte)' AS tabla;
 SELECT ' - Vistas: v_bitacora_piezas_completa, v_piezas_proceso_surtido, v_piezas_reasignadas_canceladas' AS info;

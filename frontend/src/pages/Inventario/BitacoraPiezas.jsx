@@ -475,6 +475,8 @@ export default function BitacoraPiezas() {
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Nombre</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Origen</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark"># Parte</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Orden</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Reporte</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Observaciones</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Proveedor</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Fecha Promesa</th>
@@ -491,7 +493,7 @@ export default function BitacoraPiezas() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={15} className="px-3 py-8 text-center">
+                          <td colSpan={17} className="px-3 py-8 text-center">
                             <div className="flex items-center justify-center gap-2 text-slate-400">
                               <span className="material-symbols-outlined animate-spin">refresh</span>
                               <span className="text-sm">Cargando piezas...</span>
@@ -500,7 +502,7 @@ export default function BitacoraPiezas() {
                         </tr>
                       ) : pagedPiezas.length === 0 ? (
                         <tr>
-                          <td colSpan={15} className="px-3 py-8 text-center">
+                          <td colSpan={17} className="px-3 py-8 text-center">
                             <div className="flex flex-col items-center gap-2 text-slate-400">
                               <span className="material-symbols-outlined text-4xl">inventory_2</span>
                               <span className="text-sm">No hay piezas registradas</span>
@@ -521,6 +523,10 @@ export default function BitacoraPiezas() {
                             </td>
                             <td className="px-3 py-2 text-xs text-slate-300">{pieza.origen}</td>
                             <td className="px-3 py-2 text-xs text-slate-300 font-mono">{pieza.numero_parte}</td>
+                            <td className="px-3 py-2 text-xs text-slate-300 font-mono">{pieza.numero_orden}</td>
+                            <td className="px-3 py-2 text-xs text-slate-300 max-w-[120px] truncate" title={pieza.numero_reporte}>
+                              {pieza.numero_reporte}
+                            </td>
                             <td className="px-3 py-2 text-xs text-slate-400 max-w-[100px] truncate" title={pieza.observaciones}>
                               {pieza.observaciones || '-'}
                             </td>

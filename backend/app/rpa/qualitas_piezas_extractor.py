@@ -78,6 +78,22 @@ class QualitasPiezasExtractor:
         self.page = page
         self.base_url = "https://www.sistemaslaplataformalaguna.com"
         self.ordenes_procesadas = []
+        self.start_time = None
+        self.last_activity_time = None
+        self.max_orden_time = 180  # Máximo 3 minutos por orden
+        self.max_total_time = 3600  # Máximo 1 hora total
+    
+    def _check_timeout(self):
+        """Verifica si se ha excedido el tiempo máximo"""
+        if self.start_time and (datetime.now() - self.start_time).total_seconds() > self.max_total_time:
+            raise TimeoutError("Tiempo máximo de ejecución excedido (1 hora)")
+        
+        if self.last_activity_time and (datetime.now() - self.last_activity_time).total_seconds() > self.max_orden_time:
+            raise TimeoutError(f"Tiempo máximo por orden excedido ({self.max_orden_time} segundos)")
+    
+    def _update_activity(self):
+        """Actualiza el tiempo de última actividad"""
+        self.last_activity_time = datetime.now()
     
     async def extract_piezas_from_transito(self, max_ordenes: int = None) -> List[OrdenPiezas]:
         """
@@ -89,88 +105,125 @@ class QualitasPiezasExtractor:
         Returns:
             Lista de órdenes con sus piezas
         """
+        self.start_time = datetime.now()
+        self.last_activity_time = datetime.now()
+        
         resultados = []
         ordenes_procesadas = 0
         
-        # 1. Navegar al tab Tránsito
-        print("[PiezasExtractor] Navegando al tab Tránsito...")
-        await self._navigate_to_transito_tab()
-        
-        # Procesar página por página
-        pagina = 1
-        while True:
-            print(f"\n[PiezasExtractor] === Procesando página {pagina} ===")
+        try:
+            # 1. Navegar al tab Tránsito
+            print("[PiezasExtractor] Navegando al tab Tránsito...")
+            await self._navigate_to_transito_tab()
             
-            # 2. Extraer lista de órdenes de la página actual
-            print("[PiezasExtractor] Extrayendo lista de órdenes...")
-            ordenes = await self._extract_ordenes_list()
-            print(f"[PiezasExtractor] Se encontraron {len(ordenes)} órdenes en página {pagina}")
-            
-            if not ordenes:
-                print(f"[PiezasExtractor] No hay órdenes en página {pagina}, terminando...")
-                break
-            
-            # 3. Procesar cada orden de esta página
-            for i, orden in enumerate(ordenes, 1):
-                # Verificar límite de órdenes
-                if max_ordenes and ordenes_procesadas >= max_ordenes:
-                    print(f"[PiezasExtractor] Límite de {max_ordenes} órdenes alcanzado")
-                    return resultados
+            # Procesar página por página
+            pagina = 1
+            while True:
+                self._check_timeout()
+                print(f"\n[PiezasExtractor] === Procesando página {pagina} ===")
                 
-                try:
-                    print(f"\n[PiezasExtractor] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {orden['num_expediente']}")
-                    
-                    orden_con_piezas = await self._process_single_orden(orden)
-                    if orden_con_piezas and orden_con_piezas.piezas:
-                        resultados.append(orden_con_piezas)
-                        ordenes_procesadas += 1
-                        print(f"  ✓ Extraídas {len(orden_con_piezas.piezas)} piezas")
-                        
-                        # Guardar en BD inmediatamente
-                        await self._save_to_database(orden_con_piezas)
-                    else:
-                        print(f"  ⚠ No se encontraron piezas para esta orden")
-                    
-                    # Pequeña pausa entre órdenes
-                    await asyncio.sleep(1)
-                    
-                except Exception as e:
-                    print(f"  ✗ Error procesando orden {orden['num_expediente']}: {e}")
-                    continue
-            
-            # 4. Verificar si hay siguiente página
-            siguiente_btn = self.page.locator('#pagina_siguiente_tabletransito')
-            
-            # Verificar si el botón existe y está habilitado
-            try:
-                is_visible = await siguiente_btn.is_visible()
-                is_disabled = await siguiente_btn.is_disabled()
+                # 2. Extraer lista de órdenes de la página actual
+                print("[PiezasExtractor] Extrayendo lista de órdenes...")
+                ordenes = await self._extract_ordenes_list()
+                print(f"[PiezasExtractor] Se encontraron {len(ordenes)} órdenes en página {pagina}")
                 
-                if not is_visible or is_disabled:
-                    print(f"[PiezasExtractor] No hay más páginas (botón deshabilitado o no visible)")
+                if not ordenes:
+                    print(f"[PiezasExtractor] No hay órdenes en página {pagina}, terminando...")
                     break
                 
-                # Hacer clic en siguiente
-                print(f"[PiezasExtractor] Navegando a página {pagina + 1}...")
-                await siguiente_btn.click()
+                # 3. Procesar cada orden de esta página
+                for i, orden in enumerate(ordenes, 1):
+                    self._check_timeout()
+                    
+                    # Verificar límite de órdenes
+                    if max_ordenes and ordenes_procesadas >= max_ordenes:
+                        print(f"[PiezasExtractor] Límite de {max_ordenes} órdenes alcanzado")
+                        return resultados
+                    
+                    try:
+                        print(f"\n[PiezasExtractor] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {orden['num_expediente']}")
+                        self._update_activity()
+                        
+                        orden_con_piezas = await self._process_single_orden(orden)
+                        if orden_con_piezas and orden_con_piezas.piezas:
+                            resultados.append(orden_con_piezas)
+                            ordenes_procesadas += 1
+                            print(f"  ✓ Extraídas {len(orden_con_piezas.piezas)} piezas")
+                            
+                            # Guardar en BD inmediatamente
+                            await self._save_to_database(orden_con_piezas)
+                        else:
+                            print(f"  ⚠ No se encontraron piezas para esta orden")
+                        
+                        self._update_activity()
+                        
+                        # Pequeña pausa entre órdenes
+                        await asyncio.sleep(1)
+                        
+                    except TimeoutError as te:
+                        print(f"  ⏱ Timeout procesando orden {orden['num_expediente']}: {te}")
+                        # Intentar cerrar pestañas abiertas y continuar
+                        try:
+                            pages = self.page.context.pages
+                            if len(pages) > 1:
+                                for p in pages[1:]:
+                                    await p.close()
+                        except:
+                            pass
+                        continue
+                    except Exception as e:
+                        print(f"  ✗ Error procesando orden {orden['num_expediente']}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
                 
-                # Esperar a que cargue la nueva página
-                await asyncio.sleep(2)
-                await self.page.wait_for_load_state('networkidle')
-                
-                # Esperar a que la tabla se actualice
-                await self.page.wait_for_selector('#tabletransito tbody tr', timeout=10000)
-                await asyncio.sleep(1)
-                
-                pagina += 1
-                
-            except Exception as e:
-                print(f"[PiezasExtractor] Error navegando a siguiente página: {e}")
-                break
-        
-        print(f"\n[PiezasExtractor] Total páginas procesadas: {pagina}")
-        print(f"[PiezasExtractor] Total órdenes procesadas: {len(resultados)}")
-        return resultados
+                # 4. Verificar si hay siguiente página
+                try:
+                    siguiente_btn = self.page.locator('#pagina_siguiente_tabletransito')
+                    
+                    # Verificar si el botón existe y está habilitado (con timeout)
+                    is_visible = await siguiente_btn.is_visible()
+                    if not is_visible:
+                        print(f"[PiezasExtractor] Botón siguiente no visible, terminando...")
+                        break
+                    
+                    is_disabled = await siguiente_btn.is_disabled()
+                    if is_disabled:
+                        print(f"[PiezasExtractor] Botón siguiente deshabilitado, terminando...")
+                        break
+                    
+                    # Hacer clic en siguiente
+                    print(f"[PiezasExtractor] Navegando a página {pagina + 1}...")
+                    await siguiente_btn.click()
+                    
+                    # Esperar a que cargue la nueva página (con timeout estricto)
+                    await asyncio.sleep(2)
+                    await self.page.wait_for_load_state('networkidle', timeout=15000)
+                    
+                    # Esperar a que la tabla se actualice
+                    await self.page.wait_for_selector('#tabletransito tbody tr', timeout=15000)
+                    await asyncio.sleep(1)
+                    
+                    pagina += 1
+                    self._update_activity()
+                    
+                except Exception as e:
+                    print(f"[PiezasExtractor] Error navegando a siguiente página: {e}")
+                    break
+            
+            print(f"\n[PiezasExtractor] Total páginas procesadas: {pagina}")
+            print(f"[PiezasExtractor] Total órdenes procesadas: {len(resultados)}")
+            return resultados
+            
+        except TimeoutError as te:
+            print(f"\n⏱ [PiezasExtractor] TIMEOUT GENERAL: {te}")
+            print(f"[PiezasExtractor] Se procesaron {len(resultados)} órdenes antes del timeout")
+            return resultados
+        except Exception as e:
+            print(f"\n✗ [PiezasExtractor] ERROR GENERAL: {e}")
+            import traceback
+            traceback.print_exc()
+            return resultados
     
     async def _navigate_to_transito_tab(self):
         """Navega al tab de Tránsito"""
@@ -254,41 +307,56 @@ class QualitasPiezasExtractor:
     
     async def _process_single_orden(self, orden: Dict) -> Optional[OrdenPiezas]:
         """
-        Procesa una sola orden:
-        1. Click en ícono flecha
-        2. Esperar carga página de orden
-        3. Click en "Seguimiento del Surtido de Refacciones"
-        4. Extraer piezas
-        5. Volver al listado
+        Procesa una sola orden con timeouts estrictos para evitar bloqueos.
         """
         num_exp = orden['num_expediente']
+        orden_start_time = datetime.now()
+        max_orden_time = 120  # Máximo 2 minutos por orden
+        
+        new_page = None
         
         try:
+            # Verificar timeout al inicio
+            if (datetime.now() - orden_start_time).total_seconds() > max_orden_time:
+                raise TimeoutError(f"Tiempo excedido procesando orden {num_exp}")
+            
             # 1. Click en el ícono de flecha (2do ícono en columna Acciones)
-            # El ícono es: <i class="fas fa-arrow-alt-circle-right" style="font-size: 1.7rem;"></i>
+            print(f"  → Buscando ícono de flecha...")
             row = self.page.locator(f'#tabletransito tbody tr').nth(orden['row_index'])
             
             # Buscar el ícono de flecha dentro de la fila
             arrow_icon = row.locator('i.fas.fa-arrow-alt-circle-right').first
             
-            if not await arrow_icon.is_visible():
+            try:
+                await arrow_icon.wait_for(state='visible', timeout=10000)
+            except:
                 print(f"  [Warning] Ícono no visible para orden {num_exp}")
                 return None
             
-            # Click en el ícono - abre nueva pestaña
-            async with self.page.context.expect_page() as new_page_info:
-                await arrow_icon.click()
+            # Click en el ícono - abre nueva pestaña (con timeout)
+            print(f"  → Abriendo página de orden...")
+            try:
+                async with self.page.context.expect_page(timeout=15000) as new_page_info:
+                    await arrow_icon.click()
+                
+                new_page = await new_page_info.value
+                await new_page.wait_for_load_state('networkidle', timeout=20000)
+                print(f"  → Página de orden abierta")
+            except Exception as e:
+                print(f"  [Error] No se pudo abrir página de orden: {e}")
+                return None
             
-            # Esperar a que cargue la nueva página
-            new_page = await new_page_info.value
-            await new_page.wait_for_load_state('networkidle')
-            print(f"  → Página de orden abierta")
+            # Verificar timeout
+            if (datetime.now() - orden_start_time).total_seconds() > max_orden_time:
+                raise TimeoutError(f"Tiempo excedido después de abrir página")
             
             # 2. Buscar y hacer click en "Seguimiento del Surtido de Refacciones"
-            # Selector: a[href^="/refacciones/"] o buscar por texto
+            print(f"  → Buscando botón de seguimiento...")
             seguimiento_btn = new_page.locator('a:has-text("Seguimiento del Surtido de Refacciones"), a.btn-qualitas-pro:has-text("Seguimiento")').first
             
-            if not await seguimiento_btn.is_visible():
+            try:
+                await seguimiento_btn.wait_for(state='visible', timeout=15000)
+            except:
                 print(f"  [Warning] Botón de seguimiento no encontrado")
                 await new_page.close()
                 return None
@@ -297,30 +365,60 @@ class QualitasPiezasExtractor:
             href = await seguimiento_btn.get_attribute('href')
             print(f"  → Navegando a: {href}")
             
-            # Navegar a la página de refacciones
+            # Navegar a la página de refacciones (con timeout)
             await seguimiento_btn.click()
-            await new_page.wait_for_load_state('networkidle')
+            await new_page.wait_for_load_state('networkidle', timeout=20000)
             await asyncio.sleep(1)
             
-            # 3. Extraer piezas de ambas tablas (incluyendo datos de paquetería)
-            piezas = await self._extract_piezas_from_page(new_page)
+            # Verificar timeout
+            if (datetime.now() - orden_start_time).total_seconds() > max_orden_time:
+                raise TimeoutError(f"Tiempo excedido navegando a refacciones")
+            
+            # 3. Extraer piezas de ambas tablas (con timeout total)
+            print(f"  → Extrayendo piezas...")
+            tiempo_restante = max_orden_time - (datetime.now() - orden_start_time).total_seconds()
+            
+            if tiempo_restante < 30:
+                print(f"  [Warning] Poco tiempo restante ({tiempo_restante:.0f}s), saltando extracción")
+                piezas = []
+            else:
+                piezas = await self._extract_piezas_from_page(new_page)
             
             # 4. Cerrar pestaña y volver a la principal
+            print(f"  → Cerrando pestaña...")
             await new_page.close()
             
-            # Usar num_expediente como numero_orden (es el número visible en Qualitas)
-            # y numero_reporte viene de la lista de tránsito
+            total_time = (datetime.now() - orden_start_time).total_seconds()
+            print(f"  → Orden procesada en {total_time:.1f} segundos")
+            
             return OrdenPiezas(
                 num_expediente=num_exp,
-                num_orden=num_exp,  # El número de orden es el mismo que el expediente
+                num_orden=num_exp,
                 numero_reporte=orden.get('numero_reporte'),
                 piezas=piezas,
                 fecha_extraccion=datetime.now()
             )
             
+        except TimeoutError as te:
+            print(f"  ⏱ [Timeout] Orden {num_exp}: {te}")
+            if new_page:
+                try:
+                    await new_page.close()
+                except:
+                    pass
+            return None
         except Exception as e:
-            print(f"  [Error] Procesando orden {num_exp}: {e}")
+            print(f"  ✗ [Error] Orden {num_exp}: {e}")
+            import traceback
+            traceback.print_exc()
+            
             # Intentar cerrar cualquier pestaña abierta
+            try:
+                if new_page:
+                    await new_page.close()
+            except:
+                pass
+                
             try:
                 pages = self.page.context.pages
                 if len(pages) > 1:
@@ -353,38 +451,56 @@ class QualitasPiezasExtractor:
     
     async def _extract_piezas_from_page(self, page: Page) -> List[PiezaInfo]:
         """
-        Extrae piezas de la página de refacciones.
-        Procesa las tablas:
-        - Proceso de Surtido
-        - Piezas Reasignadas & Canceladas
+        Extrae piezas de la página de refacciones con timeout estricto.
         """
         piezas = []
+        start_time = datetime.now()
+        max_extraction_time = 60  # Máximo 60 segundos para extraer piezas
         
-        # Esperar a que carguen las tablas específicas
+        # Verificar si se excede el tiempo
+        def check_extraction_timeout():
+            if (datetime.now() - start_time).total_seconds() > max_extraction_time:
+                raise TimeoutError(f"Tiempo máximo de extracción excedido ({max_extraction_time}s)")
+        
+        # Esperar a que carguen las tablas específicas (con timeout más corto)
         print("  → Esperando carga de tablas de piezas...")
         try:
-            await page.wait_for_selector('#dt-RefaccionesV22, #dt-RefaccionesV23', timeout=15000)
+            await page.wait_for_selector('#dt-RefaccionesV22, #dt-RefaccionesV23', timeout=10000)
         except Exception as e:
             print(f"  ⚠ Timeout esperando tablas: {e}")
-        await asyncio.sleep(2)
+            return piezas  # Retornar vacío si no cargan las tablas
+        
+        await asyncio.sleep(1)
+        check_extraction_timeout()
         
         # 1. Extraer de "En proceso de surtido"
         print("  → Extrayendo piezas en proceso de surtido...")
-        piezas_surtido = await self._extract_from_table(
-            page, 
-            'Proceso de Surtido',
-            'Proceso de Surtido'
-        )
-        piezas.extend(piezas_surtido)
+        try:
+            piezas_surtido = await self._extract_from_table(
+                page, 
+                'Proceso de Surtido',
+                'Proceso de Surtido'
+            )
+            piezas.extend(piezas_surtido)
+        except Exception as e:
+            print(f"  ⚠ Error extrayendo piezas en proceso: {e}")
+        
+        check_extraction_timeout()
         
         # 2. Extraer de "Piezas reasignadas & Canceladas"
         print("  → Extrayendo piezas reasignadas/canceladas...")
-        piezas_canceladas = await self._extract_from_table(
-            page,
-            'Reasignadas',
-            'Reasignada/Cancelada'
-        )
-        piezas.extend(piezas_canceladas)
+        try:
+            piezas_canceladas = await self._extract_from_table(
+                page,
+                'Reasignadas',
+                'Reasignada/Cancelada'
+            )
+            piezas.extend(piezas_canceladas)
+        except Exception as e:
+            print(f"  ⚠ Error extrayendo piezas canceladas: {e}")
+        
+        total_time = (datetime.now() - start_time).total_seconds()
+        print(f"  → Extracción completada en {total_time:.1f}s: {len(piezas)} piezas")
         
         return piezas
     

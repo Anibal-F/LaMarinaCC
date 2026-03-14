@@ -17,7 +17,7 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
   const logsEndRef = useRef(null);
   const intervalRef = useRef(null);
 
-  // Auto-scroll logs
+  // Auto-scroll logs solo cuando están visibles
   useEffect(() => {
     if (showLogs && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -37,7 +37,6 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
     try {
       setIsExtracting(true);
       setLogs([]);
-      setShowLogs(true);
 
       const response = await fetch(getApiUrl() + '/admin/rpa/qualitas/piezas', {
         method: 'POST',
@@ -55,6 +54,9 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
       const data = await response.json();
       setJobId(data.job_id);
       addLog(`Extracción iniciada (Job: ${data.job_id.slice(0, 8)}...)`);
+      
+      // Auto-expandir logs al iniciar
+      setShowLogs(true);
 
       // Iniciar polling de estado
       startPolling(data.job_id);
@@ -112,9 +114,9 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Botón de extracción */}
-      <div className="flex items-center gap-4">
+    <div className="space-y-3">
+      {/* Controles */}
+      <div className="flex items-center gap-4 flex-wrap">
         <button
           onClick={startExtraction}
           disabled={isExtracting}
@@ -147,38 +149,49 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
             placeholder="Todas"
             min="1"
             disabled={isExtracting}
-            className="w-20 bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-primary"
+            className="w-20 bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-primary"
           />
         </div>
 
-        {/* Toggle logs */}
-        {logs.length > 0 && (
+        {/* Botón para expandir/colapsar logs - Solo visible cuando hay logs */}
+        {(logs.length > 0 || isExtracting) && (
           <button
             onClick={() => setShowLogs(!showLogs)}
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-medium transition-colors"
           >
+            <span className="material-symbols-outlined text-sm">
+              {showLogs ? 'expand_less' : 'expand_more'}
+            </span>
             {showLogs ? 'Ocultar logs' : 'Ver logs'}
           </button>
         )}
       </div>
 
-      {/* Panel de logs */}
+      {/* Logs en tiempo real - Expandible */}
       {showLogs && logs.length > 0 && (
-        <div className="bg-black/70 border border-border-dark rounded-lg p-3">
+        <div className="bg-black/70 border border-blue-500/20 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-              Logs de extracción
+              Logs de ejecución (tiempo real)
             </span>
             <span className="text-[9px] text-slate-500">
               {logs.length} líneas
             </span>
           </div>
           <div className="text-[10px] font-mono text-slate-300 overflow-auto max-h-64 custom-scrollbar">
-            <pre className="whitespace-pre-wrap">
+            <pre className="whitespace-pre-wrap break-all">
               {logs.join('\n')}
             </pre>
             <div ref={logsEndRef} />
           </div>
+        </div>
+      )}
+
+      {/* Mensaje de estado cuando se está extrayendo pero aún no hay logs */}
+      {isExtracting && logs.length === 0 && (
+        <div className="flex items-center gap-2 text-xs text-blue-400">
+          <span className="material-symbols-outlined animate-spin">refresh</span>
+          <span>Iniciando extracción...</span>
         </div>
       )}
 

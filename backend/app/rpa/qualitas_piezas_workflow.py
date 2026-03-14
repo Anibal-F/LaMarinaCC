@@ -51,24 +51,54 @@ class QualitasPiezasWorkflow:
         self,
         max_ordenes: Optional[int] = None,
         use_existing_session: bool = True,
-        use_db: bool = True
+        use_db: bool = True,
+        max_total_time: int = 1800  # Máximo 30 minutos por defecto
     ) -> dict:
         """
-        Ejecuta el workflow completo.
+        Ejecuta el workflow completo con timeout global.
         
         Args:
             max_ordenes: Máximo de órdenes a procesar
             use_existing_session: Usar sesión guardada si existe
             use_db: Usar credenciales de la base de datos
+            max_total_time: Tiempo máximo total en segundos (default 30 min)
             
         Returns:
             Dict con resultados y estadísticas
         """
         self.log("=" * 60)
         self.log("INICIANDO WORKFLOW: Extracción de Piezas Qualitas")
+        self.log(f"Timeout máximo: {max_total_time} segundos ({max_total_time/60:.0f} min)")
         self.log("=" * 60)
         
         start_time = datetime.now()
+        
+        try:
+            # Ejecutar con timeout global
+            return await asyncio.wait_for(
+                self._run_internal(max_ordenes, use_existing_session, use_db, start_time),
+                timeout=max_total_time
+            )
+        except asyncio.TimeoutError:
+            self.log(f"\n⏱ TIMEOUT GLOBAL: El workflow excedió {max_total_time} segundos")
+            self.log("Guardando resultados parciales...")
+            
+            return {
+                "success": False,
+                "error": f"Timeout: El workflow excedió {max_total_time} segundos",
+                "partial_results": True,
+                "timestamp": datetime.now().isoformat(),
+                "logs": "\n".join(self.logs)
+            }
+    
+    async def _run_internal(
+        self,
+        max_ordenes: Optional[int],
+        use_existing_session: bool,
+        use_db: bool,
+        start_time: datetime
+    ) -> dict:
+        """Método interno que ejecuta el workflow real."""
         
         # Cargar credenciales
         if not load_credentials(use_db=use_db):

@@ -4,6 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import SearchableSelect from "../../components/SearchableSelect.jsx";
+import InventoryTab from "../../components/recepcion/InventoryTab.jsx";
+import {
+  createInventoryState,
+  FUEL_LEVELS,
+} from "../../components/recepcion/inventoryConfig.js";
 import { getSession } from "../../utils/auth.js";
 
 const MAX_OBSERVATION_RECORDING_MS = 12000;
@@ -11,65 +16,8 @@ const MIN_OBSERVATION_RECORDING_MS = 800;
 const DEFAULT_DAMAGE_CANVAS_ZOOM = 1;
 const MOBILE_DEFAULT_DAMAGE_CANVAS_ZOOM = 3.5;
 const MAX_DAMAGE_CANVAS_ZOOM = 3.5;
-const INVENTORY_SECTIONS = [
-  {
-    key: "interiores",
-    title: "Interiores",
-    items: [
-      { key: "documentos", label: "Documentos" },
-      { key: "radio", label: "Radio" },
-      { key: "pantalla", label: "Pantalla" },
-      { key: "encendedor", label: "Encendedor" },
-      { key: "tapetes_tela", label: "Tapetes tela" },
-      { key: "tapetes_plastico", label: "Tapetes plástico" }
-    ]
-  },
-  {
-    key: "motor",
-    title: "Motor",
-    items: [
-      { key: "bateria", label: "Batería" },
-      { key: "computadora", label: "Computadora" },
-      { key: "tapones_depositos", label: "Tapones depósitos" }
-    ]
-  },
-  {
-    key: "exteriores",
-    title: "Exteriores",
-    items: [
-      { key: "antena", label: "Antena" },
-      { key: "polveras", label: "Polveras" },
-      { key: "centro_rin", label: "Centro de rin" },
-      { key: "placas_item", label: "Placas" }
-    ]
-  },
-  {
-    key: "cajuela",
-    title: "Cajuela",
-    items: [
-      { key: "herramienta", label: "Herramienta" },
-      { key: "reflejantes", label: "Reflejantes" },
-      { key: "cables_pasa_corriente", label: "Cables pasa corriente" },
-      { key: "llanta_refaccion", label: "Llanta de refacción" },
-      { key: "llave_l_cruceta", label: "Llave L o cruceta" },
-      { key: "extintor", label: "Extintor" },
-      { key: "gato", label: "Gato" }
-    ]
-  }
-];
-
 const BODY_STYLE_OPTIONS = ["Sedán", "Hatchback", "SUV", "PickUp", "Caja Seca", "Mini Van"];
-
-const createInventoryState = () => {
-  const items = INVENTORY_SECTIONS.flatMap((section) => section.items);
-  return items.reduce(
-    (acc, item) => {
-      acc[item.key] = { cantidad: "", estado: "" };
-      return acc;
-    },
-    { comentario: "" }
-  );
-};
+const INVENTORY_TAB_ENABLED = false;
 
 const resolveApiBaseUrl = () => {
   const configured = import.meta.env.VITE_API_URL || "/api";
@@ -92,18 +40,6 @@ export default function RecepcionForm() {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
   const isEditMode = Boolean(editId);
-  const fuelLevels = [
-    "Tanque Vacio",
-    "1/8 Tanque",
-    "2/8 Tanque",
-    "3/8 Tanque",
-    "4/8 Tanque",
-    "5/8 Tanque",
-    "6/8 Tanque",
-    "7/8 Tanque",
-    "Tanque Lleno"
-  ];
-  const fuelLevelShortLabels = ["E", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "F"];
   const storedUser = getSession();
   const displayUserName = storedUser?.name || storedUser?.user_name || "Usuario";
   const [error, setError] = useState("");
@@ -456,7 +392,7 @@ export default function RecepcionForm() {
       kilometraje: form.kilometraje ? Number(form.kilometraje) : null,
       placas: form.placas || null,
       seguro: form.seguro || null,
-      nivel_gas: fuelLevels[fuelLevelIndex],
+      nivel_gas: FUEL_LEVELS[fuelLevelIndex],
       estado_mecanico: form.estado_mecanico || null,
       observaciones: form.observaciones || null,
       partes_siniestro: damagePartsSiniestro,
@@ -470,7 +406,7 @@ export default function RecepcionForm() {
       estatus: form.estatus || "Recepcionado",
       inventario: {
         ...inventoryForm,
-        nivel_gas: fuelLevels[fuelLevelIndex],
+        nivel_gas: FUEL_LEVELS[fuelLevelIndex],
         comentario: inventoryForm.comentario || null
       }
     }),
@@ -561,7 +497,7 @@ export default function RecepcionForm() {
           ...(data.inventario || {}),
         });
         const inventoryFuelLevel = data?.inventario?.nivel_gas || data.nivel_gas;
-        const levelIdx = fuelLevels.findIndex((level) => level === inventoryFuelLevel);
+        const levelIdx = FUEL_LEVELS.findIndex((level) => level === inventoryFuelLevel);
         setFuelLevelIndex(levelIdx >= 0 ? levelIdx : 2);
 
         const mediaResponse = await fetch(
@@ -1602,17 +1538,19 @@ export default function RecepcionForm() {
               >
                 Información General
               </button>
-              <button
-                type="button"
-                className={`py-4 text-xs font-bold uppercase tracking-widest transition-all ${
-                  activeTab === "inventario"
-                    ? "border-b-2 border-primary text-primary"
-                    : "border-b-2 border-transparent text-slate-400 hover:text-white"
-                }`}
-                onClick={() => setActiveTab("inventario")}
-              >
-                Inventario y Estado
-              </button>
+              {INVENTORY_TAB_ENABLED ? (
+                <button
+                  type="button"
+                  className={`py-4 text-xs font-bold uppercase tracking-widest transition-all ${
+                    activeTab === "inventario"
+                      ? "border-b-2 border-primary text-primary"
+                      : "border-b-2 border-transparent text-slate-400 hover:text-white"
+                  }`}
+                  onClick={() => setActiveTab("inventario")}
+                >
+                  Inventario y Estado
+                </button>
+              ) : null}
             </div>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
@@ -2514,197 +2452,12 @@ export default function RecepcionForm() {
               </div>
                 </>
               ) : (
-                <div className="col-span-12 grid grid-cols-12 gap-6 xl:gap-7">
-                  <div className="col-span-12 xl:col-span-4 space-y-6">
-                    {INVENTORY_SECTIONS.filter((section) => ["interiores", "motor"].includes(section.key)).map((section) => (
-                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                        <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
-                          <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">{section.title}</h3>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left">
-                            <thead className="bg-background-dark/40 text-[11px] font-bold uppercase tracking-widest text-slate-500">
-                              <tr>
-                                <th className="px-5 py-3.5">Descripción</th>
-                                <th className="px-4 py-3.5 w-28">Cant.</th>
-                                <th className="px-4 py-3.5 w-16 text-center">Sí</th>
-                                <th className="px-4 py-3.5 w-16 text-center">No</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border-dark">
-                              {section.items.map((item) => (
-                                <tr key={item.key} className="text-sm text-slate-200">
-                                  <td className="px-5 py-3.5">{item.label}</td>
-                                  <td className="px-4 py-3.5">
-                                    <input
-                                      className="w-full rounded-md border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                                      type="text"
-                                      value={inventoryForm[item.key]?.cantidad || ""}
-                                      onChange={(event) => updateInventoryItem(item.key, "cantidad", event.target.value)}
-                                    />
-                                  </td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <input
-                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
-                                      type="radio"
-                                      name={`${item.key}_estado`}
-                                      checked={inventoryForm[item.key]?.estado === "si"}
-                                      onChange={() => updateInventoryItem(item.key, "estado", "si")}
-                                    />
-                                  </td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <input
-                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
-                                      type="radio"
-                                      name={`${item.key}_estado`}
-                                      checked={inventoryForm[item.key]?.estado === "no"}
-                                      onChange={() => updateInventoryItem(item.key, "estado", "no")}
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                  <div className="col-span-12 xl:col-span-5 space-y-6">
-                    {INVENTORY_SECTIONS.filter((section) => ["exteriores", "cajuela"].includes(section.key)).map((section) => (
-                      <section key={section.key} className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                        <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
-                          <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">{section.title}</h3>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left">
-                            <thead className="bg-background-dark/40 text-[11px] font-bold uppercase tracking-widest text-slate-500">
-                              <tr>
-                                <th className="px-5 py-3.5">Descripción</th>
-                                <th className="px-4 py-3.5 w-28">Cant.</th>
-                                <th className="px-4 py-3.5 w-16 text-center">Sí</th>
-                                <th className="px-4 py-3.5 w-16 text-center">No</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border-dark">
-                              {section.items.map((item) => (
-                                <tr key={item.key} className="text-sm text-slate-200">
-                                  <td className="px-5 py-3.5">{item.label}</td>
-                                  <td className="px-4 py-3.5">
-                                    <input
-                                      className="w-full rounded-md border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                                      type="text"
-                                      value={inventoryForm[item.key]?.cantidad || ""}
-                                      onChange={(event) => updateInventoryItem(item.key, "cantidad", event.target.value)}
-                                    />
-                                  </td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <input
-                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
-                                      type="radio"
-                                      name={`${item.key}_estado`}
-                                      checked={inventoryForm[item.key]?.estado === "si"}
-                                      onChange={() => updateInventoryItem(item.key, "estado", "si")}
-                                    />
-                                  </td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <input
-                                      className="size-5 border-border-dark bg-background-dark text-primary focus:ring-primary"
-                                      type="radio"
-                                      name={`${item.key}_estado`}
-                                      checked={inventoryForm[item.key]?.estado === "no"}
-                                      onChange={() => updateInventoryItem(item.key, "estado", "no")}
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                  <div className="col-span-12 xl:col-span-3 space-y-6">
-                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                      <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
-                        <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">Medidor de gasolina</h3>
-                      </div>
-                      <div className="relative flex min-h-[27rem] flex-col items-center justify-center gap-5 p-6">
-                        <span className="text-sm font-bold text-slate-500">F</span>
-                        <div className="relative flex h-80 w-20 flex-col justify-end overflow-hidden rounded-full border border-border-dark bg-background-dark">
-                          <div className="absolute inset-0 flex flex-col justify-between py-4 opacity-20">
-                            {Array.from({ length: fuelLevels.length - 1 }, (_, mark) => (
-                              <div key={mark} className="border-t border-slate-500" />
-                            ))}
-                          </div>
-                          <div className="absolute inset-0 z-10 flex flex-col">
-                            {Array.from({ length: fuelLevels.length }, (_, position) => fuelLevels.length - 1 - position).map((index) => (
-                              <button
-                                key={index}
-                                type="button"
-                                className="flex-1 border-b border-transparent last:border-b-0"
-                                onClick={() => handleFuelLevelSelect(index)}
-                                aria-label={`Seleccionar ${fuelLevels[index]}`}
-                                title={fuelLevels[index]}
-                              />
-                            ))}
-                          </div>
-                          <div
-                            className="w-full border-t-2 border-primary bg-primary/45 transition-all"
-                            style={{
-                              height: `${fuelLevelIndex === 0 ? 0 : (fuelLevelIndex / (fuelLevels.length - 1)) * 100}%`
-                            }}
-                          />
-                        </div>
-                        <span className="text-sm font-bold text-slate-500">E</span>
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md bg-primary px-2 py-1.5 text-[10px] font-bold uppercase text-white [writing-mode:vertical-rl]">
-                          {fuelLevels[fuelLevelIndex]}
-                        </div>
-                        <div className="w-full space-y-3">
-                          <input
-                            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-background-dark accent-primary"
-                            max={fuelLevels.length - 1}
-                            min="0"
-                            step="1"
-                            type="range"
-                            value={fuelLevelIndex}
-                            onChange={(event) => setFuelLevelIndex(Number(event.target.value))}
-                          />
-                          <div className="grid grid-cols-5 gap-2">
-                            {fuelLevels.map((label, index) => (
-                              <button
-                                key={label}
-                                type="button"
-                                className={`rounded-md border px-2 py-2 text-[11px] font-bold uppercase transition-colors ${
-                                  fuelLevelIndex === index
-                                    ? "border-primary bg-primary/20 text-white"
-                                    : "border-border-dark bg-background-dark text-slate-400 hover:text-white"
-                                }`}
-                                onClick={() => handleFuelLevelSelect(index)}
-                              >
-                                {fuelLevelShortLabels[index]}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-                    <section className="overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                      <div className="border-b border-border-dark bg-primary/15 px-5 py-3.5">
-                        <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">Comentario</h3>
-                      </div>
-                      <div className="p-5">
-                        <textarea
-                          className="h-64 w-full rounded-lg border border-border-dark bg-background-dark p-4 text-sm text-white focus:ring-1 focus:ring-primary"
-                          placeholder="Escriba sus observaciones aquí..."
-                          value={inventoryForm.comentario || ""}
-                          onChange={(event) =>
-                            setInventoryForm((prev) => ({ ...prev, comentario: event.target.value }))
-                          }
-                        />
-                      </div>
-                    </section>
-                  </div>
-                </div>
+                <InventoryTab
+                  inventoryForm={inventoryForm}
+                  setInventoryForm={setInventoryForm}
+                  fuelLevelIndex={fuelLevelIndex}
+                  setFuelLevelIndex={setFuelLevelIndex}
+                />
               )}
             </form>
           </div>

@@ -3,9 +3,15 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import InventoryTab from "../../components/recepcion/InventoryTab.jsx";
+import {
+  createInventoryState,
+  FUEL_LEVELS,
+} from "../../components/recepcion/inventoryConfig.js";
 
 const tabs = [
   { id: "evidencia", label: "Evidencia", icon: "photo_library" },
+  { id: "inventario", label: "Inventario", icon: "inventory_2" },
   { id: "presupuesto", label: "Presupuesto", icon: "request_quote" },
   { id: "comparativa", label: "Comparativa", icon: "balance" }
 ];
@@ -147,6 +153,8 @@ export default function ValuarVehiculo() {
   const [savingValuacion, setSavingValuacion] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
+  const [inventoryForm, setInventoryForm] = useState(createInventoryState);
+  const [fuelLevelIndex, setFuelLevelIndex] = useState(0);
   const [operations, setOperations] = useState([]);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
@@ -229,6 +237,29 @@ export default function ValuarVehiculo() {
       }
     };
     loadValuacion();
+  }, [record?.id]);
+
+  useEffect(() => {
+    if (!record?.id) return;
+    const loadInventory = async () => {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/valuacion/ordenes/${record.id}/inventario`
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        setInventoryForm({
+          ...createInventoryState(),
+          ...(data?.inventario || {}),
+        });
+        const inventoryFuelLevel = data?.inventario?.nivel_gas || "";
+        const levelIdx = FUEL_LEVELS.findIndex((level) => level === inventoryFuelLevel);
+        setFuelLevelIndex(levelIdx >= 0 ? levelIdx : 0);
+      } catch {
+        // ignore
+      }
+    };
+    loadInventory();
   }, [record?.id]);
 
   useEffect(() => {
@@ -433,6 +464,37 @@ export default function ValuarVehiculo() {
       setSaveSuccess("Valuacion guardada en borrador.");
     } catch (err) {
       setSaveError(err.message || "No se pudo guardar la valuacion");
+    } finally {
+      setSavingValuacion(false);
+    }
+  };
+
+  const handleSaveInventory = async () => {
+    if (!record?.id) return;
+    setSavingValuacion(true);
+    setSaveError("");
+    setSaveSuccess("");
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/valuacion/ordenes/${record.id}/inventario`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inventario: {
+              ...inventoryForm,
+              nivel_gas: FUEL_LEVELS[fuelLevelIndex],
+            },
+          }),
+        }
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo guardar el inventario.");
+      }
+      setSaveSuccess("Inventario guardado correctamente.");
+    } catch (err) {
+      setSaveError(err.message || "No se pudo guardar el inventario.");
     } finally {
       setSavingValuacion(false);
     }
@@ -854,6 +916,14 @@ export default function ValuarVehiculo() {
     setActiveAnnotationId(null);
   };
 
+  const handleSaveActiveTab = () => {
+    if (activeTab === "inventario") {
+      handleSaveInventory();
+      return;
+    }
+    handleSaveValuacion();
+  };
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
       <div className="flex h-screen overflow-hidden">
@@ -876,7 +946,7 @@ export default function ValuarVehiculo() {
                 <button
                   className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-primary/20"
                   type="button"
-                  onClick={handleSaveValuacion}
+                  onClick={handleSaveActiveTab}
                 >
                   <span className="material-symbols-outlined text-sm">save</span>
                   {savingValuacion ? "Guardando..." : "Guardar cambios"}
@@ -1363,6 +1433,17 @@ export default function ValuarVehiculo() {
                         </div>
                       </div>
                     </aside>
+                  </section>
+                ) : null}
+
+                {activeTab === "inventario" ? (
+                  <section className="border border-border-dark bg-surface-dark rounded-xl p-6">
+                    <InventoryTab
+                      inventoryForm={inventoryForm}
+                      setInventoryForm={setInventoryForm}
+                      fuelLevelIndex={fuelLevelIndex}
+                      setFuelLevelIndex={setFuelLevelIndex}
+                    />
                   </section>
                 ) : null}
 

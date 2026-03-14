@@ -27,6 +27,7 @@ from playwright.async_api import Page, expect
 os.environ['DATABASE_URL'] = 'postgresql+psycopg://LaMarinaCC:A355Fu584%24@lamarinacc-db.c7o8imsw0zss.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require'
 
 from app.core.db import get_connection
+from app.rpa.qualitas_checkpoint import QualitasCheckpoint
 
 
 @dataclass
@@ -74,7 +75,7 @@ class OrdenPiezas:
 class QualitasPiezasExtractor:
     """Extractor de piezas de órdenes en tránsito de Qualitas"""
     
-    def __init__(self, page: Page):
+    def __init__(self, page: Page, use_checkpoint: bool = True, resume_from_checkpoint: bool = True):
         self.page = page
         self.base_url = "https://www.sistemaslaplataformalaguna.com"
         self.ordenes_procesadas = []
@@ -82,6 +83,17 @@ class QualitasPiezasExtractor:
         self.last_activity_time = None
         self.max_orden_time = 180  # Máximo 3 minutos por orden
         self.max_total_time = 3600  # Máximo 1 hora total
+        
+        # Checkpoint
+        self.use_checkpoint = use_checkpoint
+        self.checkpoint = QualitasCheckpoint() if use_checkpoint else None
+        self.ordenes_ya_procesadas = set()
+        
+        if use_checkpoint and resume_from_checkpoint:
+            self.ordenes_ya_procesadas = self.checkpoint.get_ordenes_procesadas()
+            stats = self.checkpoint.get_stats()
+            if stats['procesadas'] > 0:
+                print(f"[Extractor] Reanudando desde checkpoint: {stats['procesadas']} órdenes ya procesadas ({stats['porcentaje']}%)")
     
     def _check_timeout(self):
         """Verifica si se ha excedido el tiempo máximo"""
@@ -94,6 +106,14 @@ class QualitasPiezasExtractor:
     def _update_activity(self):
         """Actualiza el tiempo de última actividad"""
         self.last_activity_time = datetime.now()
+    
+    def is_orden_procesada(self, num_expediente: str) -> bool:
+        """Verifica si una orden ya fue procesada (checkpoint o sesión actual)."""
+        if num_expediente in self.ordenes_ya_procesadas:
+            return True
+        if self.use_checkpoint and self.checkpoint.is_orden_procesada(num_expediente):
+            return True
+        return False
     
     async def extract_piezas_from_transito(self, max_ordenes: int = None) -> List[OrdenPiezas]:
         """
@@ -131,29 +151,49 @@ class QualitasPiezasExtractor:
                     print(f"[PiezasExtractor] No hay órdenes en página {pagina}, terminando...")
                     break
                 
+                # Guardar total de órdenes en checkpoint (primera página)
+                if pagina == 1 and self.use_checkpoint:
+                    self.checkpoint.update_total_ordenes(len(ordenes))
+                
                 # 3. Procesar cada orden de esta página
                 for i, orden in enumerate(ordenes, 1):
                     self._check_timeout()
+                    num_exp = orden['num_expediente']
                     
-                    # Verificar límite de órdenes
+                    # Verificar si ya fue procesada
+                    if self.is_orden_procesada(num_exp):
+                        print(f"\n[PiezasExtractor] Orden {num_exp} ya procesada (checkpoint), saltando...")
+                        continue
+                    
+                    # Verificar límite de órdenes (solo contar las que no están en checkpoint)
                     if max_ordenes and ordenes_procesadas >= max_ordenes:
                         print(f"[PiezasExtractor] Límite de {max_ordenes} órdenes alcanzado")
                         return resultados
                     
                     try:
-                        print(f"\n[PiezasExtractor] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {orden['num_expediente']}")
+                        print(f"\n[PiezasExtractor] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {num_exp}")
                         self._update_activity()
                         
                         orden_con_piezas = await self._process_single_orden(orden)
                         if orden_con_piezas and orden_con_piezas.piezas:
                             resultados.append(orden_con_piezas)
                             ordenes_procesadas += 1
-                            print(f"  ✓ Extraídas {len(orden_con_piezas.piezas)} piezas")
+                            piezas_count = len(orden_con_piezas.piezas)
+                            print(f"  ✓ Extraídas {piezas_count} piezas")
                             
                             # Guardar en BD inmediatamente
                             await self._save_to_database(orden_con_piezas)
+                            
+                            # Guardar en checkpoint
+                            if self.use_checkpoint:
+                                self.checkpoint.mark_orden_procesada(num_exp, piezas_count)
+                                self.ordenes_ya_procesadas.add(num_exp)
                         else:
                             print(f"  ⚠ No se encontraron piezas para esta orden")
+                            # Marcar como procesada igual para no volver a intentar
+                            if self.use_checkpoint:
+                                self.checkpoint.mark_orden_procesada(num_exp, 0)
+                                self.ordenes_ya_procesadas.add(num_exp)
                         
                         self._update_activity()
                         
@@ -161,7 +201,10 @@ class QualitasPiezasExtractor:
                         await asyncio.sleep(1)
                         
                     except TimeoutError as te:
-                        print(f"  ⏱ Timeout procesando orden {orden['num_expediente']}: {te}")
+                        print(f"  ⏱ Timeout procesando orden {num_exp}: {te}")
+                        # Marcar como fallida pero contar como procesada
+                        if self.use_checkpoint:
+                            self.checkpoint.mark_orden_fallida(num_exp, str(te))
                         # Intentar cerrar pestañas abiertas y continuar
                         try:
                             pages = self.page.context.pages
@@ -172,10 +215,16 @@ class QualitasPiezasExtractor:
                             pass
                         continue
                     except Exception as e:
-                        print(f"  ✗ Error procesando orden {orden['num_expediente']}: {e}")
+                        print(f"  ✗ Error procesando orden {num_exp}: {e}")
+                        if self.use_checkpoint:
+                            self.checkpoint.mark_orden_fallida(num_exp, str(e))
                         import traceback
                         traceback.print_exc()
                         continue
+                
+                # Guardar página actual en checkpoint
+                if self.use_checkpoint:
+                    self.checkpoint.update_pagina(pagina)
                 
                 # 4. Verificar si hay siguiente página
                 try:

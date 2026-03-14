@@ -29,16 +29,19 @@ from app.rpa.qualitas_full_workflow import (
 from app.rpa.qualitas_session_manager import QualitasSessionManager
 from app.rpa.qualitas_modal_handler import QualitasModalHandler
 from app.rpa.qualitas_piezas_extractor import QualitasPiezasExtractor, OrdenPiezas
+from app.rpa.qualitas_checkpoint import QualitasCheckpoint
 
 
 class QualitasPiezasWorkflow:
     """Workflow completo para extracción de piezas"""
     
-    def __init__(self, headless: bool = True, slow_mo: int = 0):
+    def __init__(self, headless: bool = True, slow_mo: int = 0, max_retries: int = 3):
         self.headless = headless
         self.slow_mo = slow_mo
+        self.max_retries = max_retries
         self.logs = []
         self.resultados = []
+        self.checkpoint = QualitasCheckpoint()
         
     def log(self, message: str):
         """Agrega un mensaje al log"""
@@ -88,8 +91,117 @@ class QualitasPiezasWorkflow:
                 "error": f"Timeout: El workflow excedió {max_total_time} segundos",
                 "partial_results": True,
                 "timestamp": datetime.now().isoformat(),
-                "logs": "\n".join(self.logs)
+                "logs": "\n".join(self.logs),
+                "checkpoint_stats": self.checkpoint.get_stats() if self.checkpoint else None
             }
+    
+    async def run_with_retries(
+        self,
+        max_ordenes: Optional[int] = None,
+        use_existing_session: bool = True,
+        use_db: bool = True,
+        max_total_time: int = 1800,
+        reset_checkpoint: bool = False
+    ) -> dict:
+        """
+        Ejecuta el workflow con reintentos automáticos y backoff exponencial.
+        
+        Args:
+            max_ordenes: Máximo de órdenes a procesar
+            use_existing_session: Usar sesión guardada si existe
+            use_db: Usar credenciales de la base de datos
+            max_total_time: Tiempo máximo total por intento
+            reset_checkpoint: Reiniciar el checkpoint (empezar desde cero)
+        """
+        if reset_checkpoint:
+            self.log("[Checkpoint] Reiniciando estado...")
+            self.checkpoint.reset()
+        else:
+            stats = self.checkpoint.get_stats()
+            if stats['procesadas'] > 0:
+                self.log(f"[Checkpoint] Reanudando: {stats['procesadas']}/{stats['total']} órdenes ({stats['porcentaje']}%)")
+                self.log(f"[Checkpoint] Fallidas: {stats['fallidas']} órdenes")
+        
+        last_result = None
+        
+        for attempt in range(1, self.max_retries + 1):
+            self.log(f"\n{'='*60}")
+            self.log(f"INTENTO {attempt}/{self.max_retries}")
+            self.log(f"{'='*60}")
+            
+            try:
+                result = await self.run(
+                    max_ordenes=max_ordenes,
+                    use_existing_session=use_existing_session if attempt == 1 else True,
+                    use_db=use_db,
+                    max_total_time=max_total_time
+                )
+                
+                last_result = result
+                
+                # Si tuvo éxito, verificar si hay órdenes fallidas para reintentar
+                if result.get('success') or result.get('partial_results'):
+                    stats = self.checkpoint.get_stats()
+                    
+                    # Si completamos todas o no hay más fallidas, éxito total
+                    if stats['fallidas'] == 0 or stats['procesadas'] >= stats['total']:
+                        self.log(f"\n✅ Workflow completado exitosamente")
+                        self.log(f"   Órdenes procesadas: {stats['procesadas']}")
+                        result['retries_used'] = attempt - 1
+                        result['checkpoint_stats'] = stats
+                        return result
+                    
+                    # Hay órdenes fallidas, reintentar si no es el último intento
+                    if attempt < self.max_retries:
+                        self.log(f"\n⚠️  Hay {stats['fallidas']} órdenes fallidas. Reintentando...")
+                        await asyncio.sleep(5 * attempt)  # Backoff exponencial
+                        continue
+                    else:
+                        self.log(f"\n⚠️  Máximos reintentos alcanzados. {stats['fallidas']} órdenes fallidas.")
+                        result['retries_used'] = attempt
+                        result['checkpoint_stats'] = stats
+                        return result
+                
+                # Error total (no partial_results)
+                if attempt < self.max_retries:
+                    wait_time = 10 * attempt  # Backoff: 10s, 20s, 30s
+                    self.log(f"\n⚠️  Error en intento {attempt}. Reintentando en {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    self.log(f"\n❌ Máximos reintentos alcanzados ({self.max_retries})")
+                    if last_result:
+                        last_result['retries_used'] = attempt
+                        last_result['checkpoint_stats'] = self.checkpoint.get_stats()
+                    return last_result or {
+                        "success": False,
+                        "error": f"Falló después de {self.max_retries} intentos",
+                        "retries_used": attempt
+                    }
+                    
+            except Exception as e:
+                self.log(f"\n❌ Excepción en intento {attempt}: {e}")
+                if attempt < self.max_retries:
+                    wait_time = 15 * attempt
+                    self.log(f"Reintentando en {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Excepción después de {self.max_retries} intentos: {str(e)}",
+                        "retries_used": attempt,
+                        "checkpoint_stats": self.checkpoint.get_stats()
+                    }
+        
+        return last_result or {"success": False, "error": "No se completó ningún intento"}
+    
+    def reset_checkpoint(self):
+        """Reinicia el checkpoint para empezar desde cero."""
+        self.checkpoint.reset()
+        self.log("[Checkpoint] Reiniciado correctamente")
+    
+    def get_checkpoint_stats(self) -> dict:
+        """Retorna estadísticas del checkpoint."""
+        return self.checkpoint.get_stats()
     
     async def _run_internal(
         self,
@@ -190,12 +302,16 @@ class QualitasPiezasWorkflow:
                 else:
                     self.log("  ⚠ No se pudo manejar el modal (puede que no haya aparecido)")
                 
-                # 3. Extraer piezas
+                # 3. Extraer piezas (con checkpoint habilitado)
                 self.log("\n" + "=" * 60)
                 self.log("[3/3] EXTRAYENDO PIEZAS DE ÓRDENES EN TRÁNSITO")
                 self.log("=" * 60)
                 
-                extractor = QualitasPiezasExtractor(page)
+                extractor = QualitasPiezasExtractor(
+                    page, 
+                    use_checkpoint=True,
+                    resume_from_checkpoint=True
+                )
                 ordenes = await extractor.extract_piezas_from_transito(max_ordenes)
                 
                 self.resultados = ordenes

@@ -9,7 +9,7 @@ services:
     environment:
       APP_NAME: LaMarinaCC
       ENV: dev
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/lamarinacc}
+      # DATABASE_URL se carga desde el archivo .env (backend/.env)
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010,http://127.0.0.1:3010}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}

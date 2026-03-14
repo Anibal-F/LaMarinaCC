@@ -180,6 +180,9 @@ def get_piezas(
     estatus: Optional[str] = Query(None, description="Filtrar por estatus"),
     proveedor_id: Optional[int] = Query(None, description="Filtrar por proveedor"),
     search: Optional[str] = Query(None, description="Buscar por nombre o número de parte"),
+    numero_reporte: Optional[str] = Query(None, description="Filtrar por número de reporte"),
+    fecha_inicio: Optional[str] = Query(None, description="Fecha inicio para filtro de fecha promesa (YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha fin para filtro de fecha promesa (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0)
 ):
@@ -218,6 +221,18 @@ def get_piezas(
             if search:
                 query += " AND (bp.nombre ILIKE %s OR bp.numero_parte ILIKE %s)"
                 params.extend([f"%{search}%", f"%{search}%"])
+            
+            if numero_reporte:
+                query += " AND bp.numero_reporte ILIKE %s"
+                params.append(f"%{numero_reporte}%")
+            
+            if fecha_inicio:
+                query += " AND bp.fecha_promesa >= %s"
+                params.append(f"{fecha_inicio} 00:00:00")
+            
+            if fecha_fin:
+                query += " AND bp.fecha_promesa <= %s"
+                params.append(f"{fecha_fin} 23:59:59")
             
             query += " ORDER BY bp.created_at DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])

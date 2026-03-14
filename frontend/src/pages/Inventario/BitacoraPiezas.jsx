@@ -359,6 +359,9 @@ export default function BitacoraPiezas() {
   const [filtroEstatus, setFiltroEstatus] = useState('Todos');
   const [filtroTipo, setFiltroTipo] = useState('Todos');
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
+  const [filtroReporte, setFiltroReporte] = useState('');
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState('');
+  const [filtroFechaFin, setFiltroFechaFin] = useState('');
   
   // Paginación
   const [page, setPage] = useState(1);
@@ -375,7 +378,7 @@ export default function BitacoraPiezas() {
   // Cargar piezas desde la API
   useEffect(() => {
     fetchPiezas();
-  }, [filtroEstatus, filtroTipo, fuenteActiva]);
+  }, [filtroEstatus, filtroTipo, fuenteActiva, filtroFechaInicio, filtroFechaFin]);
 
   const fetchPiezas = async () => {
     try {
@@ -388,6 +391,8 @@ export default function BitacoraPiezas() {
       if (filtroTipo !== 'Todos') params.append('tipo_registro', filtroTipo);
       if (filtroEstatus !== 'Todos') params.append('estatus', filtroEstatus);
       if (filtroBusqueda) params.append('search', filtroBusqueda);
+      if (filtroFechaInicio) params.append('fecha_inicio', filtroFechaInicio);
+      if (filtroFechaFin) params.append('fecha_fin', filtroFechaFin);
       params.append('limit', '1000'); // Cargar todas y filtrar en frontend por ahora
       
       const response = await fetch(`${API_BASE}/inventario/piezas?${params}`);
@@ -458,7 +463,14 @@ export default function BitacoraPiezas() {
         return false;
       }
       
-      // Filtro por búsqueda
+      // Filtro por número de reporte
+      if (filtroReporte && pieza.numero_reporte) {
+        if (!pieza.numero_reporte.toLowerCase().includes(filtroReporte.toLowerCase())) {
+          return false;
+        }
+      }
+      
+      // Filtro por búsqueda general
       if (filtroBusqueda) {
         const searchLower = filtroBusqueda.toLowerCase();
         return (
@@ -470,7 +482,7 @@ export default function BitacoraPiezas() {
       
       return true;
     });
-  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda]);
+  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroReporte]);
 
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);
@@ -641,6 +653,69 @@ export default function BitacoraPiezas() {
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
+              </div>
+              
+              {/* Filtro por No. Reporte */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">No. Reporte:</span>
+                <input
+                  type="text"
+                  value={filtroReporte}
+                  onChange={(e) => {
+                    setFiltroReporte(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Ej: 04 0540704"
+                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary w-36"
+                />
+                {filtroReporte && (
+                  <button
+                    onClick={() => setFiltroReporte('')}
+                    className="p-1 hover:bg-slate-700 rounded text-slate-400"
+                    title="Limpiar"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                )}
+              </div>
+              
+              {/* Filtro por rango de fechas */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Fecha Promesa:</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={filtroFechaInicio}
+                    onChange={(e) => {
+                      setFiltroFechaInicio(e.target.value);
+                      setPage(1);
+                    }}
+                    className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                  />
+                  <span className="text-xs text-slate-500">a</span>
+                  <input
+                    type="date"
+                    value={filtroFechaFin}
+                    onChange={(e) => {
+                      setFiltroFechaFin(e.target.value);
+                      setPage(1);
+                    }}
+                    className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                  />
+                  {(filtroFechaInicio || filtroFechaFin) && (
+                    <button
+                      onClick={() => {
+                        setFiltroFechaInicio('');
+                        setFiltroFechaFin('');
+                        setPage(1);
+                      }}
+                      className="p-1 hover:bg-slate-700 rounded text-slate-400"
+                      title="Limpiar fechas"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  )}
+                </div>
               </div>
               
               <div className="flex items-center gap-2 ml-auto">

@@ -195,6 +195,44 @@ def list_vehiculos_valuacion():
     return payload
 
 
+class ValuacionDetalle(BaseModel):
+    tipo: str
+    descripcion: str
+    monto: float
+    mano_obra: float = 0
+    pintura: float = 0
+    refacciones: float = 0
+
+
+class ValuacionPayload(BaseModel):
+    aseguradora_activa: str | None = None
+    autorizado_aseguradora: float | None = None
+    observaciones: str | None = None
+    detalle: list[ValuacionDetalle] = []
+
+
+class QualitasExportPayload(BaseModel):
+    nb_cliente: str | None = None
+    tel_cliente: str | None = None
+    fecha_adm: str | None = None
+    reporte_siniestro: str | None = None
+    marca_vehiculo: str | None = None
+    color_vehiculo: str | None = None
+    tipo_vehiculo: str | None = None
+    placas: str | None = None
+    transmision: str | None = None
+    poliza: str | None = None
+    modelo_anio: str | None = None
+    serie_auto: str | None = None
+    puertas: str | None = None
+    observaciones: str | None = None
+    detalle: list[ValuacionDetalle] = []
+
+
+class ValuacionInventarioPayload(BaseModel):
+    inventario: Optional[dict[str, Any]] = None
+
+
 @router.get("/ordenes/{orden_id}/inventario")
 def get_inventario_valuacion(orden_id: int):
     with get_connection() as conn:
@@ -281,44 +319,6 @@ def update_inventario_valuacion(orden_id: int, payload: ValuacionInventarioPaylo
         conn.commit()
 
     return {"ok": True}
-
-
-class ValuacionDetalle(BaseModel):
-    tipo: str
-    descripcion: str
-    monto: float
-    mano_obra: float = 0
-    pintura: float = 0
-    refacciones: float = 0
-
-
-class ValuacionPayload(BaseModel):
-    aseguradora_activa: str | None = None
-    autorizado_aseguradora: float | None = None
-    observaciones: str | None = None
-    detalle: list[ValuacionDetalle] = []
-
-
-class QualitasExportPayload(BaseModel):
-    nb_cliente: str | None = None
-    tel_cliente: str | None = None
-    fecha_adm: str | None = None
-    reporte_siniestro: str | None = None
-    marca_vehiculo: str | None = None
-    color_vehiculo: str | None = None
-    tipo_vehiculo: str | None = None
-    placas: str | None = None
-    transmision: str | None = None
-    poliza: str | None = None
-    modelo_anio: str | None = None
-    serie_auto: str | None = None
-    puertas: str | None = None
-    observaciones: str | None = None
-    detalle: list[ValuacionDetalle] = []
-
-
-class ValuacionInventarioPayload(BaseModel):
-    inventario: Optional[dict[str, Any]] = None
 
 
 def _resolve_recepcion_for_valuacion(conn, orden_id: int) -> dict[str, Any]:

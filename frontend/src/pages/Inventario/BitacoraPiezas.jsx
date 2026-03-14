@@ -163,6 +163,160 @@ function PaqueteriaCell({ paqueteria, guia }) {
   );
 }
 
+// Componente de Indicadores de Piezas
+function IndicadoresPiezas({ piezas }) {
+  // Calcular indicadores
+  const indicadores = useMemo(() => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    let vencidas = 0;
+    let porRecibir = 0;
+    let enProceso = 0;
+    const porEstatus = {};
+    
+    piezas.forEach(pieza => {
+      // Contar por estatus
+      const estatus = pieza.estatus || 'Sin Estatus';
+      porEstatus[estatus] = (porEstatus[estatus] || 0) + 1;
+      
+      // Calcular días hasta fecha promesa
+      if (pieza.fecha_promesa) {
+        const fechaPromesa = new Date(pieza.fecha_promesa);
+        fechaPromesa.setHours(0, 0, 0, 0);
+        
+        const diffTime = fechaPromesa - hoy;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays < 0) {
+          // Fecha promesa ya pasó
+          vencidas++;
+        } else if (diffDays >= 0 && diffDays <= 3) {
+          // 0 a 3 días para vencer
+          porRecibir++;
+        } else {
+          // Más de 3 días
+          enProceso++;
+        }
+      }
+    });
+    
+    return { vencidas, porRecibir, enProceso, porEstatus };
+  }, [piezas]);
+  
+  const tarjetas = [
+    {
+      key: 'vencidas',
+      label: 'Piezas Vencidas',
+      value: indicadores.vencidas,
+      icon: 'warning',
+      color: 'red',
+      desc: 'Fecha promesa vencida'
+    },
+    {
+      key: 'porRecibir',
+      label: 'Por Recibir',
+      value: indicadores.porRecibir,
+      icon: 'schedule',
+      color: 'amber',
+      desc: '0-3 días para entrega'
+    },
+    {
+      key: 'enProceso',
+      label: 'En Proceso',
+      value: indicadores.enProceso,
+      icon: 'timer',
+      color: 'blue',
+      desc: '> 3 días para entrega'
+    },
+    {
+      key: 'total',
+      label: 'Total Piezas',
+      value: piezas.length,
+      icon: 'inventory_2',
+      color: 'slate',
+      desc: 'Todas las piezas'
+    }
+  ];
+  
+  // Indicadores por estatus (solo los principales)
+  const estatusPrincipales = ['En Proceso', 'Pendiente', 'Cancelada', 'Entregado', 'Recibido'];
+  
+  const colorClasses = {
+    red: { border: 'border-alert-red', text: 'text-alert-red', bg: 'bg-alert-red/20', icon: 'text-alert-red' },
+    amber: { border: 'border-alert-amber', text: 'text-alert-amber', bg: 'bg-alert-amber/20', icon: 'text-alert-amber' },
+    blue: { border: 'border-blue-500', text: 'text-blue-500', bg: 'bg-blue-500/20', icon: 'text-blue-500' },
+    slate: { border: 'border-slate-500', text: 'text-slate-400', bg: 'bg-slate-500/20', icon: 'text-slate-400' },
+    green: { border: 'border-alert-green', text: 'text-alert-green', bg: 'bg-alert-green/20', icon: 'text-alert-green' },
+    purple: { border: 'border-purple-500', text: 'text-purple-500', bg: 'bg-purple-500/20', icon: 'text-purple-500' },
+  };
+  
+  return (
+    <div className="space-y-4">
+      {/* Indicadores principales */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {tarjetas.map((tarjeta) => {
+          const colors = colorClasses[tarjeta.color];
+          return (
+            <div 
+              key={tarjeta.key}
+              className={`bg-surface-dark border ${colors.border} rounded-xl p-4 transition-all hover:scale-[1.02]`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {tarjeta.label}
+                </span>
+                <span className={`material-symbols-outlined ${colors.icon} text-xl`}>
+                  {tarjeta.icon}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-4xl font-extrabold ${colors.text} tracking-tight`}>
+                  {tarjeta.value}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {tarjeta.desc}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      
+      {/* Indicadores por estatus */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        {estatusPrincipales.map((estatus) => {
+          const count = indicadores.porEstatus[estatus] || 0;
+          if (count === 0) return null;
+          
+          const estatusColors = {
+            'En Proceso': 'blue',
+            'Pendiente': 'amber',
+            'Cancelada': 'red',
+            'Entregado': 'green',
+            'Recibido': 'purple'
+          };
+          
+          const color = estatusColors[estatus] || 'slate';
+          const colors = colorClasses[color];
+          
+          return (
+            <div 
+              key={estatus}
+              className={`bg-surface-dark border ${colors.border}/30 rounded-lg p-3 transition-all hover:border-${color}-500/50`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400">{estatus}</span>
+                <span className={`text-lg font-bold ${colors.text}`}>{count}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Componente Badge de Estatus
 function EstatusBadge({ estatus }) {
   const colors = {
@@ -451,6 +605,9 @@ export default function BitacoraPiezas() {
                 </button>
               </div>
             </div>
+
+            {/* Indicadores */}
+            {piezas.length > 0 && <IndicadoresPiezas piezas={piezas} />}
 
             {/* Filtros */}
             <div className="flex flex-wrap items-center gap-4 bg-surface-dark border border-border-dark rounded-xl p-4">

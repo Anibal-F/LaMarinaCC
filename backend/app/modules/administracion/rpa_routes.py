@@ -764,6 +764,7 @@ class PiezasExtractionRequest(BaseModel):
     """Solicitud para extraer piezas de órdenes en tránsito."""
     max_ordenes: Optional[int] = Field(default=None, description="Máximo de órdenes a procesar (None = todas)")
     headless: bool = Field(default=True, description="Ejecutar sin ventana visible")
+    reset_checkpoint: bool = Field(default=False, description="Reiniciar checkpoint y procesar desde el inicio")
 
 
 @router.post("/qualitas/piezas", response_model=RPAResponse)
@@ -803,7 +804,8 @@ def extract_piezas_qualitas(
         run_piezas_extraction,
         job_id=job_id,
         max_ordenes=request.max_ordenes,
-        headless=request.headless
+        headless=request.headless,
+        reset_checkpoint=request.reset_checkpoint
     )
     
     return RPAResponse(
@@ -817,7 +819,7 @@ def extract_piezas_qualitas(
     )
 
 
-def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: bool):
+def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: bool, reset_checkpoint: bool = False):
     """
     Ejecuta el script de extracción de piezas en un proceso separado.
     Esta función corre en background.
@@ -858,6 +860,10 @@ def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: boo
         
         if max_ordenes:
             cmd.extend(["--max-ordenes", str(max_ordenes)])
+        
+        if reset_checkpoint:
+            cmd.append("--reset-checkpoint")
+            log_message("Checkpoint: REINICIADO (procesar desde el inicio)")
         
         # Siempre headless en Docker
         is_docker = os.path.exists('/.dockerenv') or os.getenv('DOCKER_CONTAINER', False)
@@ -929,3 +935,66 @@ def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: boo
         log_message(f"ERROR: {e}")
     
     rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+
+
+# =====================================================
+# ENDPOINT PARA VER ESTADO DEL CHECKPOINT
+# =====================================================
+
+@router.get("/qualitas/piezas/checkpoint")
+def get_piezas_checkpoint_status():
+    """
+    Obtiene el estado actual del checkpoint de extracción de piezas.
+    Útil para saber si hay una extracción en progreso o si se puede reanudar.
+    """
+    try:
+        # Importar el checkpoint manager
+        import sys
+        from pathlib import Path
+        
+        backend_dir = Path(__file__).resolve().parents[3]
+        if str(backend_dir) not in sys.path:
+            sys.path.insert(0, str(backend_dir))
+        
+        from app.rpa.qualitas_checkpoint import checkpoint
+        
+        stats = checkpoint.get_stats()
+        
+        return {
+            "status": "ok",
+            "checkpoint": stats
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@router.post("/qualitas/piezas/checkpoint/reset")
+def reset_piezas_checkpoint():
+    """
+    Reinicia el checkpoint de extracción de piezas.
+    Esto hace que la próxima extracción comience desde el inicio.
+    """
+    try:
+        import sys
+        from pathlib import Path
+        
+        backend_dir = Path(__file__).resolve().parents[3]
+        if str(backend_dir) not in sys.path:
+            sys.path.insert(0, str(backend_dir))
+        
+        from app.rpa.qualitas_checkpoint import checkpoint
+        
+        checkpoint.reset()
+        
+        return {
+            "status": "ok",
+            "message": "Checkpoint reiniciado correctamente"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }

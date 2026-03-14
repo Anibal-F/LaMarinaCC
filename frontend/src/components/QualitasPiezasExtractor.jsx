@@ -14,6 +14,7 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
   const [logs, setLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
   const [maxOrdenes, setMaxOrdenes] = useState('');
+  const [resetCheckpoint, setResetCheckpoint] = useState(false);
   const logsEndRef = useRef(null);
   const intervalRef = useRef(null);
 
@@ -43,7 +44,8 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           max_ordenes: maxOrdenes ? parseInt(maxOrdenes) : null,
-          headless: true
+          headless: true,
+          reset_checkpoint: resetCheckpoint
         })
       });
 
@@ -152,6 +154,18 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
             className="w-20 bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-primary"
           />
         </div>
+
+        {/* Checkbox para reiniciar checkpoint */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={resetCheckpoint}
+            onChange={(e) => setResetCheckpoint(e.target.checked)}
+            disabled={isExtracting}
+            className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+          />
+          <span className="text-xs text-slate-400">Reiniciar desde inicio</span>
+        </label>
 
         {/* Botón para expandir/colapsar logs - Solo visible cuando hay logs */}
         {(logs.length > 0 || isExtracting) && (

@@ -131,6 +131,7 @@ def dict_to_datos_adjudicacion(data: Dict[str, Any]) -> DatosAdjudicacion:
         anio_vehiculo=str(data.get('anio_vehiculo', '')),
         color_vehiculo=data.get('color_vehiculo', ''),
         placa=data.get('placa', ''),
+        kilometraje=str(data.get('kilometraje', '')),
         economico=data.get('economico', ''),
         nro_serie=data.get('nro_serie', ''),
         es_hibrido_electrico=data.get('es_hibrido_electrico', False),
@@ -140,6 +141,7 @@ def dict_to_datos_adjudicacion(data: Dict[str, Any]) -> DatosAdjudicacion:
         ubicacion=data.get('ubicacion', ''),
         contratante=data.get('contratante', ''),
         vehiculo_referencia=data.get('vehiculo_referencia', ''),
+        inventario=data.get('inventario') or {},
         registered_f_app=str(data.get('registered_f_app', '0')),
         qr_flag=str(data.get('qr_flag', '0'))
     )

@@ -1056,6 +1056,7 @@ export default function OrdenAdmision() {
         anio_vehiculo: record.modelo_anio || "",
         color_vehiculo: record.color_vehiculo || "",
         placa: record.placas || "",
+        kilometraje: record.kilometraje ? String(record.kilometraje) : "",
         nro_serie: record.serie_auto || "",
         estatus_exp_id: estatusExp, // Valor seleccionado por el usuario
         ingreso_grua: ingresoGrua, // Valor seleccionado por el usuario

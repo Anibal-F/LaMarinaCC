@@ -19,6 +19,42 @@ from typing import Dict, List, Optional, Any
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
 
+INVENTARIO_QUALITAS_MAP = {
+    "documentos": "1",
+    "radio": "2",
+    "pantalla": "3",
+    "encendedor": "4",
+    "tapetes_tela": "5",
+    "tapetes_plastico": "6",
+    "antena": "9",
+    "polveras": "10",
+    "centro_rin": "11",
+    "placas_item": "12",
+    "bateria": "13",
+    "computadora": "14",
+    "tapones_depositos": "15",
+    "herramienta": "16",
+    "reflejantes": "17",
+    "cables_pasa_corriente": "18",
+    "llanta_refaccion": "19",
+    "llave_l_cruceta": "20",
+    "extintor": "21",
+    "gato": "22",
+}
+
+FUEL_LEVEL_TO_QUALITAS_VALUE = {
+    "tanque vacio": "9",
+    "1/8 tanque": "10",
+    "2/8 tanque": "11",
+    "3/8 tanque": "12",
+    "4/8 tanque": "13",
+    "5/8 tanque": "14",
+    "6/8 tanque": "15",
+    "7/8 tanque": "16",
+    "tanque lleno": "17",
+}
+
+
 @dataclass
 class DatosAdjudicacion:
     """Datos necesarios para adjudicar una orden."""
@@ -46,6 +82,7 @@ class DatosAdjudicacion:
     anio_vehiculo: str = ""
     color_vehiculo: str = ""  # Valor o texto visible del color
     economico: str = ""
+    kilometraje: str = ""
     nro_serie: str = ""
     es_hibrido_electrico: bool = False
     
@@ -58,6 +95,7 @@ class DatosAdjudicacion:
     # Datos adicionales
     contratante: str = ""
     vehiculo_referencia: str = ""
+    inventario: Dict[str, Any] = field(default_factory=dict)
     
     # Flags del sistema
     registered_f_app: str = "0"
@@ -161,6 +199,133 @@ class QualitasAdjudicacionHandler:
             return True
         except Exception as exc:
             print(f"[Adjudicacion] {log_label} no se pudo seleccionar por búsqueda: {exc}")
+            return False
+
+    async def _fill_inventory_item(self, idx: str, estado: str | None, cantidad: Any = None) -> bool:
+        normalized_estado = str(estado or "").strip().lower()
+        if normalized_estado not in {"si", "no"}:
+            return False
+
+        try:
+            radio = self.page.locator(f'input[name="{idx}_revisada"][value="{normalized_estado}"]').first
+            if await radio.count() == 0:
+                print(f"[Adjudicacion] ⚠ No se encontró radio de inventario {idx}_{normalized_estado}")
+                return False
+
+            await radio.click(force=True)
+            await asyncio.sleep(0.1)
+
+            if normalized_estado == "si" and cantidad is not None and str(cantidad).strip():
+                input_selector = f"#{idx}_cantidad"
+                await self.page.wait_for_function(
+                    "(selector) => { const el = document.querySelector(selector); return !!el && !el.disabled; }",
+                    input_selector,
+                    timeout=2500,
+                )
+                await self.page.fill(input_selector, "")
+                await self.page.fill(input_selector, str(cantidad).strip())
+            return True
+        except Exception as exc:
+            print(f"[Adjudicacion] ⚠ No se pudo llenar item de inventario {idx}: {exc}")
+            return False
+
+    async def llenar_formulario_inventario(self, datos: DatosAdjudicacion) -> bool:
+        print(f"[Adjudicacion] Llenando inventario...")
+
+        try:
+            await self.page.wait_for_selector("#medidor_gasolina", timeout=15000)
+            await self.page.wait_for_selector("#comentario_propio_del_inventario", timeout=15000)
+
+            inventario = datos.inventario or {}
+
+            for field_name, idx in INVENTARIO_QUALITAS_MAP.items():
+                item = inventario.get(field_name) or {}
+                await self._fill_inventory_item(idx, item.get("estado"), item.get("cantidad"))
+
+            if datos.kilometraje and str(datos.kilometraje).strip():
+                await self._fill_inventory_item("8", "si", str(datos.kilometraje).strip())
+
+            nivel_gas = str(inventario.get("nivel_gas") or "").strip().lower()
+            if nivel_gas:
+                fuel_value = FUEL_LEVEL_TO_QUALITAS_VALUE.get(nivel_gas)
+                if fuel_value:
+                    await self._fill_inventory_item("7", "si", "1")
+                    await self.page.select_option("#medidor_gasolina", fuel_value)
+                    print(f"[Adjudicacion] Medidor de gasolina seleccionado: {fuel_value}")
+                else:
+                    print(f"[Adjudicacion] ⚠ Nivel de gasolina no mapeado: {inventario.get('nivel_gas')}")
+
+            comentario = str(inventario.get("comentario") or "").strip()
+            if comentario:
+                await self.page.fill("#comentario_propio_del_inventario", comentario)
+
+            print(f"[Adjudicacion] ✓ Inventario llenado")
+            return True
+        except Exception as exc:
+            print(f"[Adjudicacion] ✗ Error llenando inventario: {exc}")
+            import traceback
+            print(f"[Adjudicacion] Traceback inventario: {traceback.format_exc()}")
+            return False
+
+    async def guardar_inventario(self) -> bool:
+        print(f"[Adjudicacion] Guardando inventario...")
+
+        try:
+            clicked = False
+            candidate_selectors = [
+                "#btn-guardar-inventario",
+                "button[type='submit']",
+                "input[type='submit']",
+                "button[id*='guardar']",
+                "button[onclick*='guardar']",
+            ]
+
+            for selector in candidate_selectors:
+                locator = self.page.locator(selector).first
+                if await locator.count() == 0:
+                    continue
+                if await locator.is_visible():
+                    await locator.click(force=True)
+                    clicked = True
+                    break
+
+            if not clicked:
+                clicked = await self.page.evaluate(
+                    """
+                    () => {
+                        const fuel = document.querySelector('#medidor_gasolina');
+                        const form = fuel ? fuel.closest('form') : null;
+                        if (!form) return false;
+                        const btn = form.querySelector(
+                            'button[type="submit"], input[type="submit"], button[id*="guardar"], button[onclick*="guardar"]'
+                        );
+                        if (btn) {
+                            btn.click();
+                            return true;
+                        }
+                        if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit();
+                            return true;
+                        }
+                        return false;
+                    }
+                    """
+                )
+
+            if not clicked:
+                print(f"[Adjudicacion] ✗ No se encontró forma de guardar inventario")
+                return False
+
+            await asyncio.sleep(2)
+            try:
+                await self.page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+
+            print(f"[Adjudicacion] ✓ Inventario guardado")
+            return True
+        except Exception as exc:
+            print(f"[Adjudicacion] ✗ Error guardando inventario: {exc}")
             return False
     
     async def buscar_expediente(self, id_expediente: str = None, num_reporte: str = None) -> bool:
@@ -583,16 +748,32 @@ class QualitasAdjudicacionHandler:
             
             # 4. Guardar
             if await self.guardar_adjudicacion():
+                has_inventory_data = bool(datos.inventario) or bool(str(datos.kilometraje or "").strip())
+                if has_inventory_data:
+                    if not await self.llenar_formulario_inventario(datos):
+                        return ResultadoAdjudicacion(
+                            exito=False,
+                            mensaje="Error al llenar el inventario posterior a la adjudicación",
+                            id_expediente=datos.id_expediente or datos.num_reporte,
+                            errores=["Error llenando inventario"],
+                        )
+                    if not await self.guardar_inventario():
+                        return ResultadoAdjudicacion(
+                            exito=False,
+                            mensaje="Error al guardar el inventario posterior a la adjudicación",
+                            id_expediente=datos.id_expediente or datos.num_reporte,
+                            errores=["Error guardando inventario"],
+                        )
                 return ResultadoAdjudicacion(
                     exito=True,
                     mensaje=f"Orden adjudicada exitosamente",
-                    id_expediente=datos.id_expediente
+                    id_expediente=datos.id_expediente or datos.num_reporte
                 )
             else:
                 return ResultadoAdjudicacion(
                     exito=False,
                     mensaje=f"Error al guardar la adjudicación",
-                    id_expediente=datos.id_expediente,
+                    id_expediente=datos.id_expediente or datos.num_reporte,
                     errores=["Error guardando en el servidor"]
                 )
                 
@@ -603,7 +784,7 @@ class QualitasAdjudicacionHandler:
             return ResultadoAdjudicacion(
                 exito=False,
                 mensaje=f"Error inesperado: {str(e)}",
-                id_expediente=datos.id_expediente,
+                id_expediente=datos.id_expediente or datos.num_reporte,
                 errores=[str(e), traceback.format_exc()]
             )
     

@@ -8,7 +8,10 @@ from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Any
+
+from app.core.db import get_connection
+from app.modules.recepcion.routes import ensure_inventario_recepcion_table
 
 router = APIRouter(prefix="/rpa", tags=["rpa"])
 
@@ -57,6 +60,7 @@ class AdjudicacionDatosRequest(BaseModel):
     anio_vehiculo: str = Field(default="", description="Año del vehículo")
     color_vehiculo: str = Field(default="", description="Color del vehículo tal como viene en la orden")
     placa: str = Field(default="", description="Número de placa")
+    kilometraje: str = Field(default="", description="Kilometraje del vehículo")
     economico: str = Field(default="", description="Número económico (opcional)")
     nro_serie: str = Field(default="", description="Número de serie VIN")
     es_hibrido_electrico: bool = Field(default=False, description="¿Es híbrido o eléctrico?")
@@ -70,6 +74,7 @@ class AdjudicacionDatosRequest(BaseModel):
     # Datos adicionales
     contratante: str = Field(default="", description="Nombre del contratante")
     vehiculo_referencia: str = Field(default="", description="Descripción del vehículo")
+    inventario: Optional[dict[str, Any]] = Field(default=None, description="Inventario asociado a la recepción/valuación")
     
     # Flags del sistema
     headless: bool = Field(default=True, description="Ejecutar sin ventana visible")
@@ -89,6 +94,85 @@ class AdjudicacionBatchRequest(BaseModel):
     ordenes: List[AdjudicacionDatosRequest]
     headless: bool = True
     stop_on_error: bool = False
+
+
+def _build_inventory_payload(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    return {
+        "documentos": {"cantidad": row.get("documentos_cantidad"), "estado": row.get("documentos_estado")},
+        "radio": {"cantidad": row.get("radio_cantidad"), "estado": row.get("radio_estado")},
+        "pantalla": {"cantidad": row.get("pantalla_cantidad"), "estado": row.get("pantalla_estado")},
+        "encendedor": {"cantidad": row.get("encendedor_cantidad"), "estado": row.get("encendedor_estado")},
+        "tapetes_tela": {"cantidad": row.get("tapetes_tela_cantidad"), "estado": row.get("tapetes_tela_estado")},
+        "tapetes_plastico": {"cantidad": row.get("tapetes_plastico_cantidad"), "estado": row.get("tapetes_plastico_estado")},
+        "bateria": {"cantidad": row.get("bateria_cantidad"), "estado": row.get("bateria_estado")},
+        "computadora": {"cantidad": row.get("computadora_cantidad"), "estado": row.get("computadora_estado")},
+        "tapones_depositos": {"cantidad": row.get("tapones_depositos_cantidad"), "estado": row.get("tapones_depositos_estado")},
+        "antena": {"cantidad": row.get("antena_cantidad"), "estado": row.get("antena_estado")},
+        "polveras": {"cantidad": row.get("polveras_cantidad"), "estado": row.get("polveras_estado")},
+        "centro_rin": {"cantidad": row.get("centro_rin_cantidad"), "estado": row.get("centro_rin_estado")},
+        "placas_item": {"cantidad": row.get("placas_item_cantidad"), "estado": row.get("placas_item_estado")},
+        "herramienta": {"cantidad": row.get("herramienta_cantidad"), "estado": row.get("herramienta_estado")},
+        "reflejantes": {"cantidad": row.get("reflejantes_cantidad"), "estado": row.get("reflejantes_estado")},
+        "cables_pasa_corriente": {
+            "cantidad": row.get("cables_pasa_corriente_cantidad"),
+            "estado": row.get("cables_pasa_corriente_estado"),
+        },
+        "llanta_refaccion": {"cantidad": row.get("llanta_refaccion_cantidad"), "estado": row.get("llanta_refaccion_estado")},
+        "llave_l_cruceta": {"cantidad": row.get("llave_l_cruceta_cantidad"), "estado": row.get("llave_l_cruceta_estado")},
+        "extintor": {"cantidad": row.get("extintor_cantidad"), "estado": row.get("extintor_estado")},
+        "gato": {"cantidad": row.get("gato_cantidad"), "estado": row.get("gato_estado")},
+        "nivel_gas": row.get("nivel_gas"),
+        "comentario": row.get("comentario"),
+    }
+
+
+def _load_inventory_for_qualitas(num_reporte: str, placa: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        ensure_inventario_recepcion_table(conn)
+
+        row = None
+        reporte = str(num_reporte or "").strip()
+        placas = str(placa or "").strip()
+
+        if reporte:
+            row = conn.execute(
+                """
+                SELECT
+                    i.*,
+                    r.kilometraje
+                FROM inventario_recepcion i
+                JOIN recepciones r ON r.id = i.recepcion_id
+                WHERE COALESCE(i.folio_seguro, '') = %s
+                ORDER BY i.updated_at DESC NULLS LAST, i.id DESC
+                LIMIT 1
+                """,
+                (reporte,),
+            ).fetchone()
+
+        if not row and placas:
+            row = conn.execute(
+                """
+                SELECT
+                    i.*,
+                    r.kilometraje
+                FROM inventario_recepcion i
+                JOIN recepciones r ON r.id = i.recepcion_id
+                WHERE UPPER(COALESCE(i.placas, '')) = UPPER(%s)
+                ORDER BY i.updated_at DESC NULLS LAST, i.id DESC
+                LIMIT 1
+                """,
+                (placas,),
+            ).fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "inventario": _build_inventory_payload(row),
+        "kilometraje": str(row.get("kilometraje") or "").strip(),
+    }
 
 
 def run_rpa_script(seguro: str, job_id: str, action: str, headless: bool, save_session: bool):
@@ -388,6 +472,16 @@ async def adjudicar_orden_qualitas(
     # Convertir request a JSON
     import json
     datos_dict = request.model_dump()
+    if not datos_dict.get("inventario") or not datos_dict.get("kilometraje"):
+        inventory_data = _load_inventory_for_qualitas(
+            datos_dict.get("num_reporte", ""),
+            datos_dict.get("placa", ""),
+        )
+        if inventory_data:
+            if not datos_dict.get("inventario"):
+                datos_dict["inventario"] = inventory_data.get("inventario")
+            if not datos_dict.get("kilometraje"):
+                datos_dict["kilometraje"] = inventory_data.get("kilometraje", "")
     datos_json = json.dumps(datos_dict, ensure_ascii=False)
     
     rpa_jobs[job_id] = {

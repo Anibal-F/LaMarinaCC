@@ -2584,17 +2584,12 @@ def _sync_recepcion_folio_sequence(conn) -> None:
             FROM historical_entries
             WHERE folio_recep ~ '^[0-9]+$'
         ),
-        current_seq AS (
-            SELECT COALESCE(last_value, 4999) AS max_value
-            FROM recepcion_folio_seq
-        ),
         synced AS (
             SELECT setval(
                 'recepcion_folio_seq',
                 GREATEST(
                     (SELECT max_value FROM max_recepciones),
-                    (SELECT max_value FROM max_historico),
-                    (SELECT max_value FROM current_seq)
+                    (SELECT max_value FROM max_historico)
                 ),
                 true
             ) AS current_value

@@ -4,6 +4,7 @@ import unicodedata
 from io import BytesIO
 from pathlib import Path
 from statistics import median
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -12,6 +13,7 @@ from psycopg.rows import dict_row
 import xlsxwriter
 
 from app.core.db import get_connection
+from app.modules.recepcion.routes import ensure_inventario_recepcion_table, _upsert_inventario_recepcion
 
 router = APIRouter(prefix="/valuacion", tags=["valuacion"])
 
@@ -193,6 +195,94 @@ def list_vehiculos_valuacion():
     return payload
 
 
+@router.get("/ordenes/{orden_id}/inventario")
+def get_inventario_valuacion(orden_id: int):
+    with get_connection() as conn:
+        linked = _resolve_recepcion_for_valuacion(conn, orden_id)
+        recepcion = linked["recepcion"]
+        ensure_inventario_recepcion_table(conn)
+        conn.row_factory = dict_row
+        inventory_row = conn.execute(
+            """
+            SELECT
+                documentos_cantidad,
+                documentos_estado,
+                radio_cantidad,
+                radio_estado,
+                pantalla_cantidad,
+                pantalla_estado,
+                encendedor_cantidad,
+                encendedor_estado,
+                tapetes_tela_cantidad,
+                tapetes_tela_estado,
+                tapetes_plastico_cantidad,
+                tapetes_plastico_estado,
+                bateria_cantidad,
+                bateria_estado,
+                computadora_cantidad,
+                computadora_estado,
+                tapones_depositos_cantidad,
+                tapones_depositos_estado,
+                antena_cantidad,
+                antena_estado,
+                polveras_cantidad,
+                polveras_estado,
+                centro_rin_cantidad,
+                centro_rin_estado,
+                placas_item_cantidad,
+                placas_item_estado,
+                herramienta_cantidad,
+                herramienta_estado,
+                reflejantes_cantidad,
+                reflejantes_estado,
+                cables_pasa_corriente_cantidad,
+                cables_pasa_corriente_estado,
+                llanta_refaccion_cantidad,
+                llanta_refaccion_estado,
+                llave_l_cruceta_cantidad,
+                llave_l_cruceta_estado,
+                extintor_cantidad,
+                extintor_estado,
+                gato_cantidad,
+                gato_estado,
+                nivel_gas,
+                comentario
+            FROM inventario_recepcion
+            WHERE recepcion_id = %s
+            LIMIT 1
+            """,
+            (recepcion["id"],),
+        ).fetchone()
+
+    return {
+        "orden_id": orden_id,
+        "recepcion_id": recepcion["id"],
+        "folio_recep": recepcion.get("folio_recep"),
+        "placas": recepcion.get("placas"),
+        "folio_seguro": recepcion.get("folio_seguro"),
+        "inventario": _build_inventory_payload(inventory_row),
+    }
+
+
+@router.put("/ordenes/{orden_id}/inventario")
+def update_inventario_valuacion(orden_id: int, payload: ValuacionInventarioPayload):
+    with get_connection() as conn:
+        linked = _resolve_recepcion_for_valuacion(conn, orden_id)
+        recepcion = linked["recepcion"]
+        orden = linked["orden"]
+        _upsert_inventario_recepcion(
+            conn,
+            recepcion["id"],
+            recepcion.get("folio_recep"),
+            recepcion.get("placas"),
+            orden.get("reporte_siniestro"),
+            payload.inventario,
+        )
+        conn.commit()
+
+    return {"ok": True}
+
+
 class ValuacionDetalle(BaseModel):
     tipo: str
     descripcion: str
@@ -225,6 +315,114 @@ class QualitasExportPayload(BaseModel):
     puertas: str | None = None
     observaciones: str | None = None
     detalle: list[ValuacionDetalle] = []
+
+
+class ValuacionInventarioPayload(BaseModel):
+    inventario: Optional[dict[str, Any]] = None
+
+
+def _resolve_recepcion_for_valuacion(conn, orden_id: int) -> dict[str, Any]:
+    conn.row_factory = dict_row
+    orden = conn.execute(
+        """
+        SELECT id, reporte_siniestro, placas
+        FROM orden_admision
+        WHERE id = %s
+        """,
+        (orden_id,),
+    ).fetchone()
+    if not orden:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden de admision no encontrada",
+        )
+
+    recepcion = conn.execute(
+        """
+        SELECT
+            r.id,
+            r.folio_recep,
+            r.placas,
+            COALESCE(NULLIF(he.folio_seguro, ''), '') AS folio_seguro
+        FROM recepciones r
+        LEFT JOIN LATERAL (
+            SELECT folio_seguro
+            FROM historical_entries
+            WHERE folio_recep = r.folio_recep
+            ORDER BY id DESC
+            LIMIT 1
+        ) he ON true
+        WHERE (
+            %s IS NOT NULL
+            AND %s <> ''
+            AND UPPER(COALESCE(he.folio_seguro, '')) = UPPER(%s)
+        )
+        OR (
+            %s IS NOT NULL
+            AND %s <> ''
+            AND UPPER(COALESCE(r.placas, '')) = UPPER(%s)
+        )
+        ORDER BY
+            CASE
+                WHEN %s IS NOT NULL
+                     AND %s <> ''
+                     AND UPPER(COALESCE(he.folio_seguro, '')) = UPPER(%s)
+                THEN 0
+                ELSE 1
+            END,
+            r.id DESC
+        LIMIT 1
+        """,
+        (
+            orden.get("reporte_siniestro"),
+            orden.get("reporte_siniestro"),
+            orden.get("reporte_siniestro"),
+            orden.get("placas"),
+            orden.get("placas"),
+            orden.get("placas"),
+            orden.get("reporte_siniestro"),
+            orden.get("reporte_siniestro"),
+            orden.get("reporte_siniestro"),
+        ),
+    ).fetchone()
+
+    if not recepcion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontro una recepcion vinculada para esta valuacion.",
+        )
+
+    return {
+        "orden": orden,
+        "recepcion": recepcion,
+    }
+
+
+def _build_inventory_payload(inventory_row: Optional[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "documentos": {"cantidad": inventory_row.get("documentos_cantidad") if inventory_row else None, "estado": inventory_row.get("documentos_estado") if inventory_row else None},
+        "radio": {"cantidad": inventory_row.get("radio_cantidad") if inventory_row else None, "estado": inventory_row.get("radio_estado") if inventory_row else None},
+        "pantalla": {"cantidad": inventory_row.get("pantalla_cantidad") if inventory_row else None, "estado": inventory_row.get("pantalla_estado") if inventory_row else None},
+        "encendedor": {"cantidad": inventory_row.get("encendedor_cantidad") if inventory_row else None, "estado": inventory_row.get("encendedor_estado") if inventory_row else None},
+        "tapetes_tela": {"cantidad": inventory_row.get("tapetes_tela_cantidad") if inventory_row else None, "estado": inventory_row.get("tapetes_tela_estado") if inventory_row else None},
+        "tapetes_plastico": {"cantidad": inventory_row.get("tapetes_plastico_cantidad") if inventory_row else None, "estado": inventory_row.get("tapetes_plastico_estado") if inventory_row else None},
+        "bateria": {"cantidad": inventory_row.get("bateria_cantidad") if inventory_row else None, "estado": inventory_row.get("bateria_estado") if inventory_row else None},
+        "computadora": {"cantidad": inventory_row.get("computadora_cantidad") if inventory_row else None, "estado": inventory_row.get("computadora_estado") if inventory_row else None},
+        "tapones_depositos": {"cantidad": inventory_row.get("tapones_depositos_cantidad") if inventory_row else None, "estado": inventory_row.get("tapones_depositos_estado") if inventory_row else None},
+        "antena": {"cantidad": inventory_row.get("antena_cantidad") if inventory_row else None, "estado": inventory_row.get("antena_estado") if inventory_row else None},
+        "polveras": {"cantidad": inventory_row.get("polveras_cantidad") if inventory_row else None, "estado": inventory_row.get("polveras_estado") if inventory_row else None},
+        "centro_rin": {"cantidad": inventory_row.get("centro_rin_cantidad") if inventory_row else None, "estado": inventory_row.get("centro_rin_estado") if inventory_row else None},
+        "placas_item": {"cantidad": inventory_row.get("placas_item_cantidad") if inventory_row else None, "estado": inventory_row.get("placas_item_estado") if inventory_row else None},
+        "herramienta": {"cantidad": inventory_row.get("herramienta_cantidad") if inventory_row else None, "estado": inventory_row.get("herramienta_estado") if inventory_row else None},
+        "reflejantes": {"cantidad": inventory_row.get("reflejantes_cantidad") if inventory_row else None, "estado": inventory_row.get("reflejantes_estado") if inventory_row else None},
+        "cables_pasa_corriente": {"cantidad": inventory_row.get("cables_pasa_corriente_cantidad") if inventory_row else None, "estado": inventory_row.get("cables_pasa_corriente_estado") if inventory_row else None},
+        "llanta_refaccion": {"cantidad": inventory_row.get("llanta_refaccion_cantidad") if inventory_row else None, "estado": inventory_row.get("llanta_refaccion_estado") if inventory_row else None},
+        "llave_l_cruceta": {"cantidad": inventory_row.get("llave_l_cruceta_cantidad") if inventory_row else None, "estado": inventory_row.get("llave_l_cruceta_estado") if inventory_row else None},
+        "extintor": {"cantidad": inventory_row.get("extintor_cantidad") if inventory_row else None, "estado": inventory_row.get("extintor_estado") if inventory_row else None},
+        "gato": {"cantidad": inventory_row.get("gato_cantidad") if inventory_row else None, "estado": inventory_row.get("gato_estado") if inventory_row else None},
+        "nivel_gas": inventory_row.get("nivel_gas") if inventory_row else None,
+        "comentario": inventory_row.get("comentario") if inventory_row else None,
+    }
 
 
 @router.get("/ordenes/{orden_id}/sugerencias")

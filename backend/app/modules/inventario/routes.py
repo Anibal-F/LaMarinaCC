@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
+import asyncio
 from app.core.db import get_connection
 
 router = APIRouter(prefix="/inventario", tags=["inventario"])
@@ -488,3 +489,89 @@ def health_check():
                 }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================
+# EXTRACCIÓN AUTOMÁTICA DE PIEZAS (CRONJOB)
+# =====================================================
+
+@router.post("/extract/qualitas")
+async def extract_qualitas_piezas(
+    background_tasks: BackgroundTasks,
+    max_ordenes: int = Query(10, ge=1, le=50, description="Máximo de órdenes a procesar"),
+    api_key: str = Query(..., description="API Key para autenticación")
+):
+    """
+    Endpoint para ejecutar la extracción automática de piezas de Qualitas.
+    Diseñado para ser llamado por un cronjob cada 4 horas.
+    
+    Requiere api_key en query params para autenticación.
+    """
+    # Verificar API Key (simple, puedes mejorarlo)
+    expected_key = os.environ.get("CRON_API_KEY", "lamarina-cron-2024")
+    if api_key != expected_key:
+        raise HTTPException(status_code=401, detail="API Key inválida")
+    
+    try:
+        # Importar aquí para evitar circular imports
+        from playwright.async_api import async_playwright
+        from app.rpa.qualitas_piezas_workflow import QualitasPiezasWorkflow
+        
+        print(f"[{datetime.now()}] Iniciando extracción automática de piezas Qualitas")
+        print(f"  Max órdenes: {max_ordenes}")
+        
+        workflow = QualitasPiezasWorkflow(headless=True, max_ordenes=max_ordenes)
+        resultados = await workflow.run()
+        
+        total_piezas = sum(len(r.piezas) for r in resultados)
+        
+        return {
+            "success": True,
+            "timestamp": datetime.now().isoformat(),
+            "ordenes_procesadas": len(resultados),
+            "total_piezas": total_piezas,
+            "detalle": [
+                {
+                    "num_expediente": r.num_expediente,
+                    "num_orden": r.num_orden,
+                    "numero_reporte": r.numero_reporte,
+                    "piezas_count": len(r.piezas)
+                }
+                for r in resultados
+            ]
+        }
+        
+    except Exception as e:
+        print(f"[{datetime.now()}] Error en extracción: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en extracción: {str(e)}")
+
+
+@router.get("/extract/qualitas/status")
+def get_last_extraction_status():
+    """Obtiene información sobre la última extracción"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Contar piezas extraídas en las últimas 24 horas
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total,
+                        COUNT(DISTINCT num_expediente) as ordenes,
+                        MAX(fecha_extraccion) as ultima_extraccion
+                    FROM bitacora_piezas
+                    WHERE fecha_extraccion >= NOW() - INTERVAL '24 hours'
+                    AND fuente = 'Qualitas'
+                """)
+                row = cur.fetchone()
+                
+                return {
+                    "ultimas_24h": {
+                        "total_piezas": row[0],
+                        "ordenes_procesadas": row[1],
+                        "ultima_extraccion": row[2]
+                    }
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+import os

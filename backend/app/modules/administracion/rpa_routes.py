@@ -754,3 +754,177 @@ async def stream_rpa_logs(job_id: str):
             "Connection": "keep-alive",
         }
     )
+
+
+# =====================================================
+# ENDPOINTS PARA EXTRACCIÓN DE PIEZAS (BITÁCORA)
+# =====================================================
+
+class PiezasExtractionRequest(BaseModel):
+    """Solicitud para extraer piezas de órdenes en tránsito."""
+    max_ordenes: Optional[int] = Field(default=None, description="Máximo de órdenes a procesar (None = todas)")
+    headless: bool = Field(default=True, description="Ejecutar sin ventana visible")
+
+
+@router.post("/qualitas/piezas", response_model=RPAResponse)
+def extract_piezas_qualitas(
+    request: PiezasExtractionRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Ejecuta el RPA para extraer piezas de órdenes en tránsito de Qualitas.
+    
+    Este endpoint:
+    1. Navega al tab "Tránsito" de órdenes asignadas
+    2. Por cada orden, accede al seguimiento de refacciones
+    3. Extrae las tablas de piezas (Proceso de Surtido y Reasignadas/Canceladas)
+    4. Guarda las piezas en la bitácora de inventario
+    
+    El proceso se ejecuta en background. Usa el endpoint /status/{job_id} para consultar progreso.
+    """
+    import uuid
+    
+    job_id = str(uuid.uuid4())
+    
+    # Crear entrada inicial
+    rpa_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Extracción de piezas de Qualitas encolada",
+        "started_at": None,
+        "completed_at": None,
+        "output": None,
+        "error": None,
+        "logs": []
+    }
+    
+    # Ejecutar en background
+    background_tasks.add_task(
+        run_piezas_extraction,
+        job_id=job_id,
+        max_ordenes=request.max_ordenes,
+        headless=request.headless
+    )
+    
+    return RPAResponse(
+        job_id=job_id,
+        status="queued",
+        message="Extracción de piezas encolada. Usa /status/{job_id} para consultar progreso.",
+        started_at=None,
+        completed_at=None,
+        output=None,
+        error=None
+    )
+
+
+def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: bool):
+    """
+    Ejecuta el script de extracción de piezas en un proceso separado.
+    Esta función corre en background.
+    """
+    backend_dir = Path(__file__).resolve().parents[3]
+    script_name = "qualitas_piezas_workflow.py"
+    script_path = backend_dir / "app" / "rpa" / script_name
+    
+    # Configurar archivo de log
+    log_dir = backend_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"piezas_{job_id}.log"
+    
+    def log_message(msg: str):
+        """Escribe mensaje al log y lo almacena en el job."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_line = f"[{timestamp}] {msg}\n"
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_line)
+        # También guardar en memoria
+        if "logs" not in rpa_jobs[job_id]:
+            rpa_jobs[job_id]["logs"] = []
+        rpa_jobs[job_id]["logs"].append(log_line)
+    
+    if not script_path.exists():
+        rpa_jobs[job_id]["status"] = "failed"
+        rpa_jobs[job_id]["error"] = f"Script no encontrado: {script_path}"
+        rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        log_message(f"ERROR: Script no encontrado: {script_path}")
+        return
+    
+    try:
+        # Construir comando
+        cmd = [
+            "python3", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}"
+        ]
+        
+        if max_ordenes:
+            cmd.extend(["--max-ordenes", str(max_ordenes)])
+        
+        # Siempre headless en Docker
+        is_docker = os.path.exists('/.dockerenv') or os.getenv('DOCKER_CONTAINER', False)
+        if headless or is_docker:
+            cmd.append("--headless")
+            log_message("Modo: HEADLESS")
+        else:
+            log_message("Modo: VISUAL")
+        
+        # Ejecutar
+        rpa_jobs[job_id]["status"] = "running"
+        rpa_jobs[job_id]["started_at"] = datetime.now().isoformat()
+        rpa_jobs[job_id]["log_file"] = str(log_file)
+        log_message(f"Job iniciado: {job_id}")
+        log_message(f"Comando: {' '.join(cmd)}")
+        
+        # Ejecutar con Popen para capturar output en tiempo real
+        process = subprocess.Popen(
+            cmd,
+            cwd=str(backend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            bufsize=1
+        )
+        
+        # Capturar output
+        full_output = []
+        try:
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    full_output.append(line)
+                    log_message(f"RPA: {line}")
+                    # Mantener solo últimas 100 líneas en memoria
+                    if len(rpa_jobs[job_id]["logs"]) > 100:
+                        rpa_jobs[job_id]["logs"] = rpa_jobs[job_id]["logs"][-100:]
+        except Exception as e:
+            log_message(f"Error leyendo output: {e}")
+        
+        # Esperar proceso
+        try:
+            process.wait(timeout=1800)  # 30 minutos timeout (muchas órdenes)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            rpa_jobs[job_id]["status"] = "failed"
+            rpa_jobs[job_id]["error"] = "Timeout: El proceso tardó más de 30 minutos"
+            log_message("ERROR: Timeout de 30 minutos")
+            rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+            return
+        
+        # Verificar resultado
+        if process.returncode == 0:
+            rpa_jobs[job_id]["status"] = "completed"
+            rpa_jobs[job_id]["message"] = "Extracción de piezas completada"
+            log_message("✓ Proceso completado exitosamente")
+        else:
+            rpa_jobs[job_id]["status"] = "failed"
+            rpa_jobs[job_id]["error"] = f"Error en ejecución (código {process.returncode})"
+            log_message(f"✗ Error en ejecución (código {process.returncode})")
+        
+        rpa_jobs[job_id]["output"] = "\n".join(full_output)
+        
+    except Exception as e:
+        rpa_jobs[job_id]["status"] = "failed"
+        rpa_jobs[job_id]["error"] = str(e)
+        log_message(f"ERROR: {e}")
+    
+    rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()

@@ -566,29 +566,60 @@ async def main():
         default=True,
         help='Usar credenciales desde la base de datos'
     )
+    parser.add_argument(
+        '--reset-checkpoint',
+        action='store_true',
+        default=False,
+        help='Reiniciar checkpoint y empezar desde cero'
+    )
+    parser.add_argument(
+        '--max-retries',
+        type=int,
+        default=3,
+        help='Máximo de reintentos automáticos (default: 3)'
+    )
+    parser.add_argument(
+        '--no-retries',
+        action='store_true',
+        default=False,
+        help='Deshabilitar reintentos automáticos'
+    )
     
     args = parser.parse_args()
     
     headless = not args.no_headless if args.no_headless else args.headless
     
-    # Crear y ejecutar workflow
+    # Crear y ejecutar workflow con reintentos
     workflow = QualitasPiezasWorkflow(
         headless=headless,
-        slow_mo=args.slow_mo
+        slow_mo=args.slow_mo,
+        max_retries=1 if args.no_retries else args.max_retries
     )
     
-    results = await workflow.run(
-        max_ordenes=args.max_ordenes,
-        use_existing_session=True,
-        use_db=args.use_db
-    )
+    if args.no_retries:
+        # Modo legacy: sin reintentos
+        results = await workflow.run(
+            max_ordenes=args.max_ordenes,
+            use_existing_session=True,
+            use_db=args.use_db
+        )
+    else:
+        # Modo nuevo: con reintentos automáticos y checkpoint
+        results = await workflow.run_with_retries(
+            max_ordenes=args.max_ordenes,
+            use_existing_session=True,
+            use_db=args.use_db,
+            max_total_time=1800,  # 30 minutos
+            reset_checkpoint=args.reset_checkpoint
+        )
     
     # Guardar resultados
     output_dir = Path(args.output) if args.output else None
     save_results(results, output_dir)
     
-    # Retornar código de salida
-    sys.exit(0 if results.get("success") else 1)
+    # Retornar código de salida (éxito si procesó al menos una orden o es reintento parcial)
+    success = results.get("success", False) or results.get("partial_results", False)
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

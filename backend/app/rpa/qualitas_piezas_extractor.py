@@ -127,13 +127,36 @@ class QualitasPiezasExtractor:
     
     async def _navigate_to_transito_tab(self):
         """Navega al tab de Tránsito"""
-        # Click en el tab Tránsito
-        transito_tab = self.page.locator('#transito-tab, a[href="#transito"]').first
+        # 1. Navegar al menú "Órdenes" → "Asignadas Qualitas"
+        print("[PiezasExtractor] Navegando a menú Órdenes...")
+        
+        # Buscar y hacer clic en "Órdenes" del menú lateral
+        ordenes_menu = self.page.locator('span.kt-menu__link-text:has-text("Órdenes"), a.kt-menu__link:has-text("Órdenes")').first
+        await ordenes_menu.click()
+        await asyncio.sleep(1)
+        
+        print("[PiezasExtractor] Navegando a Asignadas Qualitas...")
+        # Buscar y hacer clic en "Asignadas Qualitas" del submenú
+        asignadas_link = self.page.locator('span.kt-menu__link-text:has-text("Asignadas Qualitas"), a.kt-menu__link:has-text("Asignadas Qualitas")').first
+        await asignadas_link.click()
+        
+        # Esperar a que cargue la página de órdenes asignadas
+        print("[PiezasExtractor] Esperando carga de página...")
+        await self.page.wait_for_load_state('networkidle')
+        await asyncio.sleep(3)  # Espera adicional para carga de tabs
+        
+        # 2. Click en el tab Tránsito
+        print("[PiezasExtractor] Buscando tab Tránsito...")
+        transito_tab = self.page.locator('#transito-tab, a[href="#transito"], a:has-text("Tránsito"), #transito').first
+        
+        # Esperar a que el tab sea visible
+        await transito_tab.wait_for(state='visible', timeout=10000)
         await transito_tab.click()
         
         # Esperar a que la tabla se cargue
-        await self.page.wait_for_selector('#tabletransito tbody tr', timeout=10000)
+        await self.page.wait_for_selector('#tabletransito tbody tr', timeout=15000)
         await asyncio.sleep(1)  # Pausa adicional para carga completa
+        print("[PiezasExtractor] ✓ Tab Tránsito cargado")
     
     async def _extract_ordenes_list(self) -> List[Dict]:
         """

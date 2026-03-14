@@ -140,9 +140,19 @@ class QualitasPiezasWorkflow:
                     # Guardar sesión
                     await session_manager.save_session(context)
                 
-                # 2. Extraer piezas
+                # 2. Verificar que estamos logueados correctamente
+                self.log(f"\n[2/3] VERIFICANDO ACCESO")
+                self.log(f"  URL actual: {page.url}")
+                
+                # Navegar al dashboard si no estamos ahí
+                if "dashboard" not in page.url.lower():
+                    self.log("  Navegando al dashboard...")
+                    await page.goto("https://proordersistem.com.mx/dashboard", wait_until="networkidle")
+                    await asyncio.sleep(2)
+                
+                # 3. Extraer piezas
                 self.log("\n" + "=" * 60)
-                self.log("EXTRAYENDO PIEZAS DE ÓRDENES EN TRÁNSITO")
+                self.log("[3/3] EXTRAYENDO PIEZAS DE ÓRDENES EN TRÁNSITO")
                 self.log("=" * 60)
                 
                 extractor = QualitasPiezasExtractor(page)
@@ -150,7 +160,7 @@ class QualitasPiezasWorkflow:
                 
                 self.resultados = ordenes
                 
-                # 3. Generar estadísticas
+                # 4. Generar estadísticas
                 total_piezas = sum(len(o.piezas) for o in ordenes)
                 piezas_surtido = sum(
                     1 for o in ordenes for p in o.piezas 
@@ -184,7 +194,7 @@ class QualitasPiezasWorkflow:
                 }
                 
                 self.log("\n" + "=" * 60)
-                self.log("RESUMEN DE EXTRACCIÓN")
+                self.log("RESUMEN DE EXTRACCIÓN (3/3)")
                 self.log("=" * 60)
                 self.log(f"Órdenes procesadas: {len(ordenes)}")
                 self.log(f"Total piezas extraídas: {total_piezas}")

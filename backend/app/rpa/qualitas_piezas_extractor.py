@@ -523,40 +523,50 @@ class QualitasPiezasExtractor:
     def _parse_proveedor(self, text: str) -> ProveedorInfo:
         """Parsea texto de proveedor: '14936 OZ AUTOMOTRIZ COUNTRY'"""
         # Limpiar texto de elementos no deseados (iconos, botones, etc.)
-        # Remover palabras clave y sus variantes
         cleaned = text.strip()
         
-        # Remover CONTACT_ y todo lo que sigue (botones de contacto)
-        cleaned = re.split(r'CONTACT[_\s]', cleaned, flags=re.IGNORECASE)[0]
+        # Remover todo desde CONTACT (case insensitive) - más agresivo
+        cleaned = re.split(r'CONTACT', cleaned, flags=re.IGNORECASE)[0]
         
-        # Remover iconos de FontAwesome (fas fa-*, far fa-*, etc.)
-        cleaned = re.sub(r'\s+fa[srbl]?\s+fa-\w+', '', cleaned, flags=re.IGNORECASE)
+        # Remover iconos de FontAwesome y elementos comunes de UI
+        cleaned = re.sub(r'\s+fa[srbl]?\s+fa-\w+', ' ', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\b(fas|far|fab|fa|info|circle|button|btn)\b', ' ', cleaned, flags=re.IGNORECASE)
         
-        # Remover palabras sueltas de iconos
-        cleaned = re.sub(r'\b(fas|far|fab|fa)\b', '', cleaned, flags=re.IGNORECASE)
+        # Remover caracteres especiales comunes en UI (iconos de contacto, etc.)
+        cleaned = re.sub(r'[\{\}\[\]\(\)<>]', ' ', cleaned)
         
-        # Limpiar espacios extra
+        # Limpiar espacios extra y guiones bajos sueltos
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        cleaned = re.sub(r'^_+|_+$', '', cleaned).strip()
+        cleaned = re.sub(r'\s*_+\s*', ' ', cleaned)
+        
+        # Manejar caso "0 Sin Asignar" o similar
+        if cleaned.lower() in ['0', '0 sin asignar', 'sin asignar', '-', '']:
+            return ProveedorInfo(id_externo=0, nombre='Sin Asignar')
         
         # Intentar extraer ID numérico al inicio
         match = re.match(r'^(\d+)\s+(.+)$', cleaned)
         if match:
+            proveedor_id = int(match.group(1))
             nombre_limpio = match.group(2).strip()
+            
+            # Si el ID es 0, usar solo el nombre
+            if proveedor_id == 0:
+                return ProveedorInfo(id_externo=0, nombre=nombre_limpio or 'Sin Asignar')
+            
             # Limitar nombre a 50 caracteres para evitar truncamiento feo
             if len(nombre_limpio) > 50:
                 nombre_limpio = nombre_limpio[:47] + '...'
-            return ProveedorInfo(
-                id_externo=int(match.group(1)),
-                nombre=nombre_limpio
-            )
+            return ProveedorInfo(id_externo=proveedor_id, nombre=nombre_limpio)
+        
+        # Si solo hay un número, es el ID sin nombre
+        if cleaned.isdigit():
+            return ProveedorInfo(id_externo=int(cleaned), nombre='Sin Nombre')
         
         # Si no hay número, usar texto limpio como nombre
         if len(cleaned) > 50:
             cleaned = cleaned[:47] + '...'
-        return ProveedorInfo(
-            id_externo=0,
-            nombre=cleaned
-        )
+        return ProveedorInfo(id_externo=0, nombre=cleaned or 'Sin Asignar')
     
     def _parse_fecha(self, text: str) -> Optional[datetime]:
         """Parsea fecha en formato: '2025-04-16 12:00:46'"""
@@ -689,6 +699,10 @@ class QualitasPiezasExtractor:
                         id_externo = f"Q-{orden.num_expediente}-{pieza.nombre[:20]}-{pieza.proveedor.id_externo}"
                         
                         # 3. Guardar pieza
+                        # Usar num_expediente como numero_orden (el número visible en Qualitas)
+                        numero_orden = orden.num_expediente
+                        numero_reporte = orden.numero_reporte
+                        
                         cur.execute("""
                             INSERT INTO bitacora_piezas (
                                 nombre, origen, numero_parte, observaciones, proveedor_id,
@@ -698,6 +712,8 @@ class QualitasPiezasExtractor:
                                 fuente, tipo_registro, num_expediente, id_externo
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (id_externo, fuente) DO UPDATE SET
+                                numero_orden = EXCLUDED.numero_orden,
+                                numero_reporte = EXCLUDED.numero_reporte,
                                 estatus = EXCLUDED.estatus,
                                 fecha_estatus = EXCLUDED.fecha_estatus,
                                 demeritos = EXCLUDED.demeritos,
@@ -709,7 +725,7 @@ class QualitasPiezasExtractor:
                                 updated_at = CURRENT_TIMESTAMP
                         """, (
                             pieza.nombre, pieza.origen, pieza.numero_parte, pieza.observaciones,
-                            proveedor_id, orden.num_orden, orden.numero_reporte,
+                            proveedor_id, numero_orden, numero_reporte,
                             pieza.fecha_promesa, pieza.fecha_estatus,
                             pieza.estatus, pieza.demeritos, pieza.ubicacion,
                             pieza.devolucion_proveedor, pieza.recibido, pieza.entregado, pieza.portal,

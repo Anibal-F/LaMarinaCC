@@ -27,6 +27,7 @@ from app.rpa.qualitas_full_workflow import (
     extract_recaptcha_sitekey, solve_recaptcha_2captcha, inject_recaptcha_token
 )
 from app.rpa.qualitas_session_manager import QualitasSessionManager
+from app.rpa.qualitas_modal_handler import QualitasModalHandler
 from app.rpa.qualitas_piezas_extractor import QualitasPiezasExtractor, OrdenPiezas
 
 
@@ -141,7 +142,7 @@ class QualitasPiezasWorkflow:
                     await session_manager.save_session(context)
                 
                 # 2. Verificar que estamos logueados correctamente
-                self.log(f"\n[2/3] VERIFICANDO ACCESO")
+                self.log(f"\n[2/3] VERIFICANDO ACCESO Y MODAL")
                 self.log(f"  URL actual: {page.url}")
                 
                 # Navegar al dashboard si no estamos ahí
@@ -150,8 +151,14 @@ class QualitasPiezasWorkflow:
                     await page.goto("https://proordersistem.com.mx/dashboard", wait_until="networkidle")
                     await asyncio.sleep(2)
                 
-                # Manejar modal de aviso PPD si aparece
-                await self._handle_aviso_modal(page)
+                # Manejar modal de aviso PPD si aparece (usar el handler existente)
+                self.log("  Verificando modal de aviso...")
+                modal_handler = QualitasModalHandler(page)
+                modal_result = await modal_handler.handle_modal()
+                if modal_result:
+                    self.log("  ✓ Modal manejado correctamente")
+                else:
+                    self.log("  ⚠ No se pudo manejar el modal (puede que no haya aparecido)")
                 
                 # 3. Extraer piezas
                 self.log("\n" + "=" * 60)
@@ -353,64 +360,6 @@ class QualitasPiezasWorkflow:
                     return False
         
         return False
-
-    async def _handle_aviso_modal(self, page):
-        """
-        Maneja el modal de aviso PPD que aparece después del login.
-        Requiere hacer scroll hasta el final para habilitar el botón.
-        """
-        try:
-            # Verificar si el modal está presente
-            modal = page.locator('.modal.show, .modal.fade.show, [class*="modal"]').filter(
-                has=page.locator('#btn-aceptar-aviso')
-            ).first
-            
-            if not await modal.is_visible():
-                # Intentar buscar directamente el botón
-                btn = page.locator('#btn-aceptar-aviso').first
-                if not await btn.is_visible():
-                    self.log("  Modal de aviso no detectado")
-                    return
-            
-            self.log("  Detectado modal de aviso PPD, procesando...")
-            
-            # Buscar el contenedor con scroll
-            scroll_container = page.locator('.modal-body, .scroll-container, [class*="modal-body"]').first
-            
-            if await scroll_container.is_visible():
-                self.log("  Haciendo scroll en el modal...")
-                
-                # Hacer scroll hasta el final del contenedor
-                for i in range(5):  # 5 scrolls para llegar al final
-                    await scroll_container.evaluate('(el) => el.scrollTop = el.scrollHeight')
-                    await asyncio.sleep(0.5)
-                
-                self.log("  Scroll completado")
-            
-            # Esperar a que el botón se habilite
-            btn = page.locator('#btn-aceptar-aviso').first
-            self.log("  Esperando a que el botón se habilite...")
-            
-            # Esperar hasta 10 segundos a que el botón no esté disabled
-            for i in range(20):  # 20 intentos x 0.5s = 10 segundos
-                is_disabled = await btn.is_disabled()
-                if not is_disabled:
-                    break
-                await asyncio.sleep(0.5)
-            
-            # Hacer clic en el botón
-            self.log("  Aceptando aviso...")
-            await btn.click()
-            
-            # Esperar a que el modal desaparezca
-            await page.wait_for_selector('#btn-aceptar-aviso', state='hidden', timeout=10000)
-            await asyncio.sleep(1)
-            
-            self.log("  ✓ Modal de aviso cerrado")
-            
-        except Exception as e:
-            self.log(f"  ⚠ Error manejando modal de aviso: {e}")
-            # No es crítico, continuar de todos modos
 
 
 def save_results(results: dict, output_dir: Path = None):

@@ -44,12 +44,12 @@ def load_config() -> QualitasRpaConfig:
         user=os.getenv("QUALITAS_USER", "").strip(),
         password=os.getenv("QUALITAS_PASSWORD", "").strip(),
         taller_id=os.getenv("QUALITAS_TALLER_ID", "").strip(),
-        email_selector=os.getenv("QUALITAS_EMAIL_SELECTOR", 'input[placeholder="Email"]').strip(),
-        password_selector=os.getenv("QUALITAS_PASSWORD_SELECTOR", 'input[placeholder="Password"]').strip(),
-        taller_id_selector=os.getenv("QUALITAS_TALLER_ID_SELECTOR", 'input[placeholder="ID-Taller"]').strip(),
+        email_selector=os.getenv("QUALITAS_EMAIL_SELECTOR", 'input[name="email"]').strip(),
+        password_selector=os.getenv("QUALITAS_PASSWORD_SELECTOR", 'input[name="password"]').strip(),
+        taller_id_selector=os.getenv("QUALITAS_TALLER_ID_SELECTOR", 'input[name="taller"]').strip(),
         terms_selector=os.getenv(
             "QUALITAS_TERMS_SELECTOR",
-            'input[type="checkbox"][name="tyc"][value="1"]',
+            'input#tyc, input[name="tyc"]',
         ).strip(),
         recaptcha_iframe_selector=os.getenv(
             "QUALITAS_RECAPTCHA_IFRAME_SELECTOR",
@@ -62,7 +62,7 @@ def load_config() -> QualitasRpaConfig:
         recaptcha_timeout_ms=int(os.getenv("QUALITAS_RECAPTCHA_TIMEOUT_MS", "180000")),
         login_button_selector=os.getenv(
             "QUALITAS_LOGIN_BUTTON_SELECTOR",
-            'input[type="submit"][value="Log In"]',
+            'button[type="submit"].submit-btn',
         ).strip(),
         post_login_wait_selector=os.getenv("QUALITAS_POST_LOGIN_SELECTOR", "").strip(),
         headless=os.getenv("QUALITAS_HEADLESS", "false").strip().lower() == "true",

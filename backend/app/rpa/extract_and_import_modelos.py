@@ -198,13 +198,13 @@ async def do_login_qualitas(page, credentials: Dict) -> bool:
     await asyncio.sleep(2)
     
     print("[Login] Llenando credenciales...")
-    await page.fill('input[placeholder="Email"]', user)
-    await page.fill('input[placeholder="Password"]', password)
-    await page.fill('input[placeholder="ID-Taller"]', taller_id)
+    await page.fill('input[name="email"]', user)
+    await page.fill('input[name="password"]', password)
+    await page.fill('input[name="taller"]', taller_id)
     
     # Aceptar términos
     try:
-        terms = page.locator('input[type="checkbox"][name="tyc"]').first
+        terms = page.locator('input#tyc, input[name="tyc"]').first
         if not await terms.is_checked():
             await terms.click()
     except:
@@ -221,7 +221,7 @@ async def do_login_qualitas(page, credentials: Dict) -> bool:
     
     # Click en login
     print("[Login] Enviando formulario...")
-    await page.click('input[type="submit"][value="Log In"]')
+    await page.click('button[type="submit"].submit-btn')
     await page.wait_for_load_state("networkidle", timeout=30000)
     
     # Verificar login exitoso

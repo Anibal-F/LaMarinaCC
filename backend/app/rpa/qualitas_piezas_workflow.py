@@ -23,7 +23,7 @@ from playwright.async_api import async_playwright
 
 # Importar funciones del workflow existente
 from app.rpa.qualitas_full_workflow import (
-    load_credentials, get_credential, do_login
+    load_credentials, get_credential
 )
 from app.rpa.qualitas_session_manager import QualitasSessionManager
 from app.rpa.qualitas_piezas_extractor import QualitasPiezasExtractor, OrdenPiezas
@@ -122,7 +122,7 @@ class QualitasPiezasWorkflow:
                     if "login" in page.url.lower() or page.url.rstrip('/').endswith('proordersistem.com.mx/'):
                         self.log("⚠ Sesión expirada, requiere login")
                         self.log("\n[1/3] LOGIN AUTOMÁTICO")
-                        success = await do_login(page, use_db=use_db)
+                        success = await self._do_login_with_retry(page, use_db=use_db)
                         if not success:
                             raise RuntimeError("Login fallido")
                         
@@ -132,7 +132,7 @@ class QualitasPiezasWorkflow:
                         self.log("✓ Sesión válida")
                 else:
                     self.log("\n[1/3] LOGIN AUTOMÁTICO")
-                    success = await do_login(page, use_db=use_db)
+                    success = await self._do_login_with_retry(page, use_db=use_db)
                     if not success:
                         raise RuntimeError("Login fallido")
                     
@@ -208,6 +208,102 @@ class QualitasPiezasWorkflow:
             finally:
                 if browser:
                     await browser.close()
+
+    async def _do_login_with_retry(self, page, use_db: bool = True, max_retries: int = 3) -> bool:
+        """Intenta hacer login con reintentos y mejor manejo de esperas."""
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.log(f"  Intentando login (intento {attempt}/{max_retries})...")
+                
+                login_url = get_credential("QUALITAS_LOGIN_URL", use_db) or "https://proordersistem.com.mx/"
+                user = get_credential("QUALITAS_USER", use_db)
+                password = get_credential("QUALITAS_PASSWORD", use_db)
+                taller_id = get_credential("QUALITAS_TALLER_ID", use_db)
+                
+                if not user or not password:
+                    self.log("  ✗ Error: No se encontraron credenciales")
+                    return False
+                
+                # Navegar a la página de login
+                self.log(f"  Navegando a {login_url}...")
+                await page.goto(login_url, wait_until="domcontentloaded")
+                
+                # Esperar a que la página cargue completamente
+                self.log("  Esperando carga de página...")
+                await asyncio.sleep(5)
+                
+                # Tomar screenshot para debug
+                try:
+                    screenshot_path = Path("/tmp/qualitas_login_debug.png")
+                    await page.screenshot(path=str(screenshot_path))
+                    self.log(f"  Screenshot guardado en: {screenshot_path}")
+                except Exception as e:
+                    self.log(f"  No se pudo guardar screenshot: {e}")
+                
+                # Esperar a que el campo de email esté visible (nuevo diseño)
+                self.log("  Esperando campo de email...")
+                try:
+                    await page.wait_for_selector('input[name="email"]', timeout=30000)
+                except Exception as e:
+                    self.log(f"  ⚠ Timeout esperando email field: {e}")
+                    # Intentar con otro selector
+                    self.log("  Intentando con selector alternativo...")
+                    # Listar todos los inputs para debug
+                    inputs = await page.locator('input').all()
+                    self.log(f"  Inputs encontrados: {len(inputs)}")
+                    for i, inp in enumerate(inputs[:10]):
+                        try:
+                            placeholder = await inp.get_attribute('placeholder')
+                            input_type = await inp.get_attribute('type')
+                            name = await inp.get_attribute('name')
+                            id_attr = await inp.get_attribute('id')
+                            self.log(f"    Input {i}: type={input_type}, name={name}, id={id_attr}, placeholder={placeholder}")
+                        except:
+                            pass
+                    
+                    if attempt < max_retries:
+                        self.log(f"  Reintentando en 5 segundos...")
+                        await asyncio.sleep(5)
+                        continue
+                    else:
+                        return False
+                
+                # Llenar credenciales (nuevo diseño)
+                self.log("  Llenando credenciales...")
+                await page.fill('input[name="email"]', user)
+                await page.fill('input[name="password"]', password)
+                await page.fill('input[name="taller"]', taller_id)
+                
+                # Términos (nuevo diseño: id="tyc" name="tyc")
+                terms = page.locator('input#tyc, input[name="tyc"]').first
+                if await terms.is_visible():
+                    if not await terms.is_checked():
+                        await terms.click()
+                
+                # Login (nuevo diseño: button[type="submit"].submit-btn)
+                self.log("  Enviando formulario...")
+                await page.click('button[type="submit"].submit-btn')
+                await page.wait_for_load_state("networkidle", timeout=30000)
+                
+                # Verificar éxito
+                if "dashboard" in page.url.lower():
+                    self.log("  ✓ Login exitoso")
+                    return True
+                else:
+                    self.log(f"  ✗ Login fallido, URL actual: {page.url}")
+                    if attempt < max_retries:
+                        await asyncio.sleep(5)
+                        continue
+                    return False
+                    
+            except Exception as e:
+                self.log(f"  ✗ Error en intento {attempt}: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(5)
+                else:
+                    return False
+        
+        return False
 
 
 def save_results(results: dict, output_dir: Path = None):

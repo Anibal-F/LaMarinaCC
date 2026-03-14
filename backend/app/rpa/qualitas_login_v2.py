@@ -216,12 +216,12 @@ async def run_auto_login():
             
             # 2. Llenar credenciales
             print("[2/5] Llenando credenciales...")
-            await humanized_fill(page, 'input[placeholder="Email"]', user)
-            await humanized_fill(page, 'input[placeholder="Password"]', password)
-            await humanized_fill(page, 'input[placeholder="ID-Taller"]', taller_id)
+            await humanized_fill(page, 'input[name="email"]', user)
+            await humanized_fill(page, 'input[name="password"]', password)
+            await humanized_fill(page, 'input[name="taller"]', taller_id)
             
             # Marcar términos
-            terms = page.locator('input[type="checkbox"][name="tyc"]').first
+            terms = page.locator('input#tyc, input[name="tyc"]').first
             if not await terms.is_checked():
                 await terms.click(delay=100)
             await asyncio.sleep(0.5)
@@ -237,7 +237,7 @@ async def run_auto_login():
             
             # 5. Hacer login
             print("[5/5] Haciendo login...")
-            await page.click('input[type="submit"][value="Log In"]', delay=150)
+            await page.click('button[type="submit"].submit-btn', delay=150)
             
             # Esperar navegación
             await page.wait_for_load_state("networkidle", timeout=30000)

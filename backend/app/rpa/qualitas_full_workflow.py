@@ -270,23 +270,24 @@ async def do_login(page, use_db: bool = True) -> bool:
         return False
     
     print("[Login] Llenando credenciales...")
-    await page.fill('input[placeholder="Email"]', user)
-    await page.fill('input[placeholder="Password"]', password)
-    await page.fill('input[placeholder="ID-Taller"]', taller_id)
+    await page.fill('input[name="email"]', user)
+    await page.fill('input[name="password"]', password)
+    await page.fill('input[name="taller"]', taller_id)
     
-    # Términos
-    terms = page.locator('input[type="checkbox"][name="tyc"]').first
-    if not await terms.is_checked():
-        await terms.click()
+    # Términos (nuevo diseño)
+    terms = page.locator('input#tyc, input[name="tyc"]').first
+    if await terms.is_visible():
+        if not await terms.is_checked():
+            await terms.click()
     
     # CAPTCHA
     print("[Login] Resolviendo reCAPTCHA...")
     token = await solve_recaptcha_2captcha(site_key, login_url)
     await inject_recaptcha_token(page, token)
     
-    # Login
+    # Login (nuevo diseño)
     print("[Login] Enviando formulario...")
-    await page.click('input[type="submit"][value="Log In"]')
+    await page.click('button[type="submit"].submit-btn')
     await page.wait_for_load_state("networkidle", timeout=30000)
     
     return "dashboard" in page.url.lower()

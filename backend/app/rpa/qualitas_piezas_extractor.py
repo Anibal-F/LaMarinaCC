@@ -303,9 +303,13 @@ class QualitasPiezasExtractor:
         """
         piezas = []
         
-        # Esperar a que carguen las tablas
-        await page.wait_for_selector('table', timeout=10000)
-        await asyncio.sleep(1)
+        # Esperar a que carguen las tablas específicas
+        print("  → Esperando carga de tablas de piezas...")
+        try:
+            await page.wait_for_selector('#dt-RefaccionesV22, #dt-RefaccionesV23', timeout=15000)
+        except Exception as e:
+            print(f"  ⚠ Timeout esperando tablas: {e}")
+        await asyncio.sleep(2)
         
         # 1. Extraer de "En proceso de surtido"
         print("  → Extrayendo piezas en proceso de surtido...")
@@ -343,40 +347,56 @@ class QualitasPiezasExtractor:
         piezas = []
         
         try:
-            # Buscar la tabla por texto cercano o estructura
-            # Las tablas tienen encabezados: Nombre, Origen, # Parte, Observaciones, Proveedor, etc.
+            # IDs específicos de las tablas de piezas
+            table_ids = {
+                'Proceso de Surtido': '#dt-RefaccionesV22',
+                'Reasignada/Cancelada': '#dt-RefaccionesV23'
+            }
             
-            # Estrategia: Buscar todas las tablas y filtrar por contenido
-            tables = await page.locator('table.table-sm, table.table-hover').all()
+            table_id = table_ids.get(tipo_registro)
+            if not table_id:
+                print(f"  [Warning] No se conoce el ID de tabla para: {tipo_registro}")
+                return piezas
             
-            for table in tables:
+            print(f"  → Buscando tabla {table_id}...")
+            
+            # Esperar a que la tabla esté visible
+            try:
+                await page.wait_for_selector(table_id, timeout=10000)
+            except Exception as e:
+                print(f"  [Warning] Tabla {table_id} no encontrada: {e}")
+                return piezas
+            
+            # Verificar si tiene datos
+            table = page.locator(table_id).first
+            
+            # Verificar si hay filas de datos (no solo el mensaje de vacío)
+            rows = await table.locator('tbody tr').all()
+            print(f"  → {len(rows)} filas encontradas en tabla {tipo_registro}")
+            
+            # Filtrar filas que tengan datos reales (no el mensaje de 'Ningún dato')
+            data_rows = []
+            for row in rows:
                 try:
-                    # Verificar si esta tabla tiene la estructura correcta
-                    headers = await table.locator('thead th').all()
-                    header_texts = []
-                    for h in headers:
-                        text = await h.text_content()
-                        header_texts.append(text.strip() if text else '')
-                    
-                    header_str = ' '.join(header_texts).lower()
-                    
-                    # Buscar tabla con columnas esperadas
-                    if 'nombre' in header_str and 'proveedor' in header_str:
-                        # Esta es una tabla de piezas
-                        rows = await table.locator('tbody tr').all()
-                        
-                        for row in rows:
-                            try:
-                                pieza = await self._parse_pieza_row(row, tipo_registro)
-                                if pieza:
-                                    piezas.append(pieza)
-                            except Exception as e:
-                                print(f"    [Warning] Error parseando fila: {e}")
-                                continue
-                        
-                        break  # Procesamos la tabla correcta
-                        
+                    # Verificar si es una fila de datos válida
+                    cells = await row.locator('td').all()
+                    if len(cells) > 1:  # Al menos 2 celdas
+                        first_cell_text = await cells[0].text_content() or ''
+                        if 'Ningún dato' not in first_cell_text and 'dataTables_empty' not in await row.get_attribute('class'):
+                            data_rows.append(row)
+                except:
+                    continue
+            
+            print(f"  → {len(data_rows)} filas con datos válidos")
+            
+            for row in data_rows:
+                try:
+                    pieza = await self._parse_pieza_row(row, tipo_registro)
+                    if pieza:
+                        piezas.append(pieza)
+                        print(f"    ✓ Pieza extraída: {pieza.nombre[:30]}...")
                 except Exception as e:
+                    print(f"    [Warning] Error parseando fila: {e}")
                     continue
             
         except Exception as e:
@@ -387,60 +407,80 @@ class QualitasPiezasExtractor:
     async def _parse_pieza_row(self, row, tipo_registro: str) -> Optional[PiezaInfo]:
         """
         Parsea una fila de la tabla de piezas.
-        Estructura: Nombre, Origen, # Parte, Observaciones, Proveedor, Fechas, Deméritos, Estatus, Ubicación, Checkboxes
+        Estructura HTML real: ID(hidden), Nombre, Origen, # Parte, Observaciones, Proveedor, Fechas, Deméritos, Estatus, Ubicación, Checkboxes...
         """
         try:
+            # Obtener todas las celdas td (incluyendo las ocultas)
             cells = await row.locator('td').all()
-            if len(cells) < 8:
+            if len(cells) < 10:
                 return None
             
-            texts = []
-            for cell in cells:
-                text = await cell.text_content()
-                texts.append(text.strip() if text else '')
+            # Función auxiliar para obtener texto de celda
+            async def get_cell_text(cell):
+                try:
+                    text = await cell.text_content()
+                    return text.strip() if text else ''
+                except:
+                    return ''
             
-            # Extraer datos básicos
-            nombre = texts[0] if len(texts) > 0 else ''
-            origen = texts[1] if len(texts) > 1 else ''
-            numero_parte = texts[2] if len(texts) > 2 else None
-            observaciones = texts[3] if len(texts) > 3 else None
+            # La estructura real basada en el HTML:
+            # 0: ID (hidden) | 1: Nombre | 2: Origen | 3: # Parte | 4: Observaciones | 5: Proveedor | 6: Fechas | 7: Deméritos | 8: Estatus | 9: Ubicación | 10+: Checkboxes
             
-            # Proveedor (celda 4) - puede tener formato: "14936 OZ AUTOMOTRIZ COUNTRY"
-            proveedor_text = texts[4] if len(texts) > 4 else ''
+            nombre = await get_cell_text(cells[1])
+            if not nombre or nombre == 'Ningún dato disponible en esta tabla':
+                return None
+            
+            origen = await get_cell_text(cells[2])
+            numero_parte = await get_cell_text(cells[3]) or None
+            observaciones = await get_cell_text(cells[4]) or None
+            
+            # Proveedor (celda 5)
+            proveedor_text = await get_cell_text(cells[5])
             proveedor = self._parse_proveedor(proveedor_text)
             
-            # Fechas (celda 5) - pueden venir como: "2025-04-16 12:00:46"
-            fecha_text = texts[5] if len(texts) > 5 else ''
-            fecha_promesa = self._parse_fecha(fecha_text)
+            # Fechas (celda 6) - buscar la fecha visible
+            fecha_cell = cells[6]
+            fecha_html = await fecha_cell.inner_html()
+            # Buscar la fecha que se muestra (generalmente la más reciente o relevante)
+            fecha_promesa = self._extract_fecha_from_html(fecha_html)
             
-            # Deméritos (celda 6) - formato: "Demerito: $0" o "$150"
-            demeritos_text = texts[6] if len(texts) > 6 else '0'
+            # Deméritos (celda 7)
+            demeritos_text = await get_cell_text(cells[7])
             demeritos = self._parse_demeritos(demeritos_text)
             
-            # Estatus y fecha de estatus (celda 7) - formato: "Cancelada: 2025-04-16 12:00:46"
-            estatus_text = texts[7] if len(texts) > 7 else ''
-            estatus, fecha_estatus = self._parse_estatus(estatus_text)
+            # Estatus (celda 8) - extraer el estatus visible
+            estatus_cell = cells[8]
+            estatus_html = await estatus_cell.inner_html()
+            estatus, fecha_estatus = self._extract_estatus_from_html(estatus_html)
             
-            # Ubicación (celda 8) - dropdown con valor
-            ubicacion = texts[8] if len(texts) > 8 else 'ND'
+            # Ubicación (celda 9) - buscar el valor del select
+            ubicacion = 'ND'
+            try:
+                select = cells[9].locator('select').first
+                if await select.is_visible():
+                    ubicacion = await select.input_value() or 'ND'
+            except:
+                ubicacion = await get_cell_text(cells[9]) or 'ND'
             
-            # Checkboxes (últimas celdas)
-            # Por ahora asumimos false, se pueden extraer de inputs si es necesario
+            # Checkboxes (celdas 10-13 aprox)
             devolucion = False
             recibido = False
             entregado = False
             portal = False
             
-            # Intentar encontrar checkboxes
             try:
-                checkboxes = await row.locator('input[type="checkbox"]').all()
-                if len(checkboxes) >= 4:
+                checkboxes = await row.locator('input[type="checkbox"]:not([id^="multiCheck"])').all()
+                # Los primeros 4 checkboxes corresponden a: devolución, recibido, entregado, portal
+                if len(checkboxes) >= 1:
                     devolucion = await checkboxes[0].is_checked()
+                if len(checkboxes) >= 2:
                     recibido = await checkboxes[1].is_checked()
+                if len(checkboxes) >= 3:
                     entregado = await checkboxes[2].is_checked()
+                if len(checkboxes) >= 4:
                     portal = await checkboxes[3].is_checked()
-            except:
-                pass
+            except Exception as e:
+                print(f"    [Debug] Error leyendo checkboxes: {e}")
             
             return PiezaInfo(
                 nombre=nombre,
@@ -524,6 +564,65 @@ class QualitasPiezasExtractor:
             
         except:
             return text, None
+    
+    def _extract_fecha_from_html(self, html: str) -> Optional[datetime]:
+        """Extrae la fecha relevante del HTML de la celda de fechas."""
+        try:
+            # Buscar la fecha visible (la que no está en display:none)
+            # El formato es: <p>... Icono ... Texto: <br>FECHA</p>
+            import re
+            
+            # Buscar todas las fechas en el HTML
+            fechas = re.findall(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', html)
+            if fechas:
+                # Tomar la última fecha (generalmente la más relevante)
+                return datetime.strptime(fechas[-1], '%Y-%m-%d %H:%M:%S')
+            
+            # Si no hay formato completo, buscar solo fecha
+            fechas_cortas = re.findall(r'(\d{4}-\d{2}-\d{2})', html)
+            if fechas_cortas:
+                return datetime.strptime(fechas_cortas[-1], '%Y-%m-%d')
+                
+        except:
+            pass
+        
+        return None
+    
+    def _extract_estatus_from_html(self, html: str) -> Tuple[str, Optional[datetime]]:
+        """Extrae el estatus y fecha del HTML de la celda de estatus."""
+        try:
+            import re
+            
+            # Buscar el estatus visible (el que tiene icono)
+            # Ejemplo: <i class="fas fa-ban" style="color: red;"></i> Cancelada
+            estatus_match = re.search(r'<i[^>]*></i>\s*([^<]+)', html)
+            if estatus_match:
+                estatus = estatus_match.group(1).strip()
+                # Limpiar de espacios y saltos de línea
+                estatus = estatus.split('\n')[0].strip()
+                
+                # Buscar fecha asociada
+                fecha_match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', html)
+                fecha = None
+                if fecha_match:
+                    fecha = datetime.strptime(fecha_match.group(1), '%Y-%m-%d %H:%M:%S')
+                
+                return estatus, fecha
+            
+            # Fallback: buscar cualquier texto que parezca estatus
+            if 'Cancelada' in html:
+                return 'Cancelada', self._extract_fecha_from_html(html)
+            elif 'Por Solicitar' in html:
+                return 'Por Solicitar', self._extract_fecha_from_html(html)
+            elif 'Solicitado' in html:
+                return 'Solicitado', self._extract_fecha_from_html(html)
+            elif 'Autorizado' in html:
+                return 'Autorizado', self._extract_fecha_from_html(html)
+                
+        except:
+            pass
+        
+        return 'Desconocido', None
     
     async def _save_to_database(self, orden: OrdenPiezas):
         """Guarda las piezas en la base de datos"""

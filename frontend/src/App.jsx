@@ -33,6 +33,7 @@ import Taller from "./pages/Taller/Taller.jsx";
 import AreasTrabajo from "./pages/Taller/AreasTrabajo.jsx";
 import TallerGestion from "./pages/Taller/TallerGestion.jsx";
 import TallerEtapa from "./pages/Taller/TallerEtapa.jsx";
+import BitacoraPiezas from "./pages/Inventario/BitacoraPiezas.jsx";
 import WhatsAppChatWidget from "./components/WhatsAppChatWidget.jsx";
 
 export default function App() {
@@ -191,6 +192,10 @@ export default function App() {
         <Route
           path="/taller/areas-de-trabajo"
           element={authenticated ? <AreasTrabajo /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/inventario/bitacora-piezas"
+          element={authenticated ? <BitacoraPiezas /> : <Navigate to="/login" replace />}
         />
         <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
       </Routes>

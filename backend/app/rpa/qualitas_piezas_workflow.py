@@ -23,7 +23,8 @@ from playwright.async_api import async_playwright
 
 # Importar funciones del workflow existente
 from app.rpa.qualitas_full_workflow import (
-    load_credentials, get_credential
+    load_credentials, get_credential,
+    extract_recaptcha_sitekey, solve_recaptcha_2captcha, inject_recaptcha_token
 )
 from app.rpa.qualitas_session_manager import QualitasSessionManager
 from app.rpa.qualitas_piezas_extractor import QualitasPiezasExtractor, OrdenPiezas
@@ -274,23 +275,58 @@ class QualitasPiezasWorkflow:
                 await page.fill('input[name="password"]', password)
                 await page.fill('input[name="taller"]', taller_id)
                 
+                # Esperar a que aparezca el reCAPTCHA
+                self.log("  Esperando reCAPTCHA...")
+                await asyncio.sleep(2)
+                
+                # Resolver reCAPTCHA
+                try:
+                    site_key = await extract_recaptcha_sitekey(page)
+                    self.log(f"  Sitekey extraída: {site_key[:20]}...")
+                    
+                    self.log("  Resolviendo reCAPTCHA con 2captcha...")
+                    token = await solve_recaptcha_2captcha(site_key, login_url)
+                    await inject_recaptcha_token(page, token)
+                    self.log("  ✓ reCAPTCHA resuelto")
+                except Exception as e:
+                    self.log(f"  ⚠ Error con reCAPTCHA: {e}")
+                    # Continuar de todos modos, a veces no es necesario en headless
+                
                 # Términos (nuevo diseño: id="tyc" name="tyc")
                 terms = page.locator('input#tyc, input[name="tyc"]').first
                 if await terms.is_visible():
                     if not await terms.is_checked():
                         await terms.click()
                 
+                # Pequeña pausa antes de enviar
+                await asyncio.sleep(1)
+                
                 # Login (nuevo diseño: button[type="submit"].submit-btn)
                 self.log("  Enviando formulario...")
                 await page.click('button[type="submit"].submit-btn')
                 await page.wait_for_load_state("networkidle", timeout=30000)
                 
+                # Esperar navegación
+                await asyncio.sleep(3)
+                
                 # Verificar éxito
-                if "dashboard" in page.url.lower():
+                current_url = page.url.lower()
+                self.log(f"  URL después de login: {page.url}")
+                
+                if "dashboard" in current_url:
                     self.log("  ✓ Login exitoso")
                     return True
+                elif "login" in current_url or current_url.rstrip('/').endswith('proordersistem.com.mx/'):
+                    self.log("  ✗ Login fallido - sigue en página de login")
+                    # Intentar obtener mensaje de error
+                    try:
+                        error_msg = await page.locator('.error-message, .alert-error, [role="alert"]').text_content()
+                        if error_msg:
+                            self.log(f"  Mensaje de error: {error_msg}")
+                    except:
+                        pass
                 else:
-                    self.log(f"  ✗ Login fallido, URL actual: {page.url}")
+                    self.log(f"  ✗ Login fallido, URL inesperada: {page.url}")
                     if attempt < max_retries:
                         await asyncio.sleep(5)
                         continue

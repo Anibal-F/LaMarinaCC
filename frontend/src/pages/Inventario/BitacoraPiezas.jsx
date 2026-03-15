@@ -100,7 +100,8 @@ function cleanProveedorNombre(nombre) {
 // Componente de celda de proveedor con ícono
 function ProveedorCell({ proveedor, onClickInfo }) {
   const nombreLimpio = cleanProveedorNombre(proveedor.nombre);
-  const isContactPlaceholder = !proveedor.nombre || proveedor.nombre === 'Sin Asignar' || proveedor.nombre.includes('CONTACT');
+  // Es placeholder solo si el nombre limpio está vacío o es "Sin Asignar"
+  const isContactPlaceholder = !nombreLimpio || nombreLimpio === 'Sin Asignar';
   
   // Si es un placeholder tipo CONTACT_, mostrar solo ícono de info
   if (isContactPlaceholder) {

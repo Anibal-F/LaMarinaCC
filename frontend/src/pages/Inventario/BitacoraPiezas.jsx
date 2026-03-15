@@ -48,6 +48,7 @@ const COLUMN_DEFS = [
 
 const DEFAULT_COLUMN_ORDER = COLUMN_DEFS.map((c) => c.key);
 const DEFAULT_HIDDEN_COLUMNS = []; // Por defecto todas visibles
+const DEFAULT_COLUMN_WIDTHS = Object.fromEntries(COLUMN_DEFS.map((c) => [c.key, c.width]));
 
 // Componente Modal de Proveedor
 function ProveedorModal({ proveedor, isOpen, onClose }) {
@@ -430,6 +431,10 @@ export default function BitacoraPiezas() {
   const [draggingColumnKey, setDraggingColumnKey] = useState(null);
   const [columnOrder, setColumnOrder] = useState(DEFAULT_COLUMN_ORDER);
   const [hiddenColumns, setHiddenColumns] = useState(DEFAULT_HIDDEN_COLUMNS);
+  const [columnWidths, setColumnWidths] = useState(DEFAULT_COLUMN_WIDTHS);
+  const [resizingColumn, setResizingColumn] = useState(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
 
   // Cargar piezas desde la API
   useEffect(() => {
@@ -525,14 +530,17 @@ export default function BitacoraPiezas() {
     if (!prefs) return;
     setColumnOrder(prefs.order);
     setHiddenColumns(prefs.hidden);
+    if (prefs.widths) {
+      setColumnWidths(prefs.widths);
+    }
   }, [sessionStorageKey, storageKey]);
   
   // Guardar preferencias de columnas
   useEffect(() => {
-    const payload = JSON.stringify({ order: columnOrder, hidden: hiddenColumns });
+    const payload = JSON.stringify({ order: columnOrder, hidden: hiddenColumns, widths: columnWidths });
     sessionStorage.setItem(sessionStorageKey, payload);
     localStorage.setItem(storageKey, payload);
-  }, [columnOrder, hiddenColumns, sessionStorageKey, storageKey]);
+  }, [columnOrder, hiddenColumns, columnWidths, sessionStorageKey, storageKey]);
 
   // Filtrar piezas
   const piezasFiltradas = useMemo(() => {
@@ -640,7 +648,43 @@ export default function BitacoraPiezas() {
   const resetColumns = () => {
     setColumnOrder(DEFAULT_COLUMN_ORDER);
     setHiddenColumns(DEFAULT_HIDDEN_COLUMNS);
+    setColumnWidths(DEFAULT_COLUMN_WIDTHS);
   };
+  
+  // Funciones para redimensionar columnas
+  const handleResizeStart = (e, columnKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingColumn(columnKey);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(parseInt(columnWidths[columnKey] || '100', 10));
+  };
+  
+  useEffect(() => {
+    if (!resizingColumn) return;
+    
+    const handleMouseMove = (e) => {
+      const diff = e.clientX - resizeStartX;
+      const newWidth = Math.max(60, resizeStartWidth + diff); // Mínimo 60px
+      setColumnWidths((prev) => ({ ...prev, [resizingColumn]: `${newWidth}px` }));
+    };
+    
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
 
   // Formatear fecha
   const formatDate = (dateStr) => {
@@ -965,7 +1009,7 @@ export default function BitacoraPiezas() {
                   </div>
                 </div>
                 <p className="text-xs text-slate-400 mb-3">
-                  Arrastra para cambiar orden. Marca/desmarca para ocultar o mostrar.
+                  Arrastra columnas para cambiar orden. Arrastra el borde derecho de los headers para redimensionar. Marca/desmarca para ocultar o mostrar.
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                   {columnOrder.map((columnKey) => {
@@ -1014,7 +1058,8 @@ export default function BitacoraPiezas() {
                         {visibleColumns.map((column) => (
                           <th
                             key={`th-${column.key}`}
-                            className={`px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark cursor-move select-none ${column.className || ''}`}
+                            className={`relative px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark cursor-move select-none ${column.className || ''}`}
+                            style={{ width: columnWidths[column.key] || column.width, minWidth: columnWidths[column.key] || column.width }}
                             draggable
                             onDragStart={() => setDraggingColumnKey(column.key)}
                             onDragOver={(e) => e.preventDefault()}
@@ -1023,9 +1068,18 @@ export default function BitacoraPiezas() {
                               moveColumn(draggingColumnKey, column.key);
                               setDraggingColumnKey(null);
                             }}
-                            title="Arrastra para cambiar orden"
+                            title="Arrastra para cambiar orden. Arrastra el borde derecho para redimensionar."
                           >
-                            {column.label}
+                            <div className="flex items-center justify-between">
+                              <span className="truncate">{column.label}</span>
+                            </div>
+                            {/* Resize handle */}
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 active:bg-primary transition-colors"
+                              onMouseDown={(e) => handleResizeStart(e, column.key)}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Arrastra para redimensionar"
+                            />
                           </th>
                         ))}
                       </tr>
@@ -1057,41 +1111,42 @@ export default function BitacoraPiezas() {
                           >
                             {visibleColumns.map((column) => {
                               const cellClass = `px-3 py-2 text-xs ${column.className || 'text-slate-300'}`;
+                              const cellStyle = { width: columnWidths[column.key] || column.width, minWidth: columnWidths[column.key] || column.width };
                               
                               switch (column.key) {
                                 case 'tipo':
                                   return (
-                                    <td key={column.key} className={cellClass}>
+                                    <td key={column.key} className={cellClass} style={cellStyle}>
                                       <TipoRegistroBadge tipo={pieza.tipo_registro} />
                                     </td>
                                   );
                                 case 'nombre':
                                   return (
-                                    <td key={column.key} className={`${cellClass} max-w-[150px] truncate`} title={pieza.nombre}>
+                                    <td key={column.key} className={`${cellClass} truncate`} style={cellStyle} title={pieza.nombre}>
                                       <span className="text-white">{pieza.nombre}</span>
                                     </td>
                                   );
                                 case 'origen':
-                                  return <td key={column.key} className={cellClass}>{pieza.origen}</td>;
+                                  return <td key={column.key} className={cellClass} style={cellStyle}>{pieza.origen}</td>;
                                 case 'numero_parte':
-                                  return <td key={column.key} className={`${cellClass} font-mono`}>{pieza.numero_parte}</td>;
+                                  return <td key={column.key} className={`${cellClass} font-mono`} style={cellStyle}>{pieza.numero_parte}</td>;
                                 case 'numero_orden':
-                                  return <td key={column.key} className={`${cellClass} font-mono`}>{pieza.numero_orden}</td>;
+                                  return <td key={column.key} className={`${cellClass} font-mono`} style={cellStyle}>{pieza.numero_orden}</td>;
                                 case 'numero_reporte':
                                   return (
-                                    <td key={column.key} className={`${cellClass} max-w-[120px] truncate`} title={pieza.numero_reporte}>
+                                    <td key={column.key} className={`${cellClass} truncate`} style={cellStyle} title={pieza.numero_reporte}>
                                       {pieza.numero_reporte}
                                     </td>
                                   );
                                 case 'observaciones':
                                   return (
-                                    <td key={column.key} className={`${cellClass} max-w-[100px] truncate text-slate-400`} title={pieza.observaciones}>
+                                    <td key={column.key} className={`${cellClass} truncate text-slate-400`} style={cellStyle} title={pieza.observaciones}>
                                       {pieza.observaciones || '-'}
                                     </td>
                                   );
                                 case 'proveedor':
                                   return (
-                                    <td key={column.key} className={cellClass}>
+                                    <td key={column.key} className={cellClass} style={cellStyle}>
                                       <ProveedorCell 
                                         proveedor={pieza.proveedor} 
                                         onClickInfo={() => openProveedorModal(pieza.proveedor)}
@@ -1100,7 +1155,7 @@ export default function BitacoraPiezas() {
                                   );
                                 case 'paqueteria':
                                   return (
-                                    <td key={column.key} className={cellClass}>
+                                    <td key={column.key} className={cellClass} style={cellStyle}>
                                       <PaqueteriaCell 
                                         paqueteria={pieza.paqueteria} 
                                         guia={pieza.guia_paqueteria}
@@ -1108,20 +1163,20 @@ export default function BitacoraPiezas() {
                                     </td>
                                   );
                                 case 'fecha_promesa':
-                                  return <td key={column.key} className={cellClass}>{formatDate(pieza.fecha_promesa)}</td>;
+                                  return <td key={column.key} className={cellClass} style={cellStyle}>{formatDate(pieza.fecha_promesa)}</td>;
                                 case 'demeritos':
-                                  return <td key={column.key} className={cellClass}>${pieza.demeritos.toLocaleString()}</td>;
+                                  return <td key={column.key} className={cellClass} style={cellStyle}>${pieza.demeritos.toLocaleString()}</td>;
                                 case 'estatus':
                                   return (
-                                    <td key={column.key} className={cellClass}>
+                                    <td key={column.key} className={cellClass} style={cellStyle}>
                                       <EstatusBadge estatus={pieza.estatus} />
                                     </td>
                                   );
                                 case 'fecha_estatus':
-                                  return <td key={column.key} className={cellClass}>{formatDate(pieza.fecha_estatus)}</td>;
+                                  return <td key={column.key} className={cellClass} style={cellStyle}>{formatDate(pieza.fecha_estatus)}</td>;
                                 case 'ubicacion':
                                   return (
-                                    <td key={column.key} className={cellClass}>
+                                    <td key={column.key} className={cellClass} style={cellStyle}>
                                       <select
                                         value={pieza.ubicacion}
                                         onChange={(e) => handleUbicacionChange(pieza.id, e.target.value)}
@@ -1135,7 +1190,7 @@ export default function BitacoraPiezas() {
                                   );
                                 case 'devolucion_proveedor':
                                   return (
-                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                    <td key={column.key} className={`${cellClass} text-center`} style={cellStyle}>
                                       <input
                                         type="checkbox"
                                         checked={pieza.devolucion_proveedor}
@@ -1146,7 +1201,7 @@ export default function BitacoraPiezas() {
                                   );
                                 case 'recibido':
                                   return (
-                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                    <td key={column.key} className={`${cellClass} text-center`} style={cellStyle}>
                                       <input
                                         type="checkbox"
                                         checked={pieza.recibido}
@@ -1157,7 +1212,7 @@ export default function BitacoraPiezas() {
                                   );
                                 case 'entregado':
                                   return (
-                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                    <td key={column.key} className={`${cellClass} text-center`} style={cellStyle}>
                                       <input
                                         type="checkbox"
                                         checked={pieza.entregado}
@@ -1168,7 +1223,7 @@ export default function BitacoraPiezas() {
                                   );
                                 case 'portal':
                                   return (
-                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                    <td key={column.key} className={`${cellClass} text-center`} style={cellStyle}>
                                       <input
                                         type="checkbox"
                                         checked={pieza.portal}
@@ -1178,7 +1233,7 @@ export default function BitacoraPiezas() {
                                     </td>
                                   );
                                 default:
-                                  return <td key={column.key} className={cellClass}>-</td>;
+                                  return <td key={column.key} className={cellClass} style={cellStyle}>-</td>;
                               }
                             })}
                           </tr>

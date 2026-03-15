@@ -690,12 +690,11 @@ export default function BitacoraPiezas() {
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
-    return date.toLocaleString('es-MX', {
+    return date.toLocaleDateString('es-MX', {
       timeZone: 'America/Mazatlan',
       day: '2-digit',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
+      month: '2-digit',
+      year: 'numeric'
     });
   };
 

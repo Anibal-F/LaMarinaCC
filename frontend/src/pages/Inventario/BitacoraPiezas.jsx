@@ -835,6 +835,29 @@ export default function BitacoraPiezas() {
               />
             )}
 
+            {/* Leyenda de indicadores */}
+            {piezas.length > 0 && (
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                <span className="font-bold text-slate-500">Indicadores:</span>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                  <span>Aún está a más de 3 días de la fecha promesa</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-alert-green"></span>
+                  <span>La refacción está a 0 días de cumplir</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-alert-amber"></span>
+                  <span>La refacción está a menos de 3 días</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-alert-red"></span>
+                  <span>Ya está vencida la fecha promesa</span>
+                </div>
+              </div>
+            )}
+
             {/* Indicador de filtro activo */}
             {filtroIndicador && (
               <div className="flex items-center gap-2">
@@ -956,20 +979,6 @@ export default function BitacoraPiezas() {
               </div>
               
               <div className="flex items-center gap-2 ml-auto">
-                <span className="text-xs text-slate-400">Mostrar:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
-                >
-                  {pageSizeOptions.map(size => (
-                    <option key={size} value={size}>{size}</option>
-                  ))}
-                </select>
-                
                 {/* Botón para gestionar columnas */}
                 <button
                   onClick={() => setShowColumnManager(!showColumnManager)}
@@ -1250,48 +1259,47 @@ export default function BitacoraPiezas() {
                     Mostrando {pagedPiezas.length} de {piezasFiltradas.length} registros
                     {fuenteActiva !== 'Todas' && ` (${fuenteActiva})`}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      className="px-3 py-1.5 rounded border border-border-dark text-xs disabled:opacity-40 hover:bg-slate-700 transition-colors text-slate-300"
-                    >
-                      Anterior
-                    </button>
-                    <span className="text-xs text-slate-400">
-                      Página {page} de {totalPages || 1}
-                    </span>
-                    <button
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages || totalPages === 0}
-                      className="px-3 py-1.5 rounded border border-border-dark text-xs disabled:opacity-40 hover:bg-slate-700 transition-colors text-slate-300"
-                    >
-                      Siguiente
-                    </button>
+                  <div className="flex items-center gap-4">
+                    {/* Selector de cantidad de registros */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">Mostrar:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setPage(1);
+                        }}
+                        className="bg-background-dark border border-border-dark rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
+                      >
+                        {pageSizeOptions.map(size => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    {/* Controles de paginación */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="px-3 py-1.5 rounded border border-border-dark text-xs disabled:opacity-40 hover:bg-slate-700 transition-colors text-slate-300"
+                      >
+                        Anterior
+                      </button>
+                      <span className="text-xs text-slate-400">
+                        Página {page} de {totalPages || 1}
+                      </span>
+                      <button
+                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                        disabled={page === totalPages || totalPages === 0}
+                        className="px-3 py-1.5 rounded border border-border-dark text-xs disabled:opacity-40 hover:bg-slate-700 transition-colors text-slate-300"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Leyenda de indicadores (como en Qualitas) */}
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
-              <span className="font-bold text-slate-500">Indicadores:</span>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                <span>Aún está a más de 3 días de la fecha promesa</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-alert-green"></span>
-                <span>La refacción está a 0 días de cumplir</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-alert-amber"></span>
-                <span>La refacción está a menos de 3 días</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-alert-red"></span>
-                <span>Ya está vencida la fecha promesa</span>
-              </div>
             </div>
           </div>
         </main>

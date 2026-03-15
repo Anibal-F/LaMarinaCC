@@ -100,6 +100,26 @@ function cleanProveedorNombre(nombre) {
 // Componente de celda de proveedor con ícono
 function ProveedorCell({ proveedor, onClickInfo }) {
   const nombreLimpio = cleanProveedorNombre(proveedor.nombre);
+  const isContactPlaceholder = !proveedor.nombre || proveedor.nombre === 'Sin Asignar' || proveedor.nombre.includes('CONTACT');
+  
+  // Si es un placeholder tipo CONTACT_, mostrar solo ícono de info
+  if (isContactPlaceholder) {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClickInfo();
+        }}
+        className="flex items-center gap-2 p-1.5 hover:bg-slate-700/50 rounded-lg transition-colors group"
+        title="Ver información del proveedor"
+      >
+        <span className="material-symbols-outlined text-lg text-slate-400 group-hover:text-blue-400 transition-colors">
+          info
+        </span>
+        <span className="text-xs text-slate-500">Info</span>
+      </button>
+    );
+  }
   
   return (
     <div className="flex items-center gap-2">

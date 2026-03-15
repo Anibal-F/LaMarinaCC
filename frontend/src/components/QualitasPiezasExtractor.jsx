@@ -16,12 +16,18 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
   const [maxOrdenes, setMaxOrdenes] = useState('');
   const [resetCheckpoint, setResetCheckpoint] = useState(false);
   const logsEndRef = useRef(null);
+  const logsContainerRef = useRef(null);
   const intervalRef = useRef(null);
 
-  // Auto-scroll logs solo cuando están visibles
+  // Auto-scroll logs DENTRO del contenedor (no de la página) y solo si está cerca del final
   useEffect(() => {
-    if (showLogs && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (showLogs && logsContainerRef.current && logsEndRef.current) {
+      const container = logsContainerRef.current;
+      // Solo hacer scroll si el usuario está cerca del final (dentro de 100px)
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      if (isNearBottom) {
+        logsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
   }, [logs, showLogs]);
 
@@ -192,7 +198,7 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
               {logs.length} líneas
             </span>
           </div>
-          <div className="text-[10px] font-mono text-slate-300 overflow-auto max-h-64 custom-scrollbar">
+          <div ref={logsContainerRef} className="text-[10px] font-mono text-slate-300 overflow-auto max-h-64 custom-scrollbar">
             <pre className="whitespace-pre-wrap break-all">
               {logs.join('\n')}
             </pre>

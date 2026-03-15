@@ -164,7 +164,7 @@ function PaqueteriaCell({ paqueteria, guia }) {
 }
 
 // Componente de Indicadores de Piezas
-function IndicadoresPiezas({ piezas }) {
+function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
   // Calcular indicadores
   const indicadores = useMemo(() => {
     const hoy = new Date();
@@ -211,7 +211,8 @@ function IndicadoresPiezas({ piezas }) {
       value: indicadores.vencidas,
       icon: 'warning',
       color: 'red',
-      desc: 'Fecha promesa vencida'
+      desc: 'Fecha promesa vencida',
+      filter: 'vencidas'
     },
     {
       key: 'porRecibir',
@@ -219,7 +220,8 @@ function IndicadoresPiezas({ piezas }) {
       value: indicadores.porRecibir,
       icon: 'schedule',
       color: 'amber',
-      desc: '0-3 días para entrega'
+      desc: '0-3 días para entrega',
+      filter: 'porRecibir'
     },
     {
       key: 'enProceso',
@@ -227,7 +229,8 @@ function IndicadoresPiezas({ piezas }) {
       value: indicadores.enProceso,
       icon: 'timer',
       color: 'blue',
-      desc: '> 3 días para entrega'
+      desc: '> 3 días para entrega',
+      filter: 'enProceso'
     },
     {
       key: 'total',
@@ -235,7 +238,8 @@ function IndicadoresPiezas({ piezas }) {
       value: piezas.length,
       icon: 'inventory_2',
       color: 'slate',
-      desc: 'Todas las piezas'
+      desc: 'Todas las piezas',
+      filter: 'total'
     }
   ];
   
@@ -251,16 +255,30 @@ function IndicadoresPiezas({ piezas }) {
     purple: { border: 'border-purple-500', text: 'text-purple-500', bg: 'bg-purple-500/20', icon: 'text-purple-500' },
   };
   
+  const handleCardClick = (filterKey) => {
+    if (onFilter) {
+      onFilter(activeFilter === filterKey ? null : filterKey);
+    }
+  };
+  
+  const handleEstatusClick = (estatus) => {
+    if (onFilter) {
+      onFilter(activeFilter === `estatus:${estatus}` ? null : `estatus:${estatus}`);
+    }
+  };
+  
   return (
     <div className="space-y-4">
       {/* Indicadores principales */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {tarjetas.map((tarjeta) => {
           const colors = colorClasses[tarjeta.color];
+          const isActive = activeFilter === tarjeta.filter;
           return (
-            <div 
+            <button
               key={tarjeta.key}
-              className={`bg-surface-dark border ${colors.border} rounded-xl p-4 transition-all hover:scale-[1.02]`}
+              onClick={() => handleCardClick(tarjeta.filter)}
+              className={`bg-surface-dark border ${isActive ? colors.border : colors.border} rounded-xl p-4 transition-all hover:scale-[1.02] text-left cursor-pointer ${isActive ? colors.bg : ''} ${isActive ? 'ring-2 ring-offset-2 ring-offset-background-dark ring-' + tarjeta.color : ''}`}
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -277,8 +295,9 @@ function IndicadoresPiezas({ piezas }) {
               </div>
               <p className="text-[10px] text-slate-500 mt-1">
                 {tarjeta.desc}
+                {isActive && <span className="ml-1 text-slate-300">(activo)</span>}
               </p>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -299,17 +318,19 @@ function IndicadoresPiezas({ piezas }) {
           
           const color = estatusColors[estatus] || 'slate';
           const colors = colorClasses[color];
+          const isActive = activeFilter === `estatus:${estatus}`;
           
           return (
-            <div 
+            <button
               key={estatus}
-              className={`bg-surface-dark border ${colors.border}/30 rounded-lg p-3 transition-all hover:border-${color}-500/50`}
+              onClick={() => handleEstatusClick(estatus)}
+              className={`bg-surface-dark border ${isActive ? colors.border : colors.border + '/30'} rounded-lg p-3 transition-all hover:border-${color}-500/50 text-left cursor-pointer ${isActive ? colors.bg : ''} ${isActive ? 'ring-1 ring-' + color : ''}`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">{estatus}</span>
+                <span className={`text-[10px] ${isActive ? 'text-white' : 'text-slate-400'}`}>{estatus}</span>
                 <span className={`text-lg font-bold ${colors.text}`}>{count}</span>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -374,6 +395,9 @@ export default function BitacoraPiezas() {
   
   // Fuente activa (Qualitas, Chubb, o Todas)
   const [fuenteActiva, setFuenteActiva] = useState('Todas');
+  
+  // Filtro de indicadores activo
+  const [filtroIndicador, setFiltroIndicador] = useState(null);
 
   // Cargar piezas desde la API
   useEffect(() => {
@@ -470,6 +494,33 @@ export default function BitacoraPiezas() {
         }
       }
       
+      // Filtro por indicador seleccionado
+      if (filtroIndicador) {
+        if (filtroIndicador.startsWith('estatus:')) {
+          const estatusFiltro = filtroIndicador.replace('estatus:', '');
+          if (pieza.estatus !== estatusFiltro) {
+            return false;
+          }
+        } else if (filtroIndicador !== 'total' && pieza.fecha_promesa) {
+          const hoy = new Date();
+          hoy.setHours(0, 0, 0, 0);
+          const fechaPromesa = new Date(pieza.fecha_promesa);
+          fechaPromesa.setHours(0, 0, 0, 0);
+          const diffTime = fechaPromesa - hoy;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (filtroIndicador === 'vencidas' && diffDays >= 0) {
+            return false;
+          } else if (filtroIndicador === 'porRecibir' && (diffDays < 0 || diffDays > 3)) {
+            return false;
+          } else if (filtroIndicador === 'enProceso' && diffDays <= 3) {
+            return false;
+          }
+        } else if (filtroIndicador !== 'total' && !pieza.fecha_promesa) {
+          return false;
+        }
+      }
+      
       // Filtro por búsqueda general
       if (filtroBusqueda) {
         const searchLower = filtroBusqueda.toLowerCase();
@@ -482,7 +533,7 @@ export default function BitacoraPiezas() {
       
       return true;
     });
-  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroReporte]);
+  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroReporte, filtroIndicador]);
 
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);
@@ -630,7 +681,36 @@ export default function BitacoraPiezas() {
             )}
 
             {/* Indicadores */}
-            {piezas.length > 0 && <IndicadoresPiezas piezas={piezas} />}
+            {piezas.length > 0 && (
+              <IndicadoresPiezas 
+                piezas={piezas} 
+                activeFilter={filtroIndicador}
+                onFilter={setFiltroIndicador}
+              />
+            )}
+
+            {/* Indicador de filtro activo */}
+            {filtroIndicador && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Filtro activo:</span>
+                <span className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-2">
+                  {filtroIndicador.startsWith('estatus:') 
+                    ? `Estatus: ${filtroIndicador.replace('estatus:', '')}`
+                    : filtroIndicador === 'vencidas' ? 'Piezas Vencidas'
+                    : filtroIndicador === 'porRecibir' ? 'Por Recibir (0-3 días)'
+                    : filtroIndicador === 'enProceso' ? 'En Proceso (>3 días)'
+                    : 'Todas las piezas'
+                  }
+                  <button
+                    onClick={() => setFiltroIndicador(null)}
+                    className="hover:text-white"
+                    title="Quitar filtro"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </span>
+              </div>
+            )}
 
             {/* Filtros */}
             <div className="flex flex-wrap items-center gap-4 bg-surface-dark border border-border-dark rounded-xl p-4">

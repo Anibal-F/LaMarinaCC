@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Sidebar from '../../components/Sidebar.jsx';
 import AppHeader from '../../components/AppHeader.jsx';
 import QualitasPiezasExtractor from '../../components/QualitasPiezasExtractor.jsx';
+import { getSession } from '../../utils/auth.js';
 
 // URL base de la API
 const getApiUrl = () => {
@@ -22,6 +23,31 @@ const ESTATUS_OPTIONS = ['Todos', 'En Proceso', 'Pendiente', 'Cancelada', 'Entre
 
 // Tipos de registro
 const TIPO_REGISTRO_OPTIONS = ['Todos', 'Proceso de Surtido', 'Reasignada/Cancelada'];
+
+// Definición de columnas
+const COLUMN_DEFS = [
+  { key: 'tipo', label: 'Tipo', width: '90px', className: 'text-center' },
+  { key: 'nombre', label: 'Nombre', width: '150px', className: 'text-left' },
+  { key: 'origen', label: 'Origen', width: '100px', className: 'text-left' },
+  { key: 'numero_parte', label: '# Parte', width: '100px', className: 'text-left font-mono' },
+  { key: 'numero_orden', label: 'Orden', width: '100px', className: 'text-left font-mono' },
+  { key: 'numero_reporte', label: 'Reporte', width: '120px', className: 'text-left' },
+  { key: 'observaciones', label: 'Observaciones', width: '120px', className: 'text-left' },
+  { key: 'proveedor', label: 'Proveedor', width: '140px', className: 'text-left' },
+  { key: 'paqueteria', label: 'Paquetería', width: '80px', className: 'text-center' },
+  { key: 'fecha_promesa', label: 'Fecha Promesa', width: '110px', className: 'text-left' },
+  { key: 'demeritos', label: 'Deméritos', width: '80px', className: 'text-right' },
+  { key: 'estatus', label: 'Estatus', width: '100px', className: 'text-center' },
+  { key: 'fecha_estatus', label: 'Fecha Estatus', width: '110px', className: 'text-left' },
+  { key: 'ubicacion', label: 'Ubicación', width: '100px', className: 'text-center' },
+  { key: 'devolucion_proveedor', label: 'Dev. Prov.', width: '70px', className: 'text-center' },
+  { key: 'recibido', label: 'Recibido', width: '70px', className: 'text-center' },
+  { key: 'entregado', label: 'Entregado', width: '70px', className: 'text-center' },
+  { key: 'portal', label: 'Portal', width: '60px', className: 'text-center' }
+];
+
+const DEFAULT_COLUMN_ORDER = COLUMN_DEFS.map((c) => c.key);
+const DEFAULT_HIDDEN_COLUMNS = []; // Por defecto todas visibles
 
 // Componente Modal de Proveedor
 function ProveedorModal({ proveedor, isOpen, onClose }) {
@@ -392,6 +418,18 @@ export default function BitacoraPiezas() {
   
   // Filtro de indicadores activo
   const [filtroIndicador, setFiltroIndicador] = useState(null);
+  
+  // Gestión de columnas
+  const session = getSession();
+  const userKey = String(session?.id || session?.user_name || session?.email || 'anon').toLowerCase();
+  const sessionKey = String(session?.session_started_at || 'no-session');
+  const storageKey = `lmcc:piezas:columns:${userKey}`;
+  const sessionStorageKey = `lmcc:piezas:columns:${userKey}:${sessionKey}`;
+  
+  const [showColumnManager, setShowColumnManager] = useState(false);
+  const [draggingColumnKey, setDraggingColumnKey] = useState(null);
+  const [columnOrder, setColumnOrder] = useState(DEFAULT_COLUMN_ORDER);
+  const [hiddenColumns, setHiddenColumns] = useState(DEFAULT_HIDDEN_COLUMNS);
 
   // Cargar piezas desde la API
   useEffect(() => {
@@ -462,6 +500,39 @@ export default function BitacoraPiezas() {
     }, 300);
     return () => clearTimeout(timeout);
   }, [filtroBusqueda]);
+  
+  // Cargar preferencias de columnas desde sessionStorage/localStorage
+  useEffect(() => {
+    const parsePrefs = (raw) => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed &&
+          Array.isArray(parsed.order) &&
+          Array.isArray(parsed.hidden)
+        ) {
+          return parsed;
+        }
+      } catch {
+        return null;
+      }
+    };
+
+    const sessionPrefs = parsePrefs(sessionStorage.getItem(sessionStorageKey));
+    const localPrefs = parsePrefs(localStorage.getItem(storageKey));
+    const prefs = sessionPrefs || localPrefs;
+    if (!prefs) return;
+    setColumnOrder(prefs.order);
+    setHiddenColumns(prefs.hidden);
+  }, [sessionStorageKey, storageKey]);
+  
+  // Guardar preferencias de columnas
+  useEffect(() => {
+    const payload = JSON.stringify({ order: columnOrder, hidden: hiddenColumns });
+    sessionStorage.setItem(sessionStorageKey, payload);
+    localStorage.setItem(storageKey, payload);
+  }, [columnOrder, hiddenColumns, sessionStorageKey, storageKey]);
 
   // Filtrar piezas
   const piezasFiltradas = useMemo(() => {
@@ -532,6 +603,44 @@ export default function BitacoraPiezas() {
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);
   const pagedPiezas = piezasFiltradas.slice((page - 1) * pageSize, page * pageSize);
+  
+  // Computar columnas visibles
+  const columnDefMap = useMemo(
+    () => Object.fromEntries(COLUMN_DEFS.map((c) => [c.key, c])),
+    []
+  );
+  
+  const visibleColumns = useMemo(
+    () => columnOrder.filter((key) => !hiddenColumns.includes(key)).map((key) => columnDefMap[key]).filter(Boolean),
+    [columnOrder, hiddenColumns, columnDefMap]
+  );
+  
+  // Mover columna (drag and drop)
+  const moveColumn = (dragKey, targetKey) => {
+    if (!dragKey || !targetKey || dragKey === targetKey) return;
+    setColumnOrder((prev) => {
+      const fromIndex = prev.indexOf(dragKey);
+      const toIndex = prev.indexOf(targetKey);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const next = [...prev];
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, dragKey);
+      return next;
+    });
+  };
+  
+  // Toggle visibilidad de columna
+  const toggleColumnVisibility = (key) => {
+    setHiddenColumns((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+  
+  // Resetear columnas a valores por defecto
+  const resetColumns = () => {
+    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    setHiddenColumns(DEFAULT_HIDDEN_COLUMNS);
+  };
 
   // Formatear fecha
   const formatDate = (dateStr) => {
@@ -817,8 +926,83 @@ export default function BitacoraPiezas() {
                     <option key={size} value={size}>{size}</option>
                   ))}
                 </select>
+                
+                {/* Botón para gestionar columnas */}
+                <button
+                  onClick={() => setShowColumnManager(!showColumnManager)}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                    showColumnManager ? 'bg-primary text-white' : 'bg-background-dark text-slate-400 hover:text-white border border-border-dark'
+                  }`}
+                  title="Configurar columnas"
+                >
+                  <span className="material-symbols-outlined text-sm">view_column</span>
+                  <span>Columnas</span>
+                </button>
               </div>
             </div>
+            
+            {/* Panel de gestión de columnas */}
+            {showColumnManager && (
+              <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">view_column</span>
+                    Configurar Columnas
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={resetColumns}
+                      className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-background-dark rounded-lg transition-colors"
+                    >
+                      Restablecer
+                    </button>
+                    <button
+                      onClick={() => setShowColumnManager(false)}
+                      className="p-1 hover:bg-slate-700 rounded text-slate-400"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mb-3">
+                  Arrastra para cambiar orden. Marca/desmarca para ocultar o mostrar.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {columnOrder.map((columnKey) => {
+                    const column = columnDefMap[columnKey];
+                    if (!column) return null;
+                    const visible = !hiddenColumns.includes(columnKey);
+                    return (
+                      <div
+                        key={columnKey}
+                        draggable
+                        onDragStart={() => setDraggingColumnKey(columnKey)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          moveColumn(draggingColumnKey, columnKey);
+                          setDraggingColumnKey(null);
+                        }}
+                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-move transition-colors ${
+                          visible 
+                            ? 'bg-background-dark border-border-dark hover:border-primary/50' 
+                            : 'bg-slate-800/50 border-transparent opacity-50'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-xs text-slate-500">drag_indicator</span>
+                        <input
+                          type="checkbox"
+                          checked={visible}
+                          onChange={() => toggleColumnVisibility(columnKey)}
+                          className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-primary focus:ring-primary"
+                        />
+                        <span className="text-xs text-slate-300 truncate">{column.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Tabla */}
             <div className="bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
@@ -827,30 +1011,29 @@ export default function BitacoraPiezas() {
                   <table className="w-full text-left">
                     <thead className="bg-surface-dark sticky top-0 z-10">
                       <tr className="border-b border-border-dark">
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Tipo</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Nombre</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Origen</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark"># Parte</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Orden</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Reporte</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Observaciones</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Proveedor</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Paquetería</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Fecha Promesa</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Deméritos</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Estatus</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Fecha Estatus</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark">Ubicación</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark text-center">Dev. Prov.</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark text-center">Recibido</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark text-center">Entregado</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark text-center">Portal</th>
+                        {visibleColumns.map((column) => (
+                          <th
+                            key={`th-${column.key}`}
+                            className={`px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark cursor-move select-none ${column.className || ''}`}
+                            draggable
+                            onDragStart={() => setDraggingColumnKey(column.key)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              moveColumn(draggingColumnKey, column.key);
+                              setDraggingColumnKey(null);
+                            }}
+                            title="Arrastra para cambiar orden"
+                          >
+                            {column.label}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={18} className="px-3 py-8 text-center">
+                          <td colSpan={visibleColumns.length || 1} className="px-3 py-8 text-center">
                             <div className="flex items-center justify-center gap-2 text-slate-400">
                               <span className="material-symbols-outlined animate-spin">refresh</span>
                               <span className="text-sm">Cargando piezas...</span>
@@ -859,7 +1042,7 @@ export default function BitacoraPiezas() {
                         </tr>
                       ) : pagedPiezas.length === 0 ? (
                         <tr>
-                          <td colSpan={18} className="px-3 py-8 text-center">
+                          <td colSpan={visibleColumns.length || 1} className="px-3 py-8 text-center">
                             <div className="flex flex-col items-center gap-2 text-slate-400">
                               <span className="material-symbols-outlined text-4xl">inventory_2</span>
                               <span className="text-sm">No hay piezas registradas</span>
@@ -872,84 +1055,132 @@ export default function BitacoraPiezas() {
                             key={pieza.id} 
                             className="border-b border-border-dark/50 hover:bg-white/5 transition-colors"
                           >
-                            <td className="px-3 py-2">
-                              <TipoRegistroBadge tipo={pieza.tipo_registro} />
-                            </td>
-                            <td className="px-3 py-2 text-xs text-white max-w-[150px] truncate" title={pieza.nombre}>
-                              {pieza.nombre}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-slate-300">{pieza.origen}</td>
-                            <td className="px-3 py-2 text-xs text-slate-300 font-mono">{pieza.numero_parte}</td>
-                            <td className="px-3 py-2 text-xs text-slate-300 font-mono">{pieza.numero_orden}</td>
-                            <td className="px-3 py-2 text-xs text-slate-300 max-w-[120px] truncate" title={pieza.numero_reporte}>
-                              {pieza.numero_reporte}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-slate-400 max-w-[100px] truncate" title={pieza.observaciones}>
-                              {pieza.observaciones || '-'}
-                            </td>
-                            <td className="px-3 py-2">
-                              <ProveedorCell 
-                                proveedor={pieza.proveedor} 
-                                onClickInfo={() => openProveedorModal(pieza.proveedor)}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <PaqueteriaCell 
-                                paqueteria={pieza.paqueteria} 
-                                guia={pieza.guia_paqueteria}
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-xs text-slate-300">{formatDate(pieza.fecha_promesa)}</td>
-                            <td className="px-3 py-2 text-xs text-slate-300">
-                              ${pieza.demeritos.toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2">
-                              <EstatusBadge estatus={pieza.estatus} />
-                            </td>
-                            <td className="px-3 py-2 text-xs text-slate-300">{formatDate(pieza.fecha_estatus)}</td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={pieza.ubicacion}
-                                onChange={(e) => handleUbicacionChange(pieza.id, e.target.value)}
-                                className="bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-primary"
-                              >
-                                {UBICACIONES.map(ub => (
-                                  <option key={ub} value={ub}>{ub}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={pieza.devolucion_proveedor}
-                                onChange={(e) => handleCheckboxChange(pieza.id, 'devolucion_proveedor', e.target.checked)}
-                                className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={pieza.recibido}
-                                onChange={(e) => handleCheckboxChange(pieza.id, 'recibido', e.target.checked)}
-                                className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={pieza.entregado}
-                                onChange={(e) => handleCheckboxChange(pieza.id, 'entregado', e.target.checked)}
-                                className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={pieza.portal}
-                                onChange={(e) => handleCheckboxChange(pieza.id, 'portal', e.target.checked)}
-                                className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
-                              />
-                            </td>
+                            {visibleColumns.map((column) => {
+                              const cellClass = `px-3 py-2 text-xs ${column.className || 'text-slate-300'}`;
+                              
+                              switch (column.key) {
+                                case 'tipo':
+                                  return (
+                                    <td key={column.key} className={cellClass}>
+                                      <TipoRegistroBadge tipo={pieza.tipo_registro} />
+                                    </td>
+                                  );
+                                case 'nombre':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} max-w-[150px] truncate`} title={pieza.nombre}>
+                                      <span className="text-white">{pieza.nombre}</span>
+                                    </td>
+                                  );
+                                case 'origen':
+                                  return <td key={column.key} className={cellClass}>{pieza.origen}</td>;
+                                case 'numero_parte':
+                                  return <td key={column.key} className={`${cellClass} font-mono`}>{pieza.numero_parte}</td>;
+                                case 'numero_orden':
+                                  return <td key={column.key} className={`${cellClass} font-mono`}>{pieza.numero_orden}</td>;
+                                case 'numero_reporte':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} max-w-[120px] truncate`} title={pieza.numero_reporte}>
+                                      {pieza.numero_reporte}
+                                    </td>
+                                  );
+                                case 'observaciones':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} max-w-[100px] truncate text-slate-400`} title={pieza.observaciones}>
+                                      {pieza.observaciones || '-'}
+                                    </td>
+                                  );
+                                case 'proveedor':
+                                  return (
+                                    <td key={column.key} className={cellClass}>
+                                      <ProveedorCell 
+                                        proveedor={pieza.proveedor} 
+                                        onClickInfo={() => openProveedorModal(pieza.proveedor)}
+                                      />
+                                    </td>
+                                  );
+                                case 'paqueteria':
+                                  return (
+                                    <td key={column.key} className={cellClass}>
+                                      <PaqueteriaCell 
+                                        paqueteria={pieza.paqueteria} 
+                                        guia={pieza.guia_paqueteria}
+                                      />
+                                    </td>
+                                  );
+                                case 'fecha_promesa':
+                                  return <td key={column.key} className={cellClass}>{formatDate(pieza.fecha_promesa)}</td>;
+                                case 'demeritos':
+                                  return <td key={column.key} className={cellClass}>${pieza.demeritos.toLocaleString()}</td>;
+                                case 'estatus':
+                                  return (
+                                    <td key={column.key} className={cellClass}>
+                                      <EstatusBadge estatus={pieza.estatus} />
+                                    </td>
+                                  );
+                                case 'fecha_estatus':
+                                  return <td key={column.key} className={cellClass}>{formatDate(pieza.fecha_estatus)}</td>;
+                                case 'ubicacion':
+                                  return (
+                                    <td key={column.key} className={cellClass}>
+                                      <select
+                                        value={pieza.ubicacion}
+                                        onChange={(e) => handleUbicacionChange(pieza.id, e.target.value)}
+                                        className="bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-primary"
+                                      >
+                                        {UBICACIONES.map(ub => (
+                                          <option key={ub} value={ub}>{ub}</option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                  );
+                                case 'devolucion_proveedor':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={pieza.devolucion_proveedor}
+                                        onChange={(e) => handleCheckboxChange(pieza.id, 'devolucion_proveedor', e.target.checked)}
+                                        className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      />
+                                    </td>
+                                  );
+                                case 'recibido':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={pieza.recibido}
+                                        onChange={(e) => handleCheckboxChange(pieza.id, 'recibido', e.target.checked)}
+                                        className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      />
+                                    </td>
+                                  );
+                                case 'entregado':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={pieza.entregado}
+                                        onChange={(e) => handleCheckboxChange(pieza.id, 'entregado', e.target.checked)}
+                                        className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      />
+                                    </td>
+                                  );
+                                case 'portal':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} text-center`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={pieza.portal}
+                                        onChange={(e) => handleCheckboxChange(pieza.id, 'portal', e.target.checked)}
+                                        className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                      />
+                                    </td>
+                                  );
+                                default:
+                                  return <td key={column.key} className={cellClass}>-</td>;
+                              }
+                            })}
                           </tr>
                         ))
                       )}

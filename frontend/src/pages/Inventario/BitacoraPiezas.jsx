@@ -99,33 +99,41 @@ function cleanProveedorNombre(nombre) {
 
 // Componente de celda de proveedor con ícono
 function ProveedorCell({ proveedor, onClickInfo }) {
-  const nombreLimpio = cleanProveedorNombre(proveedor.nombre);
-  // Es placeholder solo si el nombre limpio está vacío o es "Sin Asignar"
-  const isContactPlaceholder = !nombreLimpio || nombreLimpio === 'Sin Asignar';
+  const nombreOriginal = proveedor.nombre || '';
+  const nombreLimpio = cleanProveedorNombre(nombreOriginal);
+  const proveedorId = proveedor.id_externo || proveedor.id;
   
-  // Si es un placeholder tipo CONTACT_, mostrar solo ícono de info
+  // Es placeholder si el nombre original contiene CONTACT o el nombre limpio es Sin Asignar
+  const isContactPlaceholder = nombreOriginal.includes('CONTACT') || nombreLimpio === 'Sin Asignar';
+  
+  // Si es un placeholder tipo CONTACT_, mostrar ID + ícono de info
   if (isContactPlaceholder) {
     return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onClickInfo();
-        }}
-        className="flex items-center gap-2 p-1.5 hover:bg-slate-700/50 rounded-lg transition-colors group"
-        title="Ver información del proveedor"
-      >
-        <span className="material-symbols-outlined text-lg text-slate-400 group-hover:text-blue-400 transition-colors">
-          info
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-slate-300 truncate max-w-[100px]" title={proveedorId}>
+          {proveedorId}
         </span>
-        <span className="text-xs text-slate-500">Info</span>
-      </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClickInfo();
+          }}
+          className="p-1 hover:bg-slate-700 rounded transition-colors"
+          title="Ver información del proveedor"
+        >
+          <span className="material-symbols-outlined text-sm text-slate-400 hover:text-blue-400">
+            info
+          </span>
+        </button>
+      </div>
     );
   }
   
+  // Si tiene nombre real, mostrar nombre + íconos
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-slate-300 truncate max-w-[120px]" title={nombreLimpio}>
-        {proveedor.id_externo || proveedor.id} {nombreLimpio}
+        {nombreLimpio}
       </span>
       <div className="flex items-center gap-1">
         <button

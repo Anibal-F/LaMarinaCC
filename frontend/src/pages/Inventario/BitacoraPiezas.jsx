@@ -106,61 +106,26 @@ function ProveedorCell({ proveedor, onClickInfo }) {
   // Es placeholder si el nombre original contiene CONTACT o el nombre limpio es Sin Asignar
   const isContactPlaceholder = nombreOriginal.includes('CONTACT') || nombreLimpio === 'Sin Asignar';
   
-  // Si es un placeholder tipo CONTACT_, mostrar ID + ícono de info
-  if (isContactPlaceholder) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-slate-300 truncate max-w-[100px]" title={proveedorId}>
-          {proveedorId}
-        </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClickInfo();
-          }}
-          className="p-1 hover:bg-slate-700 rounded transition-colors"
-          title="Ver información del proveedor"
-        >
-          <span className="material-symbols-outlined text-sm text-slate-400 hover:text-blue-400">
-            info
-          </span>
-        </button>
-      </div>
-    );
-  }
+  // Texto a mostrar: nombre real o ID del proveedor
+  const textoMostrar = isContactPlaceholder ? proveedorId : nombreLimpio;
   
-  // Si tiene nombre real, mostrar nombre + íconos
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-300 truncate max-w-[120px]" title={nombreLimpio}>
-        {nombreLimpio}
+      <span className="text-xs text-slate-300 truncate max-w-[140px]" title={textoMostrar}>
+        {textoMostrar}
       </span>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            // Aquí iría la funcionalidad de chat
-          }}
-          className="p-1 hover:bg-slate-700 rounded transition-colors"
-          title="Chat con proveedor"
-        >
-          <span className="material-symbols-outlined text-sm text-slate-400 hover:text-primary">
-            chat
-          </span>
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClickInfo();
-          }}
-          className="p-1 hover:bg-slate-700 rounded transition-colors"
-          title="Ver información"
-        >
-          <span className="material-symbols-outlined text-sm text-slate-400 hover:text-primary">
-            contact_info
-          </span>
-        </button>
-      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClickInfo();
+        }}
+        className="p-1 hover:bg-slate-700 rounded transition-colors"
+        title="Ver información del proveedor"
+      >
+        <span className="material-symbols-outlined text-sm text-slate-400 hover:text-blue-400">
+          info
+        </span>
+      </button>
     </div>
   );
 }

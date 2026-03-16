@@ -420,6 +420,13 @@ export default function BitacoraPiezas() {
   // Filtro de indicadores activo
   const [filtroIndicador, setFiltroIndicador] = useState(null);
   
+  // Filtro de recepción
+  const [filtroRecibido, setFiltroRecibido] = useState('Todos'); // 'Todos', 'Recibidos', 'SinRecepcionar'
+  
+  // Ordenamiento
+  const [sortColumn, setSortColumn] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' o 'desc'
+  
   // Gestión de columnas
   const session = getSession();
   const userKey = String(session?.id || session?.user_name || session?.email || 'anon').toLowerCase();
@@ -542,9 +549,9 @@ export default function BitacoraPiezas() {
     localStorage.setItem(storageKey, payload);
   }, [columnOrder, hiddenColumns, columnWidths, sessionStorageKey, storageKey]);
 
-  // Filtrar piezas
+  // Filtrar y ordenar piezas
   const piezasFiltradas = useMemo(() => {
-    return piezas.filter(pieza => {
+    let resultado = piezas.filter(pieza => {
       // Filtro por estatus
       if (filtroEstatus !== 'Todos' && pieza.estatus !== filtroEstatus) {
         return false;
@@ -565,6 +572,14 @@ export default function BitacoraPiezas() {
         if (!pieza.numero_reporte.toLowerCase().includes(filtroReporte.toLowerCase())) {
           return false;
         }
+      }
+      
+      // Filtro por recepción
+      if (filtroRecibido === 'Recibidos' && !pieza.recibido) {
+        return false;
+      }
+      if (filtroRecibido === 'SinRecepcionar' && pieza.recibido) {
+        return false;
       }
       
       // Filtro por indicador seleccionado
@@ -606,7 +621,49 @@ export default function BitacoraPiezas() {
       
       return true;
     });
-  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroReporte, filtroIndicador]);
+    
+    // Ordenamiento
+    if (sortColumn) {
+      resultado = [...resultado].sort((a, b) => {
+        let valA = a[sortColumn];
+        let valB = b[sortColumn];
+        
+        // Manejar valores nulos o undefined
+        if (valA === null || valA === undefined) valA = '';
+        if (valB === null || valB === undefined) valB = '';
+        
+        // Ordenamiento de fechas
+        if (sortColumn.includes('fecha')) {
+          const dateA = valA ? new Date(valA).getTime() : 0;
+          const dateB = valB ? new Date(valB).getTime() : 0;
+          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+        }
+        
+        // Ordenamiento numérico
+        if (sortColumn === 'demeritos' || sortColumn === 'numero_orden') {
+          const numA = parseFloat(valA) || 0;
+          const numB = parseFloat(valB) || 0;
+          return sortDirection === 'asc' ? numA - numB : numB - numA;
+        }
+        
+        // Ordenamiento booleano (checkboxes)
+        if (typeof valA === 'boolean' && typeof valB === 'boolean') {
+          if (valA === valB) return 0;
+          const boolCompare = valA ? 1 : -1;
+          return sortDirection === 'asc' ? boolCompare : -boolCompare;
+        }
+        
+        // Ordenamiento de texto (case insensitive)
+        const strA = String(valA).toLowerCase();
+        const strB = String(valB).toLowerCase();
+        if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
+        if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    
+    return resultado;
+  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroReporte, filtroRecibido, filtroIndicador, sortColumn, sortDirection]);
 
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);
@@ -649,6 +706,24 @@ export default function BitacoraPiezas() {
     setColumnOrder(DEFAULT_COLUMN_ORDER);
     setHiddenColumns(DEFAULT_HIDDEN_COLUMNS);
     setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+  };
+  
+  // Función para ordenar columnas
+  const handleSort = (columnKey) => {
+    if (sortColumn === columnKey) {
+      // Si ya está ordenada por esta columna, cambiar dirección o quitar orden
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortColumn(null);
+        setSortDirection('asc');
+      }
+    } else {
+      // Nueva columna de ordenamiento
+      setSortColumn(columnKey);
+      setSortDirection('asc');
+    }
+    setPage(1); // Volver a primera página al ordenar
   };
   
   // Funciones para redimensionar columnas
@@ -858,28 +933,46 @@ export default function BitacoraPiezas() {
               </div>
             )}
 
-            {/* Indicador de filtro activo */}
-            {filtroIndicador && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Filtro activo:</span>
-                <span className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-2">
-                  {filtroIndicador.startsWith('estatus:') 
-                    ? `Estatus: ${filtroIndicador.replace('estatus:', '')}`
-                    : filtroIndicador === 'vencidas' ? 'Piezas Vencidas'
-                    : filtroIndicador === 'porRecibir' ? 'Por Recibir (0-3 días)'
-                    : filtroIndicador === 'enProceso' ? 'En Proceso (>3 días)'
-                    : 'Todas las piezas'
-                  }
-                  <button
-                    onClick={() => setFiltroIndicador(null)}
-                    className="hover:text-white"
-                    title="Quitar filtro"
-                  >
-                    <span className="material-symbols-outlined text-sm">close</span>
-                  </button>
-                </span>
-              </div>
-            )}
+            {/* Indicadores de filtros activos */}
+            <div className="flex flex-wrap items-center gap-2">
+              {filtroIndicador && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Filtro por indicador:</span>
+                  <span className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-2">
+                    {filtroIndicador.startsWith('estatus:') 
+                      ? `Estatus: ${filtroIndicador.replace('estatus:', '')}`
+                      : filtroIndicador === 'vencidas' ? 'Piezas Vencidas'
+                      : filtroIndicador === 'porRecibir' ? 'Por Recibir (0-3 días)'
+                      : filtroIndicador === 'enProceso' ? 'En Proceso (>3 días)'
+                      : 'Todas las piezas'
+                    }
+                    <button
+                      onClick={() => setFiltroIndicador(null)}
+                      className="hover:text-white"
+                      title="Quitar filtro"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </span>
+                </div>
+              )}
+              
+              {filtroRecibido !== 'Todos' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Filtro por recepción:</span>
+                  <span className="px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold flex items-center gap-2">
+                    {filtroRecibido === 'Recibidos' ? 'Recibidos' : 'Sin Recepcionar'}
+                    <button
+                      onClick={() => setFiltroRecibido('Todos')}
+                      className="hover:text-white"
+                      title="Quitar filtro"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </span>
+                </div>
+              )}
+            </div>
 
             {/* Filtros */}
             <div className="flex flex-wrap items-center gap-4 bg-surface-dark border border-border-dark rounded-xl p-4">
@@ -912,6 +1005,23 @@ export default function BitacoraPiezas() {
                   {TIPO_REGISTRO_OPTIONS.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
+                </select>
+              </div>
+              
+              {/* Filtro por Recepción */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Recepción:</span>
+                <select
+                  value={filtroRecibido}
+                  onChange={(e) => {
+                    setFiltroRecibido(e.target.value);
+                    setPage(1);
+                  }}
+                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                >
+                  <option value="Todos">Todos</option>
+                  <option value="Recibidos">Recibidos</option>
+                  <option value="SinRecepcionar">Sin Recepcionar</option>
                 </select>
               </div>
               
@@ -1066,7 +1176,7 @@ export default function BitacoraPiezas() {
                         {visibleColumns.map((column) => (
                           <th
                             key={`th-${column.key}`}
-                            className={`relative px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark cursor-move select-none ${column.className || ''}`}
+                            className={`relative px-3 py-3 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark select-none ${column.className || ''}`}
                             style={{ width: columnWidths[column.key] || column.width, minWidth: columnWidths[column.key] || column.width }}
                             draggable
                             onDragStart={() => setDraggingColumnKey(column.key)}
@@ -1076,10 +1186,18 @@ export default function BitacoraPiezas() {
                               moveColumn(draggingColumnKey, column.key);
                               setDraggingColumnKey(null);
                             }}
-                            title="Arrastra para cambiar orden. Arrastra el borde derecho para redimensionar."
+                            title="Clic para ordenar. Arrastra para cambiar orden. Arrastra el borde derecho para redimensionar."
                           >
-                            <div className="flex items-center justify-between">
+                            <div 
+                              className="flex items-center justify-between gap-1 cursor-pointer hover:text-white transition-colors"
+                              onClick={() => handleSort(column.key)}
+                            >
                               <span className="truncate">{column.label}</span>
+                              {sortColumn === column.key && (
+                                <span className="material-symbols-outlined text-xs">
+                                  {sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                </span>
+                              )}
                             </div>
                             {/* Resize handle */}
                             <div

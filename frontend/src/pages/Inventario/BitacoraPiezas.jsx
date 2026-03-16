@@ -975,16 +975,16 @@ export default function BitacoraPiezas() {
             </div>
 
             {/* Filtros */}
-            <div className="flex flex-wrap items-center gap-4 bg-surface-dark border border-border-dark rounded-xl p-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Estatus:</span>
+            <div className="flex flex-wrap items-end gap-4 bg-surface-dark border border-border-dark rounded-xl p-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">Estatus</span>
                 <select
                   value={filtroEstatus}
                   onChange={(e) => {
                     setFiltroEstatus(e.target.value);
                     setPage(1);
                   }}
-                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary min-w-[100px]"
                 >
                   {ESTATUS_OPTIONS.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
@@ -992,15 +992,15 @@ export default function BitacoraPiezas() {
                 </select>
               </div>
               
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Tipo:</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">Tipo</span>
                 <select
                   value={filtroTipo}
                   onChange={(e) => {
                     setFiltroTipo(e.target.value);
                     setPage(1);
                   }}
-                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary min-w-[140px]"
                 >
                   {TIPO_REGISTRO_OPTIONS.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
@@ -1009,15 +1009,15 @@ export default function BitacoraPiezas() {
               </div>
               
               {/* Filtro por Recepción */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Recepción:</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">Recepción</span>
                 <select
                   value={filtroRecibido}
                   onChange={(e) => {
                     setFiltroRecibido(e.target.value);
                     setPage(1);
                   }}
-                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary min-w-[130px]"
                 >
                   <option value="Todos">Todos</option>
                   <option value="Recibidos">Recibidos</option>
@@ -1026,32 +1026,34 @@ export default function BitacoraPiezas() {
               </div>
               
               {/* Filtro por No. Reporte */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">No. Reporte:</span>
-                <input
-                  type="text"
-                  value={filtroReporte}
-                  onChange={(e) => {
-                    setFiltroReporte(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Ej: 04 0540704"
-                  className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary w-36"
-                />
-                {filtroReporte && (
-                  <button
-                    onClick={() => setFiltroReporte('')}
-                    className="p-1 hover:bg-slate-700 rounded text-slate-400"
-                    title="Limpiar"
-                  >
-                    <span className="material-symbols-outlined text-sm">close</span>
-                  </button>
-                )}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">No. Reporte</span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={filtroReporte}
+                    onChange={(e) => {
+                      setFiltroReporte(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Ej: 04 0540704"
+                    className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary w-36 pr-8"
+                  />
+                  {filtroReporte && (
+                    <button
+                      onClick={() => setFiltroReporte('')}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded text-slate-400"
+                      title="Limpiar"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  )}
+                </div>
               </div>
               
               {/* Filtro por rango de fechas */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Fecha Promesa:</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">Fecha Promesa</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="date"
@@ -1060,7 +1062,7 @@ export default function BitacoraPiezas() {
                       setFiltroFechaInicio(e.target.value);
                       setPage(1);
                     }}
-                    className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                    className="bg-background-dark border border-border-dark rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-primary"
                   />
                   <span className="text-xs text-slate-500">a</span>
                   <input
@@ -1070,7 +1072,7 @@ export default function BitacoraPiezas() {
                       setFiltroFechaFin(e.target.value);
                       setPage(1);
                     }}
-                    className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                    className="bg-background-dark border border-border-dark rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-primary"
                   />
                   {(filtroFechaInicio || filtroFechaFin) && (
                     <button

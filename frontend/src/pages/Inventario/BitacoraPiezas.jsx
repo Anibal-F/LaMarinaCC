@@ -210,8 +210,10 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays < 0) {
-          // Fecha promesa ya pasó
-          vencidas++;
+          // Fecha promesa ya pasó, pero solo contar si NO está cancelada
+          if (pieza.estatus !== 'Cancelada') {
+            vencidas++;
+          }
         } else if (diffDays >= 0 && diffDays <= 3) {
           // 0 a 3 días para vencer
           porRecibir++;
@@ -232,7 +234,7 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
       value: indicadores.vencidas,
       icon: 'warning',
       color: 'red',
-      desc: 'Fecha promesa vencida',
+      desc: 'Fecha promesa vencida (no canceladas)',
       filter: 'vencidas'
     },
     {
@@ -597,8 +599,11 @@ export default function BitacoraPiezas() {
           const diffTime = fechaPromesa - hoy;
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           
-          if (filtroIndicador === 'vencidas' && diffDays >= 0) {
-            return false;
+          if (filtroIndicador === 'vencidas') {
+            // Fecha vencida Y no cancelada
+            if (diffDays >= 0 || pieza.estatus === 'Cancelada') {
+              return false;
+            }
           } else if (filtroIndicador === 'porRecibir' && (diffDays < 0 || diffDays > 3)) {
             return false;
           } else if (filtroIndicador === 'enProceso' && diffDays <= 3) {
@@ -941,7 +946,7 @@ export default function BitacoraPiezas() {
                   <span className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-2">
                     {filtroIndicador.startsWith('estatus:') 
                       ? `Estatus: ${filtroIndicador.replace('estatus:', '')}`
-                      : filtroIndicador === 'vencidas' ? 'Piezas Vencidas'
+                      : filtroIndicador === 'vencidas' ? 'Piezas Vencidas (no canceladas)'
                       : filtroIndicador === 'porRecibir' ? 'Por Recibir (0-3 días)'
                       : filtroIndicador === 'enProceso' ? 'En Proceso (>3 días)'
                       : 'Todas las piezas'

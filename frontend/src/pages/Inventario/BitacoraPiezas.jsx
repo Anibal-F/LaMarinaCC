@@ -324,39 +324,6 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
           );
         })}
       </div>
-      
-      {/* Indicadores por estatus */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {estatusPrincipales.map((estatus) => {
-          const count = indicadores.porEstatus[estatus] || 0;
-          if (count === 0) return null;
-          
-          const estatusColors = {
-            'En Proceso': 'blue',
-            'Pendiente': 'amber',
-            'Cancelada': 'red',
-            'Entregado': 'green',
-            'Recibido': 'purple'
-          };
-          
-          const color = estatusColors[estatus] || 'slate';
-          const colors = colorClasses[color];
-          const isActive = activeFilter === `estatus:${estatus}`;
-          
-          return (
-            <button
-              key={estatus}
-              onClick={() => handleEstatusClick(estatus)}
-              className={`bg-surface-dark border ${isActive ? colors.border : colors.border + '/30'} rounded-lg p-3 transition-all hover:border-${color}-500/50 text-left cursor-pointer ${isActive ? colors.bg : ''} ${isActive ? 'ring-1 ring-' + color : ''}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className={`text-[10px] ${isActive ? 'text-white' : 'text-slate-400'}`}>{estatus}</span>
-                <span className={`text-lg font-bold ${colors.text}`}>{count}</span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -705,6 +672,29 @@ export default function BitacoraPiezas() {
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   };
+  
+  // Limpiar todos los filtros
+  const clearAllFilters = () => {
+    setFiltroEstatus('Todos');
+    setFiltroTipo('Todos');
+    setFiltroRecibido('Todos');
+    setFiltroReporte('');
+    setFiltroFechaInicio('');
+    setFiltroFechaFin('');
+    setFiltroIndicador(null);
+    setFiltroBusqueda('');
+    setPage(1);
+  };
+  
+  // Verificar si hay filtros activos
+  const hasActiveFilters = filtroEstatus !== 'Todos' || 
+    filtroTipo !== 'Todos' || 
+    filtroRecibido !== 'Todos' || 
+    filtroReporte || 
+    filtroFechaInicio || 
+    filtroFechaFin || 
+    filtroIndicador ||
+    filtroBusqueda;
   
   // Resetear columnas a valores por defecto
   const resetColumns = () => {
@@ -1096,6 +1086,18 @@ export default function BitacoraPiezas() {
               </div>
               
               <div className="flex items-center gap-2 ml-auto">
+                {/* Botón para limpiar todos los filtros */}
+                {hasActiveFilters && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors"
+                    title="Limpiar todos los filtros"
+                  >
+                    <span className="material-symbols-outlined text-sm">delete_sweep</span>
+                    <span>Limpiar</span>
+                  </button>
+                )}
+                
                 {/* Botón para gestionar columnas */}
                 <button
                   onClick={() => setShowColumnManager(!showColumnManager)}

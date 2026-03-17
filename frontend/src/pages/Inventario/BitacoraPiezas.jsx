@@ -371,6 +371,7 @@ export default function BitacoraPiezas() {
   const [filtroEstatus, setFiltroEstatus] = useState('Todos');
   const [filtroTipo, setFiltroTipo] = useState('Todos');
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
+  const [filtroOrden, setFiltroOrden] = useState('');
   const [filtroReporte, setFiltroReporte] = useState('');
   const [filtroFechaInicio, setFiltroFechaInicio] = useState('');
   const [filtroFechaFin, setFiltroFechaFin] = useState('');
@@ -541,6 +542,13 @@ export default function BitacoraPiezas() {
         return false;
       }
       
+      // Filtro por número de orden
+      if (filtroOrden && pieza.numero_orden) {
+        if (!pieza.numero_orden.toLowerCase().includes(filtroOrden.toLowerCase())) {
+          return false;
+        }
+      }
+      
       // Filtro por número de reporte
       if (filtroReporte && pieza.numero_reporte) {
         if (!pieza.numero_reporte.toLowerCase().includes(filtroReporte.toLowerCase())) {
@@ -640,7 +648,7 @@ export default function BitacoraPiezas() {
     }
     
     return resultado;
-  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroReporte, filtroRecibido, filtroIndicador, sortColumn, sortDirection]);
+  }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroOrden, filtroReporte, filtroRecibido, filtroIndicador, sortColumn, sortDirection]);
 
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);
@@ -683,6 +691,7 @@ export default function BitacoraPiezas() {
     setFiltroEstatus('Todos');
     setFiltroTipo('Todos');
     setFiltroRecibido('Todos');
+    setFiltroOrden('');
     setFiltroReporte('');
     setFiltroFechaInicio('');
     setFiltroFechaFin('');
@@ -695,6 +704,7 @@ export default function BitacoraPiezas() {
   const hasActiveFilters = filtroEstatus !== 'Todos' || 
     filtroTipo !== 'Todos' || 
     filtroRecibido !== 'Todos' || 
+    filtroOrden || 
     filtroReporte || 
     filtroFechaInicio || 
     filtroFechaFin || 
@@ -1036,6 +1046,32 @@ export default function BitacoraPiezas() {
                   <option value="Recibidos">Recibidos</option>
                   <option value="SinRecepcionar">Sin Recepcionar</option>
                 </select>
+              </div>
+              
+              {/* Filtro por No. Orden */}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">No. Orden</span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={filtroOrden}
+                    onChange={(e) => {
+                      setFiltroOrden(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Ej: 778"
+                    className="bg-background-dark border border-border-dark rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary w-28 pr-8"
+                  />
+                  {filtroOrden && (
+                    <button
+                      onClick={() => setFiltroOrden('')}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded text-slate-400"
+                      title="Limpiar"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  )}
+                </div>
               </div>
               
               {/* Filtro por No. Reporte */}

@@ -1118,6 +1118,9 @@ async def extract_all_pages(page, estado_key: str) -> List[Dict[str, Any]]:
         # Agregar el estado como metadata
         for item in page_data:
             item['estado_categoria'] = estado_key
+            # Para Pérdida Total, sobrescribir el estado para que se pueda filtrar correctamente
+            if estado_key == 'perdida_total':
+                item['estado'] = 'Pérdida Total'
         
         all_data.extend(page_data)
         

@@ -1030,7 +1030,29 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
 async def has_next_page(page) -> bool:
     """Verifica si hay página siguiente disponible."""
     try:
-        # Buscar botón siguiente
+        # MÉTODO 1: Verificar por texto de paginación (más confiable)
+        try:
+            pagination_info = await page.locator('#table-rateRelations_info').text_content()
+            if pagination_info:
+                import re
+                # Extraer "Mostrando registros del X al Y de un total de Z registros"
+                match = re.search(r'del\s+\d+\s+al\s+(\d+)\s+de\s+un\s+total\s+de\s+(\d+)', pagination_info)
+                if match:
+                    mostrando_hasta = int(match.group(1))
+                    total_registros = int(match.group(2))
+                    print(f"[Extract] Debug - Paginación: mostrando hasta {mostrando_hasta}, total {total_registros}")
+                    
+                    # Si estamos mostrando menos del total, hay más páginas
+                    if mostrando_hasta < total_registros:
+                        print(f"[Extract] Debug - Hay más páginas (mostrando {mostrando_hasta} de {total_registros})")
+                        return True
+                    else:
+                        print(f"[Extract] Debug - Última página (mostrando todos {total_registros})")
+                        return False
+        except Exception as e:
+            print(f"[Extract] Debug - Error leyendo paginación: {e}")
+        
+        # MÉTODO 2: Verificar botón siguiente (fallback)
         next_btn = page.locator('a#table-rateRelations_next')
         count = await next_btn.count()
         
@@ -1046,7 +1068,7 @@ async def has_next_page(page) -> bool:
         print(f"[Extract] Debug - Botón siguiente: count={count}, visible={is_visible}, class='{class_attr}', disabled={is_disabled}")
         
         result = is_visible and not is_disabled
-        print(f"[Extract] Debug - Hay siguiente página: {result}")
+        print(f"[Extract] Debug - Hay siguiente página (por botón): {result}")
         return result
         
     except Exception as e:

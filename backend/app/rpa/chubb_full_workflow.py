@@ -870,6 +870,35 @@ async def get_total_records(page) -> int:
         return 0
 
 
+async def set_page_size_to_100(page) -> bool:
+    """Cambia el dropdown de registros por página a 100."""
+    try:
+        print("[Extract] Cambiando a 100 registros por página...")
+        
+        # Buscar el select por ID
+        page_size_select = page.locator('#ctrPageSize')
+        
+        if await page_size_select.count() == 0:
+            print("[Extract] ⚠ No se encontró el dropdown de registros por página")
+            return False
+        
+        # Seleccionar la opción 100
+        await page_size_select.select_option('100')
+        print("[Extract] ✓ Seleccionado 100 registros por página")
+        
+        # Esperar a que la tabla se recargue con los nuevos datos
+        await asyncio.sleep(3)
+        
+        # Esperar a que la tabla esté lista
+        await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
+        print("[Extract] ✓ Tabla actualizada con 100 registros")
+        return True
+        
+    except Exception as e:
+        print(f"[Extract] ⚠ Error cambiando registros por página: {e}")
+        return False
+
+
 async def extract_table_data(page) -> List[Dict[str, Any]]:
     """Extrae los datos de la tabla actual."""
     try:
@@ -879,59 +908,70 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
         await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
         
         # Extraer datos de todas las filas visibles
-        # Usar índices fijos basados en la estructura observada de la tabla CHUBB/Audatex
         rows_result = await page.evaluate("""() => {
             const rows = document.querySelectorAll('#gridMyWorks tbody tr');
             const data = [];
             const debugInfo = {
                 totalRows: rows.length,
+                rowsProcessed: 0,
+                rowsSkipped: 0,
+                skipReasons: [],
                 firstRowCells: 0,
                 sampleCells: []
             };
             
             rows.forEach((row, rowIdx) => {
                 const cells = row.querySelectorAll('td');
+                
+                // Debug de la primera fila
                 if (rowIdx === 0) {
                     debugInfo.firstRowCells = cells.length;
-                    // Guardar muestra de todas las celdas para debug
-                    for (let i = 0; i < cells.length; i++) {
+                    for (let i = 0; i < cells.length && i < 15; i++) {
                         const text = cells[i]?.textContent?.trim() || '(vacío)';
-                        debugInfo.sampleCells.push(`[${i}]${text.substring(0, 30)}`);
+                        debugInfo.sampleCells.push(`[${i}]${text.substring(0, 40)}`);
                     }
                 }
                 
-                if (cells.length >= 11) {
-                    // Función auxiliar para limpiar texto
-                    const getText = (index) => {
-                        if (index >= cells.length) return '';
-                        return cells[index]?.textContent?.trim() || '';
+                // Buscar el número de expediente (celda que contiene "PA" seguido de dígitos)
+                let numExpIdx = -1;
+                
+                for (let i = 0; i < cells.length; i++) {
+                    const text = cells[i]?.textContent?.trim() || '';
+                    // Detectar número de expediente (formato: PA26B0012345-0-0)
+                    if (numExpIdx === -1 && text.match(/^PA\\d{2}[A-Z]\\d+/)) {
+                        numExpIdx = i;
+                    }
+                }
+                
+                // Si encontramos número de expediente, extraer datos
+                if (numExpIdx >= 0) {
+                    debugInfo.rowsProcessed++;
+                    
+                    const getText = (offset) => {
+                        const idx = numExpIdx + offset;
+                        if (idx >= cells.length) return '';
+                        return cells[idx]?.textContent?.trim() || '';
                     };
                     
-                    // Estructura REAL de la tabla CHUBB según debug:
-                    // Los datos muestran que hay 5 columnas vacías al inicio
-                    // 0-4: Vacías (checkbox, íconos, etc.)
-                    // 5: Número de Expediente
-                    // 6: Tipo de Vehículo  
-                    // 7: (vacío - columna intermedia)
-                    // 8: Estado
-                    // 9: Fecha Creación
-                    // 10: Fecha Inspección
-                    // 11: Última Fecha Actualización
-                    // 12: Placa
-                    // 13: Asignado A
-                    // 14: Compañía
+                    // Mapeo basado en la posición del número de expediente
                     data.push({
-                        num_expediente: getText(5),
-                        tipo_vehiculo: getText(6),
-                        estado: getText(8),
-                        fecha_creacion: getText(9),
-                        fecha_inspeccion: getText(10),
-                        fecha_actualizacion: getText(11),
-                        placas: getText(12),
-                        asignado_a: getText(13),
-                        compania: getText(14),
-                        fecha_accidente: '' // No hay columna visible para fecha accidente
+                        num_expediente: getText(0),
+                        tipo_vehiculo: getText(1),
+                        estado: getText(3),
+                        fecha_creacion: getText(4),
+                        fecha_inspeccion: getText(5),
+                        fecha_actualizacion: getText(6),
+                        placas: getText(7),
+                        asignado_a: getText(8),
+                        compania: getText(9),
+                        fecha_accidente: ''
                     });
+                } else {
+                    debugInfo.rowsSkipped++;
+                    if (debugInfo.skipReasons.length < 3) {
+                        const sample = cells.length > 0 ? cells[0]?.textContent?.trim()?.substring(0, 30) : 'empty';
+                        debugInfo.skipReasons.push(`Row ${rowIdx}: ${cells.length} cells, first='${sample}'`);
+                    }
                 }
             });
             
@@ -959,21 +999,32 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
 async def has_next_page(page) -> bool:
     """Verifica si hay página siguiente disponible."""
     try:
-        # Buscar botón siguiente que NO esté disabled
-        next_btn = page.locator('#table-rateRelations_next:not(.paginate_button_disabled)')
-        return await next_btn.count() > 0 and await next_btn.is_visible()
-    except:
+        # Buscar botón siguiente - verificar que NO tenga la clase 'paginate_button_disabled'
+        next_btn = page.locator('a#table-rateRelations_next')
+        if await next_btn.count() == 0:
+            return False
+        
+        # Verificar si tiene la clase disabled
+        class_attr = await next_btn.get_attribute('class') or ''
+        is_disabled = 'paginate_button_disabled' in class_attr or 'disabled' in class_attr
+        
+        # También verificar si es visible
+        is_visible = await next_btn.is_visible()
+        
+        return is_visible and not is_disabled
+    except Exception as e:
+        print(f"[Extract] Error verificando siguiente página: {e}")
         return False
 
 
 async def go_to_next_page(page) -> bool:
     """Navega a la siguiente página."""
     try:
-        next_btn = page.locator('#table-rateRelations_next').first
+        next_btn = page.locator('a#table-rateRelations_next').first
         if await next_btn.count() > 0 and await next_btn.is_visible():
             await next_btn.click()
             print("[Extract] → Navegando a siguiente página...")
-            await asyncio.sleep(2)  # Esperar carga
+            await asyncio.sleep(3)  # Esperar carga (aumentado por más registros)
             return True
         return False
     except Exception as e:
@@ -986,6 +1037,9 @@ async def extract_all_pages(page, estado_key: str) -> List[Dict[str, Any]]:
     all_data = []
     page_num = 1
     max_pages = 50  # Límite de seguridad
+    
+    # Primero cambiar a 100 registros por página para optimizar
+    await set_page_size_to_100(page)
     
     while page_num <= max_pages:
         print(f"[Extract] Procesando página {page_num}...")

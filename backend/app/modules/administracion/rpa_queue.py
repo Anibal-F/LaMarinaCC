@@ -898,7 +898,7 @@ def run_chubb_task(task_id: str, params: Dict[str, Any]):
         if has_session:
             log("Intentando con sesión existente...")
             cmd = base_cmd + ["--skip-login"]
-            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log)
+            returncode, stdout, stderr = _execute_rpa_command_realtime(cmd, backend_dir, task_id, logs, log)
             
             # Verificar si falló por sesión expirada
             if returncode != 0 and _is_session_expired(stdout, stderr):
@@ -913,13 +913,13 @@ def run_chubb_task(task_id: str, params: Dict[str, Any]):
                 # Intento 2: Login completo
                 log("Iniciando login completo...")
                 cmd = base_cmd  # Sin --skip-login
-                returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+                returncode, stdout, stderr = _execute_rpa_command_realtime(cmd, backend_dir, task_id, logs, log, timeout=900)
             elif returncode != 0:
                 log(f"✗ Error no relacionado a sesión (código {returncode})")
         else:
             log("No hay sesión guardada, iniciando login completo...")
             cmd = base_cmd
-            returncode, stdout, stderr = _execute_rpa_command(cmd, backend_dir, logs, log, timeout=900)
+            returncode, stdout, stderr = _execute_rpa_command_realtime(cmd, backend_dir, task_id, logs, log, timeout=900)
         
         log(f"RPA terminó con código: {returncode}")
         

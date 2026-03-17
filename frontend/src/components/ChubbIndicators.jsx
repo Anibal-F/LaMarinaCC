@@ -301,7 +301,7 @@ export default function ChubbIndicators({ onRefresh }) {
             </button>
           </div>
           
-          {/* Botón Actualizar -->
+          {/* Botón Actualizar */}
           <button
             onClick={handleRefresh}
             disabled={updating}

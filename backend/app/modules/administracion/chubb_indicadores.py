@@ -136,34 +136,47 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     estados = data.get('estados', {})
     expedientes = data.get('expedientes', [])
     
-    # Si hay expedientes, calcular indicadores desde ellos
-    if expedientes:
-        logger.info(f"[save_indicadores] Calculando indicadores desde {len(expedientes)} expedientes")
-        
-        por_autorizar = sum(1 for e in expedientes if e.get('estado', '').lower() in ['por aprobar', 'por_autorizar'])
-        autorizadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['autorizado', 'aprobado', 'autorizadas'])
-        rechazadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['rechazado', 'rechazadas'])
-        complementos = sum(1 for e in expedientes if e.get('estado', '').lower() in ['complemento', 'complementos'])
-        total_expedientes = len(expedientes)
-        
-        # Actualizar el diccionario de estados
-        estados = {
-            'por_autorizar': por_autorizar,
-            'autorizadas': autorizadas,
-            'rechazadas': rechazadas,
-            'complementos': complementos,
-            'total': total_expedientes
-        }
-        data['estados'] = estados
-        
-    else:
-        # Usar valores del RPA si no hay expedientes
+    # USAR INDICADORES DEL RPA DIRECTAMENTE (más confiable que recalcular)
+    # El RPA obtiene los totales reales del portal de CHUBB/Audatex
+    indicadores_rpa = data.get('indicadores', {})
+    
+    if indicadores_rpa:
+        # Usar los indicadores que reportó el RPA del portal
+        logger.info(f"[save_indicadores] Usando indicadores del RPA: {indicadores_rpa}")
+        por_autorizar = indicadores_rpa.get('por_autorizar', 0)
+        autorizadas = indicadores_rpa.get('autorizadas', 0)
+        rechazadas = indicadores_rpa.get('rechazadas', 0)
+        complementos = indicadores_rpa.get('complementos', 0)
+        total_expedientes = indicadores_rpa.get('total', len(expedientes) if expedientes else 0)
+    elif estados:
+        # Fallback: usar estados del RPA si no hay indicadores
         logger.info(f"[save_indicadores] Usando estados del RPA: {estados}")
         por_autorizar = estados.get('por_autorizar', 0)
         autorizadas = estados.get('autorizadas', 0)
         rechazadas = estados.get('rechazadas', 0)
         complementos = estados.get('complementos', 0)
         total_expedientes = estados.get('total', 0)
+    elif expedientes:
+        # Último fallback: calcular desde expedientes
+        logger.info(f"[save_indicadores] Calculando indicadores desde {len(expedientes)} expedientes")
+        por_autorizar = sum(1 for e in expedientes if e.get('estado', '').lower() in ['por aprobar', 'por_autorizar'])
+        autorizadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['autorizado', 'aprobado', 'autorizadas'])
+        rechazadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['rechazado', 'rechazadas'])
+        complementos = sum(1 for e in expedientes if e.get('estado', '').lower() in ['complemento', 'complementos'])
+        total_expedientes = len(expedientes)
+    else:
+        logger.warning("[save_indicadores] No hay datos para calcular indicadores")
+        por_autorizar = autorizadas = rechazadas = complementos = total_expedientes = 0
+    
+    # Actualizar el diccionario de estados
+    estados = {
+        'por_autorizar': por_autorizar,
+        'autorizadas': autorizadas,
+        'rechazadas': rechazadas,
+        'complementos': complementos,
+        'total': total_expedientes
+    }
+    data['estados'] = estados
     
     logger.info(f"[save_indicadores] Indicadores calculados: por_autorizar={por_autorizar}, autorizadas={autorizadas}, rechazadas={rechazadas}, complementos={complementos}, total={total_expedientes}")
     

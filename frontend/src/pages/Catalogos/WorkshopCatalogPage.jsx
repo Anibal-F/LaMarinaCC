@@ -26,17 +26,22 @@ export default function WorkshopCatalogPage({
   endpoint,
   singularLabel,
   queryPlaceholder,
+  showSearch = true,
   initialForm,
   fields,
   columns,
   searchFields,
   loadAuxiliary,
   buildPayload,
-  mapItemToForm
+  mapItemToForm,
+  initialFilters = {},
+  renderFilters,
+  filterItems
 }) {
   const [items, setItems] = useState([]);
   const [auxData, setAuxData] = useState({});
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState(initialFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -75,7 +80,7 @@ export default function WorkshopCatalogPage({
 
   useEffect(() => {
     setPage(1);
-  }, [query]);
+  }, [query, filters]);
 
   useEffect(() => {
     if (!toast) return;
@@ -85,11 +90,14 @@ export default function WorkshopCatalogPage({
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return items;
-    return items.filter((item) =>
-      searchFields.some((field) => String(item?.[field] || "").toLowerCase().includes(normalized))
-    );
-  }, [items, query, searchFields]);
+    const searched = !showSearch || !normalized
+      ? items
+      : items.filter((item) =>
+          searchFields.some((field) => String(item?.[field] || "").toLowerCase().includes(normalized))
+        );
+
+    return filterItems ? filterItems(searched, { query, filters, auxData }) : searched;
+  }, [items, query, searchFields, showSearch, filterItems, filters, auxData]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -173,7 +181,7 @@ export default function WorkshopCatalogPage({
         <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
           <AppHeader
             title={title}
-            showSearch
+            showSearch={showSearch}
             searchValue={query}
             onSearchChange={setQuery}
             searchPlaceholder={queryPlaceholder}
@@ -193,6 +201,12 @@ export default function WorkshopCatalogPage({
           />
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+            {renderFilters ? (
+              <section className="bg-surface-dark border border-border-dark rounded-xl p-4">
+                {renderFilters({ filters, setFilters, auxData })}
+              </section>
+            ) : null}
+
             {showForm ? (
               <form className="bg-surface-dark border border-border-dark rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" onSubmit={handleSubmit}>
                 {fields.map((field) => {

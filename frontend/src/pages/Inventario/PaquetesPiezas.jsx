@@ -210,16 +210,20 @@ function PackageModal({
             <div className="grid gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
               <section className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 md:items-start">
-                  <SearchableSelect
-                    label="Proveedor"
-                    value={form.proveedor}
-                    onChange={(value) => onChange("proveedor", value)}
-                    options={providerOptions}
-                    placeholder="Selecciona un proveedor"
-                    emptyLabel="Sin proveedores disponibles"
-                    onAdd={onAddProvider}
-                    addLabel="Crear proveedor manual"
-                  />
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      Proveedor
+                    </span>
+                    <SearchableSelect
+                      value={form.proveedor}
+                      onChange={(value) => onChange("proveedor", value)}
+                      options={providerOptions}
+                      placeholder="Selecciona un proveedor"
+                      emptyLabel="Sin proveedores disponibles"
+                      onAdd={onAddProvider}
+                      addLabel="Crear proveedor manual"
+                    />
+                  </div>
                   <label className="space-y-2 md:row-span-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Reporte / Siniestro
@@ -255,7 +259,7 @@ function PackageModal({
                       </p>
                     ) : null}
                   </label>
-                  <label className="space-y-2">
+                  <label className="space-y-2 pb-3">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Estado
                     </span>
@@ -270,7 +274,7 @@ function PackageModal({
                   </label>
                 </div>
 
-                <label className="space-y-2">
+                <label className="space-y-2 pt-5">
                   <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                     Piezas incluidas
                   </span>

@@ -888,28 +888,48 @@ async def set_page_size_to_100(page) -> bool:
             print("[Extract] ✓ Ya está configurado a 100 registros por página")
             return True
         
-        # Seleccionar la opción 100 y disparar evento change para DataTables
-        await page_size_select.select_option('100')
-        
-        # Disparar evento change para que DataTables detecte el cambio
-        await page.evaluate("""() => {
+        # Seleccionar la opción 100 usando JavaScript para invocar DataTables API directamente
+        result = await page.evaluate("""() => {
             const select = document.querySelector('#ctrPageSize');
-            if (select) {
-                // Crear y disparar evento change
-                const event = new Event('change', { bubbles: true });
-                select.dispatchEvent(event);
-                console.log('[RPA] Evento change disparado');
+            if (!select) {
+                return {success: false, error: 'Select no encontrado'};
             }
+            
+            // Cambiar el valor
+            select.value = '100';
+            
+            // Intentar invocar DataTables API directamente
+            try {
+                // Buscar la tabla DataTables
+                const table = $('#gridMyWorks');
+                if (table.length && table.DataTable) {
+                    const dt = table.DataTable();
+                    dt.page.len(100).draw();
+                    console.log('[RPA] DataTables API invocada: page.len(100).draw()');
+                    return {success: true, method: 'DataTables API'};
+                }
+            } catch (e) {
+                console.log('[RPA] Error con DataTables API:', e);
+            }
+            
+            // Fallback: disparar evento change
+            const event = new Event('change', { bubbles: true });
+            select.dispatchEvent(event);
+            console.log('[RPA] Evento change disparado (fallback)');
+            
+            return {success: true, method: 'Event change'};
         }""")
+        
+        print(f"[Extract] Resultado cambio página: {result}")
         
         print("[Extract] ✓ Seleccionado 100 registros por página, esperando recarga...")
         
-        # Esperar a que la tabla se recargue (más tiempo por la recarga de DataTables)
-        await asyncio.sleep(8)
+        # Esperar a que la tabla se recargue con DataTables (puede tardar más)
+        await asyncio.sleep(10)
         
         # Esperar a que la tabla esté lista (puede que no haya filas si no hay registros)
         try:
-            await page.wait_for_selector('#gridMyWorks tbody tr', timeout=15000)
+            await page.wait_for_selector('#gridMyWorks tbody tr', timeout=20000)
             print("[Extract] ✓ Tabla actualizada con nuevos registros")
         except:
             # Si no hay filas, verificar si la tabla existe (puede ser que no haya registros)
@@ -920,9 +940,9 @@ async def set_page_size_to_100(page) -> bool:
                 print("[Extract] ⚠ Tabla no encontrada después del cambio")
                 return False
         
-        # Esperar adicional para que la paginación se actualice
+        # Esperar adicional para que la paginación se actualice completamente
         print("[Extract] Esperando actualización de paginación...")
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
         
         # Verificar estado del botón de siguiente
         next_btn = page.locator('a#table-rateRelations_next')

@@ -115,9 +115,9 @@ class QualitasPiezasExtractor:
             return True
         return False
     
-    async def extract_piezas_from_transito(self, max_ordenes: int = None) -> List[OrdenPiezas]:
+    async def extract_piezas(self, max_ordenes: int = None) -> List[OrdenPiezas]:
         """
-        Extrae piezas de todas las órdenes en estado Tránsito.
+        Extrae piezas de todas las órdenes en estado Tránsito y Piso.
         
         Args:
             max_ordenes: Máximo de órdenes a procesar (None = todas)
@@ -129,139 +129,43 @@ class QualitasPiezasExtractor:
         self.last_activity_time = datetime.now()
         
         resultados = []
-        ordenes_procesadas = 0
+        ordenes_procesadas_total = 0
         
         try:
-            # 1. Navegar al tab Tránsito
-            print("[PiezasExtractor] Navegando al tab Tránsito...")
-            await self._navigate_to_transito_tab()
+            # Primero procesar tab Tránsito
+            print("[PiezasExtractor] === INICIANDO PROCESAMIENTO DE TRÁNSITO ===")
+            resultados_transito, ordenes_transito = await self._process_tab(
+                tab_name='transito',
+                tab_selector='#transito-tab, a[href="#transito"], a:has-text("Tránsito"), #transito',
+                table_id='tabletransito',
+                next_button_id='pagina_siguiente_tabletransito',
+                max_ordenes=max_ordenes
+            )
+            resultados.extend(resultados_transito)
+            ordenes_procesadas_total += ordenes_transito
             
-            # Procesar página por página
-            pagina = 1
-            while True:
-                self._check_timeout()
-                print(f"\n[PiezasExtractor] === Procesando página {pagina} ===")
-                
-                # 2. Extraer lista de órdenes de la página actual
-                print("[PiezasExtractor] Extrayendo lista de órdenes...")
-                ordenes = await self._extract_ordenes_list()
-                print(f"[PiezasExtractor] Se encontraron {len(ordenes)} órdenes en página {pagina}")
-                
-                if not ordenes:
-                    print(f"[PiezasExtractor] No hay órdenes en página {pagina}, terminando...")
-                    break
-                
-                # Guardar total de órdenes en checkpoint (primera página)
-                if pagina == 1 and self.use_checkpoint:
-                    self.checkpoint.update_total_ordenes(len(ordenes))
-                
-                # 3. Procesar cada orden de esta página
-                for i, orden in enumerate(ordenes, 1):
-                    self._check_timeout()
-                    num_exp = orden['num_expediente']
-                    
-                    # Verificar si ya fue procesada
-                    if self.is_orden_procesada(num_exp):
-                        print(f"\n[PiezasExtractor] Orden {num_exp} ya procesada (checkpoint), saltando...")
-                        continue
-                    
-                    # Verificar límite de órdenes (solo contar las que no están en checkpoint)
-                    if max_ordenes and ordenes_procesadas >= max_ordenes:
-                        print(f"[PiezasExtractor] Límite de {max_ordenes} órdenes alcanzado")
-                        return resultados
-                    
-                    try:
-                        print(f"\n[PiezasExtractor] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {num_exp}")
-                        self._update_activity()
-                        
-                        orden_con_piezas = await self._process_single_orden(orden)
-                        if orden_con_piezas and orden_con_piezas.piezas:
-                            resultados.append(orden_con_piezas)
-                            ordenes_procesadas += 1
-                            piezas_count = len(orden_con_piezas.piezas)
-                            print(f"  ✓ Extraídas {piezas_count} piezas")
-                            
-                            # Guardar en BD inmediatamente
-                            await self._save_to_database(orden_con_piezas)
-                            
-                            # Guardar en checkpoint
-                            if self.use_checkpoint:
-                                self.checkpoint.mark_orden_procesada(num_exp, piezas_count)
-                                self.ordenes_ya_procesadas.add(num_exp)
-                        else:
-                            print(f"  ⚠ No se encontraron piezas para esta orden")
-                            # Marcar como procesada igual para no volver a intentar
-                            if self.use_checkpoint:
-                                self.checkpoint.mark_orden_procesada(num_exp, 0)
-                                self.ordenes_ya_procesadas.add(num_exp)
-                        
-                        self._update_activity()
-                        
-                        # Pequeña pausa entre órdenes
-                        await asyncio.sleep(1)
-                        
-                    except TimeoutError as te:
-                        print(f"  ⏱ Timeout procesando orden {num_exp}: {te}")
-                        # Marcar como fallida pero contar como procesada
-                        if self.use_checkpoint:
-                            self.checkpoint.mark_orden_fallida(num_exp, str(te))
-                        # Intentar cerrar pestañas abiertas y continuar
-                        try:
-                            pages = self.page.context.pages
-                            if len(pages) > 1:
-                                for p in pages[1:]:
-                                    await p.close()
-                        except:
-                            pass
-                        continue
-                    except Exception as e:
-                        print(f"  ✗ Error procesando orden {num_exp}: {e}")
-                        if self.use_checkpoint:
-                            self.checkpoint.mark_orden_fallida(num_exp, str(e))
-                        import traceback
-                        traceback.print_exc()
-                        continue
-                
-                # Guardar página actual en checkpoint
-                if self.use_checkpoint:
-                    self.checkpoint.update_pagina(pagina)
-                
-                # 4. Verificar si hay siguiente página
-                try:
-                    siguiente_btn = self.page.locator('#pagina_siguiente_tabletransito')
-                    
-                    # Verificar si el botón existe y está habilitado (con timeout)
-                    is_visible = await siguiente_btn.is_visible()
-                    if not is_visible:
-                        print(f"[PiezasExtractor] Botón siguiente no visible, terminando...")
-                        break
-                    
-                    is_disabled = await siguiente_btn.is_disabled()
-                    if is_disabled:
-                        print(f"[PiezasExtractor] Botón siguiente deshabilitado, terminando...")
-                        break
-                    
-                    # Hacer clic en siguiente
-                    print(f"[PiezasExtractor] Navegando a página {pagina + 1}...")
-                    await siguiente_btn.click()
-                    
-                    # Esperar a que cargue la nueva página (con timeout estricto)
-                    await asyncio.sleep(2)
-                    await self.page.wait_for_load_state('networkidle', timeout=15000)
-                    
-                    # Esperar a que la tabla se actualice
-                    await self.page.wait_for_selector('#tabletransito tbody tr', timeout=15000)
-                    await asyncio.sleep(1)
-                    
-                    pagina += 1
-                    self._update_activity()
-                    
-                except Exception as e:
-                    print(f"[PiezasExtractor] Error navegando a siguiente página: {e}")
-                    break
+            # Verificar si alcanzamos el límite
+            if max_ordenes and ordenes_procesadas_total >= max_ordenes:
+                print(f"[PiezasExtractor] Límite de {max_ordenes} órdenes alcanzado después de Tránsito")
+                return resultados
             
-            print(f"\n[PiezasExtractor] Total páginas procesadas: {pagina}")
-            print(f"[PiezasExtractor] Total órdenes procesadas: {len(resultados)}")
+            # Luego procesar tab Piso
+            print("\n[PiezasExtractor] === INICIANDO PROCESAMIENTO DE PISO ===")
+            resultados_piso, ordenes_piso = await self._process_tab(
+                tab_name='piso',
+                tab_selector='#piso-tab, a[href="#piso"], a:has-text("Piso"), #piso',
+                table_id='tablepiso',
+                next_button_id='pagina_siguiente_tablepiso',
+                max_ordenes=max_ordenes - ordenes_procesadas_total if max_ordenes else None
+            )
+            resultados.extend(resultados_piso)
+            ordenes_procesadas_total += ordenes_piso
+            
+            print(f"\n[PiezasExtractor] === RESUMEN FINAL ===")
+            print(f"[PiezasExtractor] Tránsito: {ordenes_transito} órdenes")
+            print(f"[PiezasExtractor] Piso: {ordenes_piso} órdenes")
+            print(f"[PiezasExtractor] Total: {ordenes_procesadas_total} órdenes")
+            
             return resultados
             
         except TimeoutError as te:
@@ -274,48 +178,236 @@ class QualitasPiezasExtractor:
             traceback.print_exc()
             return resultados
     
-    async def _navigate_to_transito_tab(self):
-        """Navega al tab de Tránsito"""
-        # 1. Navegar al menú "Órdenes" → "Asignadas Qualitas"
+    async def _process_tab(
+        self,
+        tab_name: str,
+        tab_selector: str,
+        table_id: str,
+        next_button_id: str,
+        max_ordenes: int = None
+    ) -> Tuple[List[OrdenPiezas], int]:
+        """
+        Procesa una tab específica (Tránsito o Piso).
+        
+        Returns:
+            Tuple de (lista de órdenes con piezas, cantidad de órdenes procesadas)
+        """
+        resultados = []
+        ordenes_procesadas = 0
+        
+        try:
+            # 1. Navegar al tab
+            print(f"[PiezasExtractor][{tab_name}] Navegando al tab...")
+            await self._navigate_to_tab(tab_selector, table_id)
+            
+            # Procesar página por página
+            pagina = 1
+            while True:
+                self._check_timeout()
+                print(f"\n[PiezasExtractor][{tab_name}] === Procesando página {pagina} ===")
+                
+                # 2. Extraer lista de órdenes de la página actual
+                print(f"[PiezasExtractor][{tab_name}] Extrayendo lista de órdenes...")
+                ordenes = await self._extract_ordenes_list_from_table(table_id)
+                print(f"[PiezasExtractor][{tab_name}] Se encontraron {len(ordenes)} órdenes en página {pagina}")
+                
+                if not ordenes:
+                    print(f"[PiezasExtractor][{tab_name}] No hay órdenes en página {pagina}, terminando tab...")
+                    break
+                
+                # Guardar total de órdenes en checkpoint (primera página)
+                if pagina == 1 and self.use_checkpoint:
+                    self.checkpoint.update_total_ordenes(len(ordenes), tab_name)
+                
+                # 3. Procesar cada orden de esta página
+                for i, orden in enumerate(ordenes, 1):
+                    self._check_timeout()
+                    num_exp = orden['num_expediente']
+                    
+                    # Verificar si ya fue procesada
+                    if self.is_orden_procesada(num_exp):
+                        print(f"\n[PiezasExtractor][{tab_name}] Orden {num_exp} ya procesada (checkpoint), saltando...")
+                        continue
+                    
+                    # Verificar límite de órdenes
+                    if max_ordenes and ordenes_procesadas >= max_ordenes:
+                        print(f"[PiezasExtractor][{tab_name}] Límite de {max_ordenes} órdenes alcanzado")
+                        return resultados, ordenes_procesadas
+                    
+                    try:
+                        print(f"\n[PiezasExtractor][{tab_name}] Procesando orden {ordenes_procesadas + 1}/{max_ordenes or 'Todas'}: {num_exp}")
+                        self._update_activity()
+                        
+                        orden_con_piezas = await self._process_single_orden(orden, table_id)
+                        if orden_con_piezas and orden_con_piezas.piezas:
+                            resultados.append(orden_con_piezas)
+                            ordenes_procesadas += 1
+                            piezas_count = len(orden_con_piezas.piezas)
+                            print(f"  ✓ Extraídas {piezas_count} piezas")
+                            
+                            # Guardar en BD inmediatamente
+                            await self._save_to_database(orden_con_piezas)
+                            
+                            # Guardar en checkpoint
+                            if self.use_checkpoint:
+                                self.checkpoint.mark_orden_procesada(num_exp, piezas_count, tab_name)
+                                self.ordenes_ya_procesadas.add(num_exp)
+                        else:
+                            print(f"  ⚠ No se encontraron piezas para esta orden")
+                            # Marcar como procesada igual para no volver a intentar
+                            if self.use_checkpoint:
+                                self.checkpoint.mark_orden_procesada(num_exp, 0, tab_name)
+                                self.ordenes_ya_procesadas.add(num_exp)
+                        
+                        self._update_activity()
+                        
+                        # Pequeña pausa entre órdenes
+                        await asyncio.sleep(1)
+                        
+                    except TimeoutError as te:
+                        print(f"  ⏱ Timeout procesando orden {num_exp}: {te}")
+                        if self.use_checkpoint:
+                            self.checkpoint.mark_orden_fallida(num_exp, str(te), tab_name)
+                        # Intentar cerrar pestañas abiertas y continuar
+                        try:
+                            pages = self.page.context.pages
+                            if len(pages) > 1:
+                                for p in pages[1:]:
+                                    await p.close()
+                        except:
+                            pass
+                        continue
+                    except Exception as e:
+                        print(f"  ✗ Error procesando orden {num_exp}: {e}")
+                        if self.use_checkpoint:
+                            self.checkpoint.mark_orden_fallida(num_exp, str(e), tab_name)
+                        import traceback
+                        traceback.print_exc()
+                        continue
+                
+                # Guardar página actual en checkpoint
+                if self.use_checkpoint:
+                    self.checkpoint.update_pagina(pagina, tab_name)
+                
+                # 4. Verificar si hay siguiente página
+                try:
+                    siguiente_btn = self.page.locator(f'#{next_button_id}')
+                    
+                    # Verificar si el botón existe y está habilitado
+                    is_visible = await siguiente_btn.is_visible()
+                    if not is_visible:
+                        print(f"[PiezasExtractor][{tab_name}] Botón siguiente no visible, terminando...")
+                        break
+                    
+                    is_disabled = await siguiente_btn.is_disabled()
+                    if is_disabled:
+                        print(f"[PiezasExtractor][{tab_name}] Botón siguiente deshabilitado, terminando...")
+                        break
+                    
+                    # Hacer clic en siguiente
+                    print(f"[PiezasExtractor][{tab_name}] Navegando a página {pagina + 1}...")
+                    await siguiente_btn.click()
+                    
+                    # Esperar a que cargue la nueva página
+                    await asyncio.sleep(2)
+                    await self.page.wait_for_load_state('networkidle', timeout=15000)
+                    
+                    # Esperar a que la tabla se actualice
+                    await self.page.wait_for_selector(f'#{table_id} tbody tr', timeout=15000)
+                    await asyncio.sleep(1)
+                    
+                    pagina += 1
+                    self._update_activity()
+                    
+                except Exception as e:
+                    print(f"[PiezasExtractor][{tab_name}] Error navegando a siguiente página: {e}")
+                    break
+            
+            print(f"\n[PiezasExtractor][{tab_name}] Total páginas procesadas: {pagina}")
+            print(f"[PiezasExtractor][{tab_name}] Total órdenes procesadas: {ordenes_procesadas}")
+            
+            # Marcar tab como completado si se procesaron órdenes
+            if self.use_checkpoint and ordenes_procesadas > 0:
+                self.checkpoint.mark_tab_completado(tab_name)
+            
+            return resultados, ordenes_procesadas
+            
+        except Exception as e:
+            print(f"[PiezasExtractor][{tab_name}] Error procesando tab: {e}")
+            import traceback
+            traceback.print_exc()
+            return resultados, ordenes_procesadas
+    
+    # Método legacy para compatibilidad
+    async def extract_piezas_from_transito(self, max_ordenes: int = None) -> List[OrdenPiezas]:
+        """
+        Método legacy - ahora extrae de Tránsito y Piso.
+        """
+        return await self.extract_piezas(max_ordenes)
+    
+    async def _navigate_to_tab(self, tab_selector: str, table_id: str):
+        """
+        Navega a un tab específico (Tránsito o Piso).
+        
+        Args:
+            tab_selector: Selector CSS para encontrar el tab
+            table_id: ID de la tabla a esperar
+        """
+        # 1. Navegar al menú "Órdenes" → "Asignadas Qualitas" (solo si no estamos ya ahí)
         print("[PiezasExtractor] Navegando a menú Órdenes...")
         
-        # Buscar y hacer clic en "Órdenes" del menú lateral
-        ordenes_menu = self.page.locator('span.kt-menu__link-text:has-text("Órdenes"), a.kt-menu__link:has-text("Órdenes")').first
-        await ordenes_menu.click()
-        await asyncio.sleep(1)
+        try:
+            # Buscar y hacer clic en "Órdenes" del menú lateral
+            ordenes_menu = self.page.locator('span.kt-menu__link-text:has-text("Órdenes"), a.kt-menu__link:has-text("Órdenes")').first
+            await ordenes_menu.click()
+            await asyncio.sleep(1)
+            
+            print("[PiezasExtractor] Navegando a Asignadas Qualitas...")
+            # Buscar y hacer clic en "Asignadas Qualitas" del submenú
+            asignadas_link = self.page.locator('span.kt-menu__link-text:has-text("Asignadas Qualitas"), a.kt-menu__link:has-text("Asignadas Qualitas")').first
+            await asignadas_link.click()
+            
+            # Esperar a que cargue la página de órdenes asignadas
+            print("[PiezasExtractor] Esperando carga de página...")
+            await self.page.wait_for_load_state('networkidle')
+            await asyncio.sleep(3)  # Espera adicional para carga de tabs
+        except Exception as e:
+            # Si ya estamos en la página, puede fallar pero no es problema
+            print(f"[PiezasExtractor] Nota: {e}")
         
-        print("[PiezasExtractor] Navegando a Asignadas Qualitas...")
-        # Buscar y hacer clic en "Asignadas Qualitas" del submenú
-        asignadas_link = self.page.locator('span.kt-menu__link-text:has-text("Asignadas Qualitas"), a.kt-menu__link:has-text("Asignadas Qualitas")').first
-        await asignadas_link.click()
-        
-        # Esperar a que cargue la página de órdenes asignadas
-        print("[PiezasExtractor] Esperando carga de página...")
-        await self.page.wait_for_load_state('networkidle')
-        await asyncio.sleep(3)  # Espera adicional para carga de tabs
-        
-        # 2. Click en el tab Tránsito
-        print("[PiezasExtractor] Buscando tab Tránsito...")
-        transito_tab = self.page.locator('#transito-tab, a[href="#transito"], a:has-text("Tránsito"), #transito').first
+        # 2. Click en el tab especificado
+        print(f"[PiezasExtractor] Buscando tab...")
+        tab = self.page.locator(tab_selector).first
         
         # Esperar a que el tab sea visible
-        await transito_tab.wait_for(state='visible', timeout=10000)
-        await transito_tab.click()
+        await tab.wait_for(state='visible', timeout=10000)
+        await tab.click()
         
         # Esperar a que la tabla se cargue
-        await self.page.wait_for_selector('#tabletransito tbody tr', timeout=15000)
+        await self.page.wait_for_selector(f'#{table_id} tbody tr', timeout=15000)
         await asyncio.sleep(1)  # Pausa adicional para carga completa
-        print("[PiezasExtractor] ✓ Tab Tránsito cargado")
+        print(f"[PiezasExtractor] ✓ Tab cargado")
     
-    async def _extract_ordenes_list(self) -> List[Dict]:
+    # Método legacy para compatibilidad
+    async def _navigate_to_transito_tab(self):
+        """Navega al tab de Tránsito (legacy)"""
+        await self._navigate_to_tab(
+            '#transito-tab, a[href="#transito"], a:has-text("Tránsito"), #transito',
+            'tabletransito'
+        )
+    
+    async def _extract_ordenes_list_from_table(self, table_id: str) -> List[Dict]:
         """
-        Extrae la lista de órdenes del tab Tránsito.
+        Extrae la lista de órdenes de una tabla específica.
         Retorna lista con num_expediente, numero_reporte e índice de fila.
+        
+        Args:
+            table_id: ID de la tabla (ej: 'tabletransito' o 'tablepiso')
         """
         ordenes = []
         
         # Obtener todas las filas de la tabla
-        rows = await self.page.locator('#tabletransito tbody tr').all()
+        rows = await self.page.locator(f'#{table_id} tbody tr').all()
         print(f"[PiezasExtractor] {len(rows)} filas encontradas en tabla")
         
         for i, row in enumerate(rows):
@@ -362,15 +454,30 @@ class QualitasPiezasExtractor:
         
         return ordenes
     
-    async def _process_single_orden(self, orden: Dict) -> Optional[OrdenPiezas]:
+    # Método legacy para compatibilidad
+    async def _extract_ordenes_list(self) -> List[Dict]:
+        """
+        Extrae la lista de órdenes del tab Tránsito (legacy).
+        """
+        return await self._extract_ordenes_list_from_table('tabletransito')
+    
+    async def _process_single_orden(self, orden: Dict, table_id: str = None) -> Optional[OrdenPiezas]:
         """
         Procesa una sola orden con timeouts estrictos para evitar bloqueos.
+        
+        Args:
+            orden: Diccionario con datos de la orden
+            table_id: ID de la tabla (opcional, para compatibilidad con múltiples tabs)
         """
         num_exp = orden['num_expediente']
         orden_start_time = datetime.now()
         max_orden_time = 120  # Máximo 2 minutos por orden
         
         new_page = None
+        
+        # Determinar el table_id - si no se proporciona, usar el de transito por defecto
+        # (para compatibilidad con código que llama sin table_id)
+        current_table_id = table_id or 'tabletransito'
         
         try:
             # Verificar timeout al inicio
@@ -379,7 +486,7 @@ class QualitasPiezasExtractor:
             
             # 1. Click en el ícono de flecha (2do ícono en columna Acciones)
             print(f"  → Buscando ícono de flecha...")
-            row = self.page.locator(f'#tabletransito tbody tr').nth(orden['row_index'])
+            row = self.page.locator(f'#{current_table_id} tbody tr').nth(orden['row_index'])
             
             # Buscar el ícono de flecha dentro de la fila
             arrow_icon = row.locator('i.fas.fa-arrow-alt-circle-right').first
@@ -1010,7 +1117,7 @@ class QualitasPiezasExtractor:
 # Función de conveniencia para uso directo
 async def extract_piezas_transito(page: Page, max_ordenes: int = None) -> List[OrdenPiezas]:
     """
-    Función de conveniencia para extraer piezas de órdenes en tránsito.
+    Función de conveniencia para extraer piezas de órdenes en tránsito y piso.
     
     Args:
         page: Página de Playwright ya logueada en Qualitas
@@ -1020,4 +1127,4 @@ async def extract_piezas_transito(page: Page, max_ordenes: int = None) -> List[O
         Lista de órdenes con sus piezas
     """
     extractor = QualitasPiezasExtractor(page)
-    return await extractor.extract_piezas_from_transito(max_ordenes)
+    return await extractor.extract_piezas(max_ordenes)

@@ -175,7 +175,7 @@ function PackageModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-5xl rounded-2xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden">
+      <div className="w-full max-w-7xl rounded-2xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden">
         <div className="flex items-start justify-between gap-4 border-b border-border-dark px-6 py-5">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">
@@ -207,7 +207,7 @@ function PackageModal({
           </div>
         ) : (
           <>
-            <div className="grid gap-6 p-6 xl:grid-cols-[1.25fr_0.9fr]">
+            <div className="grid gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
               <section className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <SearchableSelect
@@ -457,21 +457,6 @@ function PackageModal({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-5">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    Recomendación operativa
-                  </p>
-                  <div className="mt-4 space-y-3 text-sm text-slate-400">
-                    <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
-                      <span className="material-symbols-outlined text-primary">qr_code_2</span>
-                      <span>El paquete se vincula automáticamente con la orden de admisión usando el reporte/siniestro.</span>
-                    </div>
-                    <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
-                      <span className="material-symbols-outlined text-alert-amber">rule</span>
-                      <span>Documenta en comentarios cualquier faltante, daño o diferencia de proveedor.</span>
-                    </div>
-                  </div>
-                </div>
               </aside>
             </div>
 

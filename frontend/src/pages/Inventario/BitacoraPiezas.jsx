@@ -447,6 +447,8 @@ export default function BitacoraPiezas() {
         nombre: p.nombre,
         origen: p.origen,
         numero_parte: p.numero_parte,
+        numero_orden: p.numero_orden,
+        numero_reporte: p.numero_reporte,
         observaciones: p.observaciones,
         proveedor: {
           id: p.proveedor_id_externo,
@@ -454,6 +456,8 @@ export default function BitacoraPiezas() {
           email: p.proveedor_email,
           celular: p.proveedor_celular
         },
+        paqueteria: p.paqueteria,
+        guia_paqueteria: p.guia_paqueteria,
         fecha_promesa: p.fecha_promesa,
         fecha_estatus: p.fecha_estatus,
         estatus: p.estatus,

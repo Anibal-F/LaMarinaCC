@@ -337,9 +337,16 @@ class QualitasPiezasExtractor:
                     # Buscar número de expediente (solo dígitos, 6+ caracteres)
                     if text.isdigit() and len(text) >= 6:
                         num_exp = text
-                    # Buscar número de reporte (contiene "R:" o "S:")
-                    elif 'R:' in text or 'S:' in text:
-                        numero_reporte = text
+                    # Buscar número de reporte - extraer solo la parte después de "R:"
+                    elif 'R:' in text:
+                        # Buscar el patrón R: seguido del número de reporte
+                        # Ejemplo: "S: 12345\nR: 04 0540704 25 A" -> "04 0540704 25 A"
+                        match = re.search(r'R:\s*([^\n]+)', text)
+                        if match:
+                            numero_reporte = match.group(1).strip()
+                        else:
+                            # Fallback: si no hay match, usar todo el texto
+                            numero_reporte = text
                 
                 if num_exp:
                     ordenes.append({
@@ -347,6 +354,7 @@ class QualitasPiezasExtractor:
                         'numero_reporte': numero_reporte,
                         'row_index': i
                     })
+                    print(f"  [Debug] Orden {num_exp} - Reporte: {numero_reporte}")
                     
             except Exception as e:
                 print(f"  [Warning] Error extrayendo fila {i}: {e}")
@@ -433,7 +441,16 @@ class QualitasPiezasExtractor:
             else:
                 piezas = await self._extract_piezas_from_page(new_page)
             
-            # 4. Cerrar pestaña y volver a la principal
+            # 4. Extraer número de orden (OS) de la página de refacciones
+            print(f"  → Extrayendo número de orden (OS)...")
+            num_orden = await self._extract_num_orden(new_page)
+            if num_orden:
+                print(f"  ✓ Número de orden (OS): {num_orden}")
+            else:
+                print(f"  ⚠ No se pudo extraer número de orden, usando #Exp")
+                num_orden = num_exp
+            
+            # 5. Cerrar pestaña y volver a la principal
             print(f"  → Cerrando pestaña...")
             await new_page.close()
             
@@ -442,7 +459,7 @@ class QualitasPiezasExtractor:
             
             return OrdenPiezas(
                 num_expediente=num_exp,
-                num_orden=num_exp,
+                num_orden=num_orden,
                 numero_reporte=orden.get('numero_reporte'),
                 piezas=piezas,
                 fecha_extraccion=datetime.now()
@@ -478,20 +495,36 @@ class QualitasPiezasExtractor:
             return None
     
     async def _extract_num_orden(self, page: Page) -> Optional[str]:
-        """Extrae el número de orden de la página"""
+        """
+        Extrae el número de orden (OS) de la página de refacciones.
+        Busca el patrón: "Refacciones OS: <a href="/OsDetalle/xxx">778</a>"
+        """
         try:
-            # Buscar en el título o en elementos específicos
-            # Ejemplo: "Número de Orden: 72"
-            title = await page.title()
-            match = re.search(r'Orden[\s:]+(\d+)', title, re.IGNORECASE)
-            if match:
-                return match.group(1)
+            # Buscar el título de la página que contiene "Refacciones OS:"
+            # Ejemplo: <h3 class="kt-portlet__head-title">Refacciones OS: <a href="/OsDetalle/1205270">778</a>
+            titulo = await page.locator('.kt-portlet__head-title:has-text("Refacciones OS")').first.text_content()
+            if titulo:
+                # Extraer el número después de "Refacciones OS:" 
+                # El número está en un enlace <a> o puede estar como texto plano
+                match = re.search(r'Refacciones\s+OS[:\s]+(\d+)', titulo, re.IGNORECASE)
+                if match:
+                    return match.group(1).strip()
+                
+                # Si no hay match directo, buscar el número en el enlace
+                match = re.search(r'Refacciones\s+OS[:\s]+.*?>(\d+)<', titulo, re.IGNORECASE)
+                if match:
+                    return match.group(1).strip()
             
-            # Buscar en el contenido de la página
+            # Fallback: buscar en todo el contenido HTML
             content = await page.content()
-            match = re.search(r'Orden[\s:]+(\d+)', content, re.IGNORECASE)
+            match = re.search(r'Refacciones\s+OS[:\s]+(?:<a[^>]*>)?(\d+)(?:</a>)?', content, re.IGNORECASE)
             if match:
-                return match.group(1)
+                return match.group(1).strip()
+                
+            # Buscar patrón alternativo: OS: 778
+            match = re.search(r'OS[:\s]+(\d+)', content, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
                 
         except Exception as e:
             print(f"  [Warning] No se pudo extraer número de orden: {e}")

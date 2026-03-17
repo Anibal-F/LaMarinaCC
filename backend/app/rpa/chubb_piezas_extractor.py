@@ -70,22 +70,16 @@ async def get_expedientes_pendientes() -> List[Dict[str, Any]]:
 async def do_login(page: Page, use_db: bool = True) -> bool:
     """
     Realiza el login en CHUBB/Audatex.
-    Copiado de chubb_full_workflow.py
+    Copiado exactamente de chubb_full_workflow.py
     """
     try:
-        print("[Login] Navegando a CHUBB/Audatex...")
-        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/', 
-                       timeout=NAVIGATION_TIMEOUT, wait_until='networkidle')
-        
-        # Cargar credenciales
+        # Cargar credenciales primero
         if use_db:
             creds = get_chubb_credentials()
             if creds:
                 os.environ['CHUBB_USER'] = creds['usuario']
                 os.environ['CHUBB_PASSWORD'] = creds['password']
                 print(f"[Login] Usando credenciales de DB: {creds['usuario']}")
-            else:
-                print("[Login] ⚠ No se encontraron credenciales en DB, usando .env")
         
         user = os.getenv('CHUBB_USER', '')
         password = os.getenv('CHUBB_PASSWORD', '')
@@ -94,69 +88,149 @@ async def do_login(page: Page, use_db: bool = True) -> bool:
             print("[Login] ✗ No hay credenciales configuradas")
             return False
         
-        # Aceptar cookies
+        print("[Login] Navegando a CHUBB/Audatex...")
+        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/', 
+                       timeout=NAVIGATION_TIMEOUT, wait_until='domcontentloaded')
+        await asyncio.sleep(3)
+        
+        # Manejar banner de cookies
         try:
-            cookie_btn = page.locator('#onetrust-accept-btn-handler')
-            if await cookie_btn.count() > 0:
-                await cookie_btn.click(timeout=5000)
-                print("[Login] ✓ Cookies aceptadas")
+            cookie_selectors = [
+                'button:has-text("Aceptar cookies")',
+                'button:has-text("Aceptar")',
+            ]
+            for selector in cookie_selectors:
+                try:
+                    btn = page.locator(selector).first
+                    if await btn.count() > 0 and await btn.is_visible():
+                        await btn.click()
+                        print("[Login] ✓ Cookies aceptadas")
+                        await asyncio.sleep(1)
+                        break
+                except:
+                    continue
         except:
             pass
         
-        # PASO 1: Ingresar usuario
-        await page.wait_for_selector('#UserName', timeout=ELEMENT_TIMEOUT)
+        # PASO 1: Primera pantalla - Usuario
+        print("[Login] PASO 1: Ingresando usuario...")
+        
+        try:
+            await page.wait_for_selector('#loginB2C', timeout=10000)
+            print("[Login] ✓ Formulario B2C encontrado")
+        except Exception as e:
+            print(f"[Login] ✗ No se encontró formulario B2C: {e}")
+            return False
+        
+        # Llenar usuario
         await page.fill('#UserName', user)
         print("[Login] ✓ Usuario ingresado")
+        await asyncio.sleep(0.5)
         
-        # Aceptar términos
-        terms = page.locator('#AcceptTerms')
-        if await terms.count() > 0:
-            await terms.check()
-            print("[Login] ✓ Términos aceptados")
+        # Marcar checkbox de términos (nota: ID tiene typo 'Accpet')
+        print("[Login] Marcando términos y condiciones...")
+        try:
+            terms = page.locator('#AccpetTerms').first
+            if await terms.count() > 0:
+                is_checked = await terms.is_checked()
+                if not is_checked:
+                    await terms.click()
+                    print("[Login] ✓ Términos aceptados")
+        except Exception as e:
+            print(f"[Login] ⚠ Error con checkbox: {e}")
         
-        # Click en NEXT
-        await page.click('#continueButton')
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
         
-        # PASO 2: Ingresar contraseña
-        await page.wait_for_selector('#Password', timeout=ELEMENT_TIMEOUT)
+        # Click en botón NEXT (#btnNext no #continueButton)
+        print("[Login] Clic en botón NEXT...")
+        try:
+            await page.click('#btnNext')
+            print("[Login] ✓ NEXT clickeado")
+        except Exception as e:
+            print(f"[Login] ✗ Error clickeando NEXT: {e}")
+            return False
+        
+        # ESPERAR A QUE CARGUE LA SEGUNDA PANTALLA
+        print("[Login] Esperando transición al formulario de contraseña...")
+        await asyncio.sleep(3)
+        
+        # PASO 2: Segunda pantalla - Contraseña
+        print("[Login] PASO 2: Ingresando contraseña...")
+        
+        # Verificar campo password visible
+        password_field_visible = await page.locator('#Password:visible').count()
+        if password_field_visible == 0:
+            print("[Login] ✗ No hay campo de contraseña visible")
+            return False
+        
+        # Ingresar contraseña
+        print("[Login] Ingresando contraseña...")
+        await page.focus('#Password')
+        await asyncio.sleep(0.5)
         await page.fill('#Password', password)
         print("[Login] ✓ Contraseña ingresada")
         
-        # Click en ACEPTAR
-        await page.click('#btnEnter')
-        await asyncio.sleep(5)
+        # ESPERA IMPORTANTE: Dar tiempo a que JavaScript valide el campo
+        print("[Login] Esperando 3 segundos para validación...")
+        await asyncio.sleep(3)
         
+        # Click en botón ACEPTAR (#btnEnter)
+        print("[Login] Clic en botón ACEPTAR...")
+        try:
+            btn_locator = page.locator('#btnEnter')
+            btn_exists = await btn_locator.count() > 0
+            
+            if btn_exists:
+                try:
+                    async with page.expect_navigation(timeout=10000, wait_until="domcontentloaded"):
+                        await btn_locator.click(timeout=5000)
+                    print("[Login] ✓ ACEPTAR clickeado, navegación detectada")
+                except Exception as nav_err:
+                    print(f"[Login] Navegación no detectada inmediatamente: {nav_err}")
+                    await btn_locator.click(timeout=5000, no_wait_after=True)
+                    print("[Login] ✓ ACEPTAR clickeado")
+            else:
+                # Fallback
+                submit_btn = page.locator('input[type="submit"]:visible').first
+                if await submit_btn.count() > 0:
+                    await submit_btn.click(timeout=5000, no_wait_after=True)
+                    print("[Login] ✓ Botón submit clickeado")
+        except Exception as e:
+            print(f"[Login] ⚠ Advertencia en click: {e}")
+        
+        await asyncio.sleep(5)
         print("[Login] ✓ Login exitoso")
         return True
         
     except Exception as e:
         print(f"[Login] ✗ Error: {e}")
+        import traceback
+        print(f"[Login] Traceback: {traceback.format_exc()}")
         return False
 
 
 async def handle_billing_modal(page: Page) -> bool:
     """
-    Maneja el modal de volante informativo post-login.
-    Copiado de chubb_full_workflow.py
+    Maneja el volante/mensaje de billing post-login.
+    Copiado exactamente de chubb_full_workflow.py
     """
     try:
         print("[Billing] Verificando volante informativo...")
-        await asyncio.sleep(3)
         
-        # Buscar botón "Al Corriente"
-        btn_al_corriente = page.locator('button:has-text("Al Corriente")')
-        if await btn_al_corriente.count() > 0 and await btn_al_corriente.is_visible():
-            await btn_al_corriente.click()
-            print("[Billing] ✓ Botón 'Al Corriente' clickeado")
-            await asyncio.sleep(2)
-            return True
+        try:
+            await page.wait_for_selector('#btnBillingMessage', state="visible", timeout=5000)
+        except:
+            print("[Billing] No se detectó volante")
+            return False
         
-        print("[Billing] No se detectó volante")
-        return False
+        print("[Billing] Volante detectado, clickeando 'Al Corriente'...")
+        await page.click('#btnBillingMessage')
+        print("[Billing] ✓ Botón 'Al Corriente' clickeado")
+        await asyncio.sleep(2)
+        return True
         
     except Exception as e:
-        print(f"[Billing] Error: {e}")
+        print(f"[Billing] Error manejando volante: {e}")
         return False
 
 

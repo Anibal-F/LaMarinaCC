@@ -235,20 +235,40 @@ async def handle_billing_modal(page: Page) -> bool:
 
 
 async def navigate_to_mi_trabajo(page: Page) -> bool:
-    """Navega a la sección Mi Trabajo."""
+    """Navega a la sección 'Mi Trabajo' donde está la tabla de expedientes."""
     try:
         print("[Navigate] Navegando a Mi Trabajo...")
         
-        # Click en MI TRABAJO
-        mi_trabajo = page.locator('#ui-id-3')
-        await mi_trabajo.click()
-        await asyncio.sleep(3)
+        # Buscar y hacer clic en "MI TRABAJO" en el menú
+        mi_trabajo_selectors = [
+            'a:has-text("MI TRABAJO")',
+            'a[href*="Work"]:visible',
+            '#ui-id-3',  # ID del acordeón según las capturas
+            'h3:has-text("Trabajo del Sitio")'
+        ]
         
-        print("[Navigate] ✓ Click en Mi Trabajo")
-        return True
+        for selector in mi_trabajo_selectors:
+            try:
+                elem = page.locator(selector).first
+                if await elem.count() > 0 and await elem.is_visible():
+                    await elem.click()
+                    print(f"[Navigate] ✓ Click en Mi Trabajo ({selector})")
+                    await asyncio.sleep(3)
+                    return True
+            except:
+                continue
+        
+        # Si no encontramos el menú, verificar si ya estamos en la página correcta
+        table_exists = await page.locator('#gridMyWorks').count() > 0
+        if table_exists:
+            print("[Navigate] Tabla ya visible, no es necesario navegar")
+            return True
+        
+        print("[Navigate] ⚠ No se pudo navegar a Mi Trabajo")
+        return False
         
     except Exception as e:
-        print(f"[Navigate] Error: {e}")
+        print(f"[Navigate] Error navegando a Mi Trabajo: {e}")
         return False
 
 
@@ -257,26 +277,69 @@ async def apply_autorizado_filter(page: Page) -> bool:
     try:
         print("[Filter] Aplicando filtro 'Autorizado'...")
         
-        # Usar JavaScript para aplicar el filtro
-        result = await page.evaluate("""() => {
-            const li = document.querySelector('#73768ba0-9d2b-a10e-e044-002264e496dc');
-            if (li) {
-                li.click();
-                return {success: true, text: li.textContent.trim()};
+        # Primero, hacer clic en el acordeón "Trabajo del Sitio" si está cerrado
+        try:
+            accordion = page.locator('h3:has-text("Trabajo del Sitio")')
+            if await accordion.count() > 0:
+                # Verificar si está colapsado
+                content = page.locator('#ui-id-4')
+                is_visible = await content.is_visible() if await content.count() > 0 else False
+                if not is_visible:
+                    await accordion.click()
+                    await asyncio.sleep(1)
+                    print("[Filter] Acordeón 'Trabajo del Sitio' expandido")
+        except Exception as e:
+            print(f"[Filter] Nota: No se pudo expandir acordeón: {e}")
+        
+        # Usar JavaScript para hacer clic en el elemento li correcto
+        js_result = await page.evaluate("""() => {
+            // Buscar en el acordeón de "Trabajo del Sitio"
+            const accordion = document.getElementById('ui-id-4');
+            if (!accordion) {
+                console.log('No se encontró acordeón ui-id-4');
+                // Buscar en todo el documento
+                const allItems = document.querySelectorAll('li.ui-widget-content, .selectable li');
+                for (const item of allItems) {
+                    const text = item.textContent.trim();
+                    if (text.toLowerCase().includes('autorizado')) {
+                        console.log('Click en (fallback):', text);
+                        item.click();
+                        return {success: true, text: text};
+                    }
+                }
+                return {success: false, error: 'No se encontró el elemento'};
             }
-            return {success: false, error: 'Elemento no encontrado'};
+            
+            // Buscar dentro del acordeón
+            const items = accordion.querySelectorAll('li.ui-widget-content, li');
+            console.log('Items encontrados en acordeón:', items.length);
+            
+            for (const item of items) {
+                const text = item.textContent.trim();
+                if (text.toLowerCase().includes('autorizado')) {
+                    console.log('Haciendo click en:', text);
+                    item.click();
+                    return {success: true, text: text};
+                }
+            }
+            
+            return {success: false, error: 'Autorizado no encontrado'};
         }""")
         
-        if result.get('success'):
-            print(f"[Filter] ✓ Filtro aplicado: {result.get('text')}")
-            await asyncio.sleep(3)
+        print(f"[Filter] Resultado JS: {js_result}")
+        
+        if js_result.get('success'):
+            print(f"[Filter] ✓ Filtro 'Autorizado' aplicado")
+            await asyncio.sleep(4)
             return True
         else:
-            print(f"[Filter] ✗ Error: {result}")
+            print(f"[Filter] ✗ No se pudo aplicar filtro: {js_result.get('error')}")
             return False
             
     except Exception as e:
         print(f"[Filter] Error: {e}")
+        import traceback
+        print(f"[Filter] Traceback: {traceback.format_exc()}")
         return False
 
 
@@ -285,8 +348,38 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
     try:
         print(f"[Search] Buscando expediente: {num_expediente}")
         
+        # Esperar a que la tabla esté cargada
+        try:
+            await page.wait_for_selector('#gridMyWorks', timeout=10000)
+            print("[Search] ✓ Tabla gridMyWorks encontrada")
+        except:
+            print("[Search] ⚠ Tabla gridMyWorks no encontrada, intentando continuar...")
+        
+        # Intentar encontrar el campo de búsqueda con varios selectores
+        search_selectors = [
+            '#searchCriteria',
+            'input[type="search"]',
+            'input[placeholder*="expediente" i]',
+            'input[name*="search" i]'
+        ]
+        
+        search_input = None
+        for selector in search_selectors:
+            try:
+                elem = page.locator(selector).first
+                if await elem.count() > 0 and await elem.is_visible():
+                    search_input = elem
+                    print(f"[Search] Campo de búsqueda encontrado: {selector}")
+                    break
+            except:
+                continue
+        
+        if not search_input:
+            print("[Search] ⚠ No se encontró campo de búsqueda, intentando búsqueda alternativa...")
+            # Intentar usar URL de búsqueda avanzada
+            return await search_expediente_advanced(page, num_expediente)
+        
         # Limpiar y llenar campo de búsqueda
-        search_input = page.locator('#searchCriteria')
         await search_input.fill('')
         await search_input.fill(num_expediente)
         await asyncio.sleep(1)
@@ -307,11 +400,60 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
             print(f"[Search] ✓ Expediente encontrado ({rows} filas)")
             return True
         else:
-            print(f"[Search] ✗ Expediente no encontrado")
+            print(f"[Search] ✗ Expediente no encontrado en tabla")
             return False
             
     except Exception as e:
         print(f"[Search] Error: {e}")
+        return False
+
+
+async def search_expediente_advanced(page: Page, num_expediente: str) -> bool:
+    """Busca expediente usando la búsqueda avanzada como fallback."""
+    try:
+        print(f"[SearchAdv] Usando búsqueda avanzada para: {num_expediente}")
+        
+        # Navegar a búsqueda avanzada
+        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
+                       timeout=30000, wait_until='networkidle')
+        await asyncio.sleep(3)
+        
+        # Buscar input de número de expediente
+        exp_input = page.locator('#ListFilters_0__ParameterValue')
+        if await exp_input.count() > 0:
+            await exp_input.fill(num_expediente)
+            print("[SearchAdv] ✓ Expediente ingresado en campo de búsqueda")
+        else:
+            # Intentar con otro selector
+            inputs = page.locator('input[type="text"]').all()
+            for inp in inputs:
+                try:
+                    await inp.fill(num_expediente)
+                    print("[SearchAdv] ✓ Expediente ingresado (selector alternativo)")
+                    break
+                except:
+                    continue
+        
+        # Click en buscar
+        btn_search = page.locator('#btnSearch')
+        if await btn_search.count() > 0:
+            await btn_search.click()
+        else:
+            # Submit form
+            await page.keyboard.press('Enter')
+        
+        await asyncio.sleep(3)
+        
+        # Verificar si se encontró
+        rows = await page.locator('#gridMyWorks tbody tr, .grid tbody tr').count()
+        if rows > 0:
+            print(f"[SearchAdv] ✓ Expediente encontrado ({rows} filas)")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"[SearchAdv] Error: {e}")
         return False
 
 
@@ -703,9 +845,24 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
             # Manejar modal post-login
             await handle_billing_modal(page)
             
+            # Esperar a que la página cargue completamente
+            print("[Init] Esperando carga completa de la página...")
+            await asyncio.sleep(5)
+            
             # Navegar a Mi Trabajo y filtrar Autorizado
-            await navigate_to_mi_trabajo(page)
-            await apply_autorizado_filter(page)
+            print("[Init] Navegando a Mi Trabajo...")
+            if not await navigate_to_mi_trabajo(page):
+                print("[Init] ⚠ No se pudo navegar a Mi Trabajo, intentando continuar...")
+                # Tomar screenshot para debugging
+                try:
+                    await page.screenshot(path="/tmp/chubb_error_navigate.png")
+                    print("[Init] Screenshot guardado: /tmp/chubb_error_navigate.png")
+                except:
+                    pass
+            
+            print("[Init] Aplicando filtro Autorizado...")
+            if not await apply_autorizado_filter(page):
+                print("[Init] ⚠ No se pudo aplicar filtro Autorizado, intentando continuar...")
             
             # Procesar cada expediente
             for idx, expediente in enumerate(expedientes, 1):

@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS paquetes_piezas (
     numero_reporte_siniestro VARCHAR(100),
     proveedor_nombre VARCHAR(255) NOT NULL,
     fecha_arribo TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    estatus VARCHAR(30) NOT NULL DEFAULT 'Pendiente',
+    estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
     comentarios TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS paquetes_piezas_relaciones (
     nombre_pieza VARCHAR(255) NOT NULL,
     numero_parte VARCHAR(100),
     cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
-    estatus VARCHAR(30) NOT NULL DEFAULT 'Pendiente',
+    estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
     observaciones TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -88,6 +88,26 @@ CREATE INDEX IF NOT EXISTS idx_paquetes_piezas_media_paquete
 
 CREATE INDEX IF NOT EXISTS idx_paquetes_piezas_media_tipo
     ON paquetes_piezas_media(paquete_id, media_type);
+
+ALTER TABLE paquetes_piezas
+    ALTER COLUMN estatus SET DEFAULT 'Generado';
+
+ALTER TABLE paquetes_piezas_relaciones
+    ALTER COLUMN estatus SET DEFAULT 'Generado';
+
+UPDATE paquetes_piezas
+SET estatus = CASE
+    WHEN LOWER(COALESCE(estatus, '')) IN ('recibido', 'completado') THEN 'Completado'
+    ELSE 'Generado'
+END
+WHERE LOWER(COALESCE(estatus, '')) IN ('pendiente', 'demorado', 'recibido', 'completado', 'generado');
+
+UPDATE paquetes_piezas_relaciones
+SET estatus = CASE
+    WHEN LOWER(COALESCE(estatus, '')) IN ('recibido', 'completado') THEN 'Completado'
+    ELSE 'Generado'
+END
+WHERE LOWER(COALESCE(estatus, '')) IN ('pendiente', 'demorado', 'recibido', 'completado', 'generado');
 
 
 DROP TRIGGER IF EXISTS update_paquetes_piezas_updated_at ON paquetes_piezas;

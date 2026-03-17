@@ -17,14 +17,19 @@ const EMPTY_FORM = {
   reporte: "",
   piezasText: "",
   comentarios: "",
-  estado: "Pendiente",
+  estado: "Generado",
 };
 
 const STATUS_STYLES = {
-  Pendiente: "bg-alert-amber/15 text-alert-amber border-alert-amber/30",
-  Recibido: "bg-alert-green/15 text-alert-green border-alert-green/30",
-  Demorado: "bg-alert-red/15 text-alert-red border-alert-red/30",
+  Generado: "bg-alert-amber/15 text-alert-amber border-alert-amber/30",
+  Completado: "bg-alert-green/15 text-alert-green border-alert-green/30",
 };
+
+function normalizeStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "completado" || normalized === "recibido") return "Completado";
+  return "Generado";
+}
 
 function formatArribo(dateTime) {
   if (!dateTime) return "-";
@@ -67,7 +72,7 @@ function mapPackageSummary(item) {
     proveedor: item.proveedor_nombre || "",
     ot: item.folio_ot || "",
     reporte: item.numero_reporte_siniestro || "",
-    estado: item.estatus || "Pendiente",
+    estado: normalizeStatus(item.estatus),
     arribo: item.fecha_arribo,
     piezasCount: item.piezas_count || 0,
     mediaCount: item.media_count || 0,
@@ -191,9 +196,8 @@ function PackageModal({
                       onChange={(event) => onChange("estado", event.target.value)}
                       className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
                     >
-                      <option value="Pendiente">Pendiente</option>
-                      <option value="Recibido">Recibido</option>
-                      <option value="Demorado">Demorado</option>
+                      <option value="Generado">Generado</option>
+                      <option value="Completado">Completado</option>
                     </select>
                   </label>
                 </div>
@@ -417,9 +421,9 @@ export default function PaquetesPiezas() {
   }, [search]);
 
   const metrics = useMemo(() => {
-    const pendientes = packages.filter((item) => item.estado === "Pendiente").length;
-    const demoradas = packages.filter((item) => item.estado === "Demorado").length;
-    return { pendientes, demoradas };
+    const generados = packages.filter((item) => item.estado === "Generado").length;
+    const completados = packages.filter((item) => item.estado === "Completado").length;
+    return { generados, completados };
   }, [packages]);
 
   const totalPages = Math.max(1, Math.ceil(packages.length / pageSize));
@@ -443,7 +447,7 @@ export default function PaquetesPiezas() {
       reporte: detail?.numero_reporte_siniestro || "",
       piezasText: (detail?.relaciones || []).map((item) => item.nombre_pieza).join("\n"),
       comentarios: detail?.comentarios || "",
-      estado: detail?.estatus || "Pendiente",
+      estado: normalizeStatus(detail?.estatus),
     });
     setDraftPhotos((detail?.media || []).map(mapMediaItem));
   };
@@ -677,17 +681,17 @@ export default function PaquetesPiezas() {
                     <span className="material-symbols-outlined">pending_actions</span>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Pendientes</div>
-                    <div className="text-2xl font-bold text-white">{metrics.pendientes}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Generados</div>
+                    <div className="text-2xl font-bold text-white">{metrics.generados}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 rounded-2xl border border-border-dark bg-surface-dark px-5 py-4 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
-                  <div className="rounded-xl bg-alert-amber/15 p-3 text-alert-amber">
-                    <span className="material-symbols-outlined">warning</span>
+                  <div className="rounded-xl bg-alert-green/15 p-3 text-alert-green">
+                    <span className="material-symbols-outlined">task_alt</span>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Demoras</div>
-                    <div className="text-2xl font-bold text-white">{metrics.demoradas}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Completados</div>
+                    <div className="text-2xl font-bold text-white">{metrics.completados}</div>
                   </div>
                 </div>
               </div>

@@ -104,7 +104,7 @@ class PaquetePiezaRelacionBase(BaseModel):
     nombre_pieza: str
     numero_parte: Optional[str] = None
     cantidad: int = 1
-    estatus: str = "Pendiente"
+    estatus: str = "Generado"
     observaciones: Optional[str] = None
 
 
@@ -145,7 +145,7 @@ class PaquetePiezasBase(BaseModel):
     numero_reporte_siniestro: Optional[str] = None
     proveedor_nombre: str
     fecha_arribo: Optional[datetime] = None
-    estatus: str = "Pendiente"
+    estatus: str = "Generado"
     comentarios: Optional[str] = None
 
 
@@ -217,11 +217,17 @@ def ensure_paquetes_piezas_tables(conn):
             numero_reporte_siniestro VARCHAR(100),
             proveedor_nombre VARCHAR(255) NOT NULL,
             fecha_arribo TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            estatus VARCHAR(30) NOT NULL DEFAULT 'Pendiente',
+            estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
             comentarios TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas
+        ALTER COLUMN estatus SET DEFAULT 'Generado'
         """
     )
     conn.execute(
@@ -263,11 +269,17 @@ def ensure_paquetes_piezas_tables(conn):
             nombre_pieza VARCHAR(255) NOT NULL,
             numero_parte VARCHAR(100),
             cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
-            estatus VARCHAR(30) NOT NULL DEFAULT 'Pendiente',
+            estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
             observaciones TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas_relaciones
+        ALTER COLUMN estatus SET DEFAULT 'Generado'
         """
     )
     conn.execute(
@@ -369,6 +381,15 @@ def _sync_paquetes_piezas_folio_sequence(conn):
 
 def _paquetes_media_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "media" / "paquetes_piezas"
+
+
+def _normalize_paquete_status(value: Optional[str]) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"completado", "recibido"}:
+        return "Completado"
+    if normalized in {"generado", "pendiente", "demorado", ""}:
+        return "Generado"
+    return str(value or "Generado").strip() or "Generado"
 
 
 def _get_orden_admision_snapshot(conn, orden_admision_id: Optional[int]) -> Optional[dict[str, Any]]:
@@ -502,6 +523,9 @@ def _build_paquete_detail(conn, paquete_id: int) -> dict[str, Any]:
 
     relaciones = _list_paquete_relaciones(conn, paquete_id)
     media = _list_paquete_media(conn, paquete_id)
+    paquete["estatus"] = _normalize_paquete_status(paquete.get("estatus"))
+    for relacion in relaciones:
+        relacion["estatus"] = _normalize_paquete_status(relacion.get("estatus"))
     paquete["relaciones"] = relaciones
     paquete["media"] = media
     paquete["piezas_count"] = len(relaciones)
@@ -531,7 +555,7 @@ def _insert_paquete_relaciones(conn, paquete_id: int, relaciones: List[PaquetePi
                 relacion.nombre_pieza.strip(),
                 (relacion.numero_parte or "").strip() or None,
                 relacion.cantidad,
-                (relacion.estatus or "Pendiente").strip() or "Pendiente",
+                _normalize_paquete_status(relacion.estatus),
                 (relacion.observaciones or "").strip() or None,
             ),
         )
@@ -944,7 +968,10 @@ def get_paquetes(
             LIMIT %s OFFSET %s
         """
         params.extend([limit, offset])
-        return list(conn.execute(query, params).fetchall())
+        rows = list(conn.execute(query, params).fetchall())
+        for row in rows:
+            row["estatus"] = _normalize_paquete_status(row.get("estatus"))
+        return rows
 
 
 @router.get("/paquetes/{paquete_id}", response_model=PaquetePiezasDetail)
@@ -987,7 +1014,7 @@ def create_paquete(payload: PaquetePiezasCreate):
                 numero_reporte,
                 payload.proveedor_nombre.strip(),
                 payload.fecha_arribo,
-                (payload.estatus or "Pendiente").strip() or "Pendiente",
+                _normalize_paquete_status(payload.estatus),
                 (payload.comentarios or "").strip() or None,
             ),
         ).fetchone()
@@ -1015,6 +1042,9 @@ def update_paquete(paquete_id: int, payload: PaquetePiezasUpdate):
             orden = _get_orden_admision_snapshot(conn, updates["orden_admision_id"])
             updates["numero_reporte_siniestro"] = str(orden.get("reporte_siniestro") or "").strip() or None
             updates["folio_ot"] = None
+
+        if "estatus" in updates:
+            updates["estatus"] = _normalize_paquete_status(updates["estatus"])
 
         query_updates: list[str] = []
         params: list[Any] = []
@@ -1161,10 +1191,11 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 payload.nombre_pieza.strip(),
                 (payload.numero_parte or "").strip() or None,
                 payload.cantidad,
-                (payload.estatus or "Pendiente").strip() or "Pendiente",
+                _normalize_paquete_status(payload.estatus),
                 (payload.observaciones or "").strip() or None,
             ),
         ).fetchone()
+        relacion["estatus"] = _normalize_paquete_status(relacion.get("estatus"))
         return relacion
 
 
@@ -1182,6 +1213,8 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
         value = updates[field]
         if isinstance(value, str):
             value = value.strip() or None
+        if field == "estatus":
+            value = _normalize_paquete_status(value)
         query_updates.append(f"{field} = %s")
         params.append(value)
 
@@ -1210,6 +1243,7 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
         ).fetchone()
         if not relacion:
             raise HTTPException(status_code=404, detail="Relación no encontrada")
+        relacion["estatus"] = _normalize_paquete_status(relacion.get("estatus"))
         return relacion
 
 

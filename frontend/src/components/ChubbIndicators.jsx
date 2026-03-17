@@ -301,23 +301,7 @@ export default function ChubbIndicators({ onRefresh }) {
             </button>
           </div>
           
-          {/* Botón Ver Logs */}
-          {logs && !updating && (
-            <button
-              onClick={() => setShowLogs(!showLogs)}
-              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                showLogs 
-                  ? 'bg-purple-500/20 text-purple-400' 
-                  : 'bg-background-dark text-slate-400 hover:text-white border border-border-dark'
-              }`}
-              title="Ver logs de ejecución"
-            >
-              <span className="material-symbols-outlined text-sm">terminal</span>
-              <span>{showLogs ? 'Ocultar logs' : 'Ver logs'}</span>
-            </button>
-          )}
-          
-          {/* Botón Actualizar */}
+          {/* Botón Actualizar -->
           <button
             onClick={handleRefresh}
             disabled={updating}
@@ -345,20 +329,37 @@ export default function ChubbIndicators({ onRefresh }) {
       {/* Mensaje de actualización en progreso */}
       {updating && (
         <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-purple-400 animate-spin">refresh</span>
-            <div>
-              <p className="text-sm text-purple-400 font-bold">Actualización en progreso</p>
-              <p className="text-xs text-slate-400">
-                {getEstimatedTime()}
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-purple-400 animate-spin">refresh</span>
+              <div>
+                <p className="text-sm text-purple-400 font-bold">Actualización en progreso</p>
+                <p className="text-xs text-slate-400">
+                  {getEstimatedTime()}
+                </p>
+              </div>
             </div>
+            
+            {/* Botón Ver/Ocultar logs durante actualización */}
+            {logs && (
+              <button
+                onClick={() => setShowLogs(!showLogs)}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  showLogs 
+                    ? 'bg-purple-500/30 text-purple-300' 
+                    : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">terminal</span>
+                <span>{showLogs ? 'Ocultar logs' : 'Ver logs'}</span>
+              </button>
+            )}
           </div>
           
           {/* Logs en tiempo real */}
-          {logs && (
-            <div className="mt-3 p-2 bg-black/50 rounded text-[9px] font-mono text-slate-300 overflow-auto max-h-32">
-              <pre>{logs.split('\n').slice(-10).join('\n')}</pre>
+          {showLogs && logs && (
+            <div className="mt-3 p-3 bg-black/70 rounded-lg border border-purple-500/20">
+              <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed overflow-auto max-h-48">{logs}</pre>
             </div>
           )}
         </div>
@@ -374,28 +375,6 @@ export default function ChubbIndicators({ onRefresh }) {
         </div>
       )}
       
-      {/* Logs Panel */}
-      {showLogs && logs && !updating && (
-        <div className="bg-slate-950 border border-purple-500/20 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 bg-purple-500/10 border-b border-purple-500/20">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-xs text-purple-400">terminal</span>
-              <span className="text-xs font-medium text-purple-400">Logs de ejecución</span>
-            </div>
-            <button
-              onClick={() => setShowLogs(false)}
-              className="text-slate-500 hover:text-slate-300 transition-colors"
-              title="Cerrar"
-            >
-              <span className="material-symbols-outlined text-sm">close</span>
-            </button>
-          </div>
-          <div className="p-3 overflow-auto max-h-64">
-            <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed">{logs}</pre>
-          </div>
-        </div>
-      )}
-
       {/* Indicadores */}
       {indicadores && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

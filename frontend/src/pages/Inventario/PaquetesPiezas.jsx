@@ -514,7 +514,6 @@ export default function PaquetesPiezas() {
         <Sidebar />
         <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
           <AppHeader
-            title="Paquetes de piezas"
             searchPlaceholder="Buscar folio, OT, reporte o proveedor..."
             searchValue={search}
             onSearchChange={setSearch}
@@ -566,7 +565,7 @@ export default function PaquetesPiezas() {
 
             <section className="overflow-hidden rounded-2xl border border-border-dark bg-surface-dark shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
               <div className="overflow-x-auto custom-scrollbar">
-                <table className="min-w-[980px] w-full text-left">
+                <table className="min-w-[1100px] w-full text-left">
                   <thead className="border-b border-border-dark bg-background-dark/40">
                     <tr>
                       {[
@@ -575,6 +574,7 @@ export default function PaquetesPiezas() {
                         "Proveedor",
                         "OT Relacionada",
                         "No. Reporte / Siniestro",
+                        "Estatus",
                         "Acciones",
                       ].map((label) => (
                         <th
@@ -590,18 +590,7 @@ export default function PaquetesPiezas() {
                     {pagedPackages.length ? (
                       pagedPackages.map((pkg) => (
                         <tr key={pkg.id} className="transition-colors hover:bg-white/5">
-                          <td className="px-4 py-4 text-sm">
-                            <div className="font-bold text-primary">{pkg.folio}</div>
-                            <div className="mt-2">
-                              <span
-                                className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${
-                                  STATUS_STYLES[pkg.estado] || "border-border-dark text-slate-400"
-                                }`}
-                              >
-                                {pkg.estado}
-                              </span>
-                            </div>
-                          </td>
+                          <td className="px-4 py-4 text-sm font-bold text-primary">{pkg.folio}</td>
                           <td className="px-4 py-4 text-sm text-slate-300">
                             <div className="font-semibold">{formatArribo(pkg.arriboFecha, pkg.arriboHora)}</div>
                             <div className="text-xs italic text-slate-500">{formatHour(pkg.arriboHora)}</div>
@@ -613,6 +602,15 @@ export default function PaquetesPiezas() {
                             </span>
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-300">{pkg.reporte}</td>
+                          <td className="px-4 py-4">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+                                STATUS_STYLES[pkg.estado] || "border-border-dark text-slate-400"
+                              }`}
+                            >
+                              {pkg.estado}
+                            </span>
+                          </td>
                           <td className="px-4 py-4">
                             <div className="flex items-center justify-end gap-1">
                               <button
@@ -648,7 +646,7 @@ export default function PaquetesPiezas() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={6} className="px-4 py-14 text-center">
+                        <td colSpan={7} className="px-4 py-14 text-center">
                           <div className="flex flex-col items-center gap-3 text-slate-500">
                             <span className="material-symbols-outlined text-5xl">package_2</span>
                             <p className="text-base font-semibold text-slate-300">No hay paquetes registrados</p>

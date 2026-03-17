@@ -341,19 +341,17 @@ export default function ChubbIndicators({ onRefresh }) {
             </div>
             
             {/* Botón Ver/Ocultar logs durante actualización */}
-            {logs && (
-              <button
-                onClick={() => setShowLogs(!showLogs)}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                  showLogs 
-                    ? 'bg-purple-500/30 text-purple-300' 
-                    : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">terminal</span>
-                <span>{showLogs ? 'Ocultar logs' : 'Ver logs'}</span>
-              </button>
-            )}
+            <button
+              onClick={() => setShowLogs(!showLogs)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                showLogs 
+                  ? 'bg-purple-500/30 text-purple-300' 
+                  : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">terminal</span>
+              <span>{showLogs ? 'Ocultar logs' : 'Ver logs'}</span>
+            </button>
           </div>
           
           {/* Logs en tiempo real */}

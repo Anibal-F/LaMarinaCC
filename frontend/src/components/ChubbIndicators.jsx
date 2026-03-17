@@ -355,9 +355,11 @@ export default function ChubbIndicators({ onRefresh }) {
           </div>
           
           {/* Logs en tiempo real */}
-          {showLogs && logs && (
+          {showLogs && (
             <div className="mt-3 p-3 bg-black/70 rounded-lg border border-purple-500/20">
-              <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed overflow-auto max-h-48">{logs}</pre>
+              <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed overflow-auto max-h-48">
+                {logs || "Esperando logs..."}
+              </pre>
             </div>
           )}
         </div>
@@ -388,9 +390,11 @@ export default function ChubbIndicators({ onRefresh }) {
           </div>
           
           {/* Logs cuando hay error */}
-          {showLogs && logs && (
+          {showLogs && (
             <div className="mt-2 p-3 bg-black/70 rounded-lg border border-alert-red/20">
-              <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed overflow-auto max-h-64">{logs}</pre>
+              <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed overflow-auto max-h-64">
+                {logs || "No hay logs disponibles"}
+              </pre>
             </div>
           )}
         </div>

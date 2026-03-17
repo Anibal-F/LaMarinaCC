@@ -43,6 +43,7 @@ class IndicadoresResponse(BaseModel):
     autorizadas: int
     rechazadas: int
     complementos: int
+    perdida_total: int
     total_expedientes: int
     raw_data: Optional[Dict[str, Any]] = None
 
@@ -63,6 +64,7 @@ class ExpedienteItem(BaseModel):
     fecha_inspeccion: Optional[str] = None
     fecha_actualizacion: Optional[str] = None
     placas: Optional[str] = None
+    estatus_audatrace: Optional[str] = None
     fecha_extraccion: str
 
 
@@ -84,6 +86,7 @@ def ensure_tables_exists():
                 autorizadas INTEGER DEFAULT 0,
                 rechazadas INTEGER DEFAULT 0,
                 complementos INTEGER DEFAULT 0,
+                perdida_total INTEGER DEFAULT 0,
                 total_expedientes INTEGER DEFAULT 0,
                 raw_data JSONB,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -103,12 +106,23 @@ def ensure_tables_exists():
                 placas VARCHAR(50),
                 asignado_a VARCHAR(255),
                 compania VARCHAR(100),
+                estatus_audatrace VARCHAR(100),
                 fecha_accidente TIMESTAMP,
                 fecha_extraccion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(num_expediente, fecha_extraccion)
             )
         """)
+        
+        # Agregar columna estatus_audatrace si no existe (migración)
+        try:
+            conn.execute("""
+                ALTER TABLE chubb_expedientes 
+                ADD COLUMN IF NOT EXISTS estatus_audatrace VARCHAR(100)
+            """)
+        except Exception as e:
+            # Columna ya existe o error de migración
+            pass
         
         # Crear índices
         conn.execute("""
@@ -147,6 +161,7 @@ def save_indicadores(data: Dict[str, Any]) -> int:
         autorizadas = indicadores_rpa.get('autorizadas', 0)
         rechazadas = indicadores_rpa.get('rechazadas', 0)
         complementos = indicadores_rpa.get('complementos', 0)
+        perdida_total = indicadores_rpa.get('perdida_total', 0)
         total_expedientes = indicadores_rpa.get('total', len(expedientes) if expedientes else 0)
     elif estados:
         # Fallback: usar estados del RPA si no hay indicadores
@@ -155,6 +170,7 @@ def save_indicadores(data: Dict[str, Any]) -> int:
         autorizadas = estados.get('autorizadas', 0)
         rechazadas = estados.get('rechazadas', 0)
         complementos = estados.get('complementos', 0)
+        perdida_total = estados.get('perdida_total', 0)
         total_expedientes = estados.get('total', 0)
     elif expedientes:
         # Último fallback: calcular desde expedientes
@@ -163,10 +179,11 @@ def save_indicadores(data: Dict[str, Any]) -> int:
         autorizadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['autorizado', 'aprobado', 'autorizadas'])
         rechazadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['rechazado', 'rechazadas'])
         complementos = sum(1 for e in expedientes if e.get('estado', '').lower() in ['complemento', 'complementos'])
+        perdida_total = sum(1 for e in expedientes if e.get('estado', '').lower() in ['pérdida total', 'perdida_total'])
         total_expedientes = len(expedientes)
     else:
         logger.warning("[save_indicadores] No hay datos para calcular indicadores")
-        por_autorizar = autorizadas = rechazadas = complementos = total_expedientes = 0
+        por_autorizar = autorizadas = rechazadas = complementos = perdida_total = total_expedientes = 0
     
     # Actualizar el diccionario de estados
     estados = {
@@ -174,11 +191,12 @@ def save_indicadores(data: Dict[str, Any]) -> int:
         'autorizadas': autorizadas,
         'rechazadas': rechazadas,
         'complementos': complementos,
+        'perdida_total': perdida_total,
         'total': total_expedientes
     }
     data['estados'] = estados
     
-    logger.info(f"[save_indicadores] Indicadores calculados: por_autorizar={por_autorizar}, autorizadas={autorizadas}, rechazadas={rechazadas}, complementos={complementos}, total={total_expedientes}")
+    logger.info(f"[save_indicadores] Indicadores calculados: por_autorizar={por_autorizar}, autorizadas={autorizadas}, rechazadas={rechazadas}, complementos={complementos}, perdida_total={perdida_total}, total={total_expedientes}")
     
     try:
         with get_connection() as conn:
@@ -186,14 +204,14 @@ def save_indicadores(data: Dict[str, Any]) -> int:
                 INSERT INTO chubb_indicadores (
                     taller_id, taller_nombre, fecha_extraccion,
                     por_autorizar, autorizadas, rechazadas, complementos,
-                    total_expedientes, raw_data
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    perdida_total, total_expedientes, raw_data
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 data.get('taller_id', ''),
                 data.get('taller_nombre', ''),
                 data.get('fecha_extraccion', datetime.now(MAZATLAN_TZ).isoformat()),
-                por_autorizar, autorizadas, rechazadas, complementos,
+                por_autorizar, autorizadas, rechazadas, complementos, perdida_total,
                 total_expedientes, json.dumps(data)
             )).fetchone()
             conn.commit()
@@ -289,9 +307,9 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
                     INSERT INTO chubb_expedientes (
                         num_expediente, tipo_vehiculo, estado, 
                         fecha_creacion, fecha_inspeccion, fecha_actualizacion,
-                        placas, asignado_a, compania, fecha_accidente,
+                        placas, asignado_a, compania, estatus_audatrace, fecha_accidente,
                         fecha_extraccion
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (num_expediente, fecha_extraccion) DO NOTHING
                 """, (
                     num_exp,
@@ -303,6 +321,7 @@ def save_expedientes(expedientes: List[Dict[str, Any]], fecha_extraccion: str):
                     exp.get('placas') or None,
                     exp.get('asignado_a') or None,
                     exp.get('compania') or None,
+                    exp.get('estatus_audatrace') or None,
                     parse_date(exp.get('fecha_accidente')),
                     fecha_extraccion
                 ))
@@ -363,7 +382,7 @@ def get_indicadores_history(limit: int = 30) -> List[Dict[str, Any]]:
             SELECT 
                 id, taller_id, taller_nombre, fecha_extraccion,
                 por_autorizar, autorizadas, rechazadas, complementos,
-                total_expedientes
+                perdida_total, total_expedientes
             FROM chubb_indicadores
             ORDER BY fecha_extraccion DESC
             LIMIT %s

@@ -252,6 +252,9 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
                 <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark whitespace-nowrap">
                   Placas
                 </th>
+                <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-surface-dark whitespace-nowrap">
+                  Estatus AudaTrace
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -282,6 +285,9 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
                   </td>
                   <td className="px-3 py-2 text-xs text-slate-300 font-mono uppercase whitespace-nowrap">
                     {exp.placas || '-'}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-300 whitespace-nowrap">
+                    {exp.estatus_audatrace || '-'}
                   </td>
                 </tr>
               ))}

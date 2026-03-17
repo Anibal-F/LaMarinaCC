@@ -731,7 +731,8 @@ ESTADOS_FILTRO = {
     "por_autorizar": "Por Aprobar",
     "autorizadas": "Autorizado", 
     "rechazadas": "Rechazado",
-    "complementos": "Complemento"
+    "complementos": "Complemento",
+    "perdida_total": "Pérdida Total"
 }
 
 
@@ -985,6 +986,10 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
                     };
                     
                     // Mapeo basado en la posición del número de expediente
+                    // Estructura de columnas CHUBB/Audatex:
+                    // 0: Número Expediente, 1: Tipo Vehículo, 2: (vacío), 3: Estado
+                    // 4: Fecha Creación, 5: Fecha Inspección, 6: Fecha Actualización
+                    // 7: Placa, 8: Asignado A, 9: Compañía, 10: Estatus AudaTrace
                     data.push({
                         num_expediente: getText(0),
                         tipo_vehiculo: getText(1),
@@ -995,6 +1000,7 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
                         placas: getText(7),
                         asignado_a: getText(8),
                         compania: getText(9),
+                        estatus_audatrace: getText(10),
                         fecha_accidente: ''
                     });
                 } else {
@@ -1154,6 +1160,7 @@ async def extract_expedientes_data(page) -> Dict[str, Any]:
         "autorizadas": 0,
         "rechazadas": 0,
         "complementos": 0,
+        "perdida_total": 0,
         "total": 0
     }
     
@@ -1190,6 +1197,7 @@ async def extract_expedientes_data(page) -> Dict[str, Any]:
     print(f"  - Autorizadas: {indicadores['autorizadas']}")
     print(f"  - Rechazadas: {indicadores['rechazadas']}")
     print(f"  - Complementos: {indicadores['complementos']}")
+    print(f"  - Pérdida Total: {indicadores['perdida_total']}")
     print(f"{'='*60}")
     
     return {

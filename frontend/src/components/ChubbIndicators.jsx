@@ -402,7 +402,7 @@ export default function ChubbIndicators({ onRefresh }) {
       
       {/* Indicadores */}
       {indicadores && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Card 1: Por Autorizar */}
           <div 
             onClick={() => setFiltroEstado(filtroEstado === 'Por aprobar' ? '' : 'Por aprobar')}

@@ -239,11 +239,29 @@ async def navigate_to_mi_trabajo(page: Page) -> bool:
     try:
         print("[Navigate] Navegando a Mi Trabajo...")
         
-        # Buscar y hacer clic en "MI TRABAJO" en el menú
+        # Primero verificar si ya estamos en Mi Trabajo
+        table_exists = await page.locator('#gridMyWorks').count() > 0
+        if table_exists:
+            print("[Navigate] Tabla ya visible, ya estamos en Mi Trabajo")
+            return True
+        
+        # Navegar directamente a la URL de Mi Trabajo
+        print("[Navigate] Navegando a URL de Mi Trabajo...")
+        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/MyWork', 
+                       timeout=30000, wait_until='domcontentloaded')
+        await asyncio.sleep(4)
+        
+        # Verificar si la tabla está visible
+        table_exists = await page.locator('#gridMyWorks').count() > 0
+        if table_exists:
+            print("[Navigate] ✓ Mi Trabajo cargado correctamente")
+            return True
+        
+        # Si no, intentar con los selectores del menú
         mi_trabajo_selectors = [
             'a:has-text("MI TRABAJO")',
             'a[href*="Work"]:visible',
-            '#ui-id-3',  # ID del acordeón según las capturas
+            '#ui-id-3',
             'h3:has-text("Trabajo del Sitio")'
         ]
         
@@ -257,12 +275,6 @@ async def navigate_to_mi_trabajo(page: Page) -> bool:
                     return True
             except:
                 continue
-        
-        # Si no encontramos el menú, verificar si ya estamos en la página correcta
-        table_exists = await page.locator('#gridMyWorks').count() > 0
-        if table_exists:
-            print("[Navigate] Tabla ya visible, no es necesario navegar")
-            return True
         
         print("[Navigate] ⚠ No se pudo navegar a Mi Trabajo")
         return False
@@ -360,7 +372,8 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
             '#searchCriteria',
             'input[type="search"]',
             'input[placeholder*="expediente" i]',
-            'input[name*="search" i]'
+            'input[name*="search" i]',
+            '#gridMyWorks_filter input'  # DataTables search
         ]
         
         search_input = None
@@ -373,6 +386,27 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
                     break
             except:
                 continue
+        
+        # Si no encontramos el campo, intentar hacer clic en Búsqueda de Tickets
+        if not search_input:
+            print("[Search] Intentando navegar a Búsqueda de Tickets...")
+            try:
+                busqueda_link = page.locator('a:has-text("BÚSQUEDA DE TICKETS")').first
+                if await busqueda_link.count() > 0:
+                    await busqueda_link.click()
+                    await asyncio.sleep(3)
+                    # Reintentar buscar el campo
+                    for selector in search_selectors:
+                        try:
+                            elem = page.locator(selector).first
+                            if await elem.count() > 0 and await elem.is_visible():
+                                search_input = elem
+                                print(f"[Search] Campo de búsqueda encontrado después de navegar: {selector}")
+                                break
+                        except:
+                            continue
+            except Exception as e:
+                print(f"[Search] Error navegando a Búsqueda: {e}")
         
         if not search_input:
             print("[Search] ⚠ No se encontró campo de búsqueda, intentando búsqueda alternativa...")
@@ -415,8 +449,8 @@ async def search_expediente_advanced(page: Page, num_expediente: str) -> bool:
         
         # Navegar a búsqueda avanzada
         await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
-                       timeout=30000, wait_until='networkidle')
-        await asyncio.sleep(3)
+                       timeout=30000, wait_until='domcontentloaded')
+        await asyncio.sleep(4)
         
         # Buscar input de número de expediente
         exp_input = page.locator('#ListFilters_0__ParameterValue')
@@ -425,24 +459,29 @@ async def search_expediente_advanced(page: Page, num_expediente: str) -> bool:
             print("[SearchAdv] ✓ Expediente ingresado en campo de búsqueda")
         else:
             # Intentar con otro selector
-            inputs = page.locator('input[type="text"]').all()
-            for inp in inputs:
-                try:
-                    await inp.fill(num_expediente)
-                    print("[SearchAdv] ✓ Expediente ingresado (selector alternativo)")
-                    break
-                except:
-                    continue
+            try:
+                inputs = await page.locator('input[type="text"]').all()
+                for inp in inputs[:5]:  # Solo los primeros 5
+                    try:
+                        await inp.fill(num_expediente)
+                        print("[SearchAdv] ✓ Expediente ingresado (selector alternativo)")
+                        break
+                    except:
+                        continue
+            except Exception as e:
+                print(f"[SearchAdv] Error con inputs alternativos: {e}")
         
         # Click en buscar
         btn_search = page.locator('#btnSearch')
         if await btn_search.count() > 0:
             await btn_search.click()
+            print("[SearchAdv] ✓ Botón Buscar clickeado")
         else:
             # Submit form
             await page.keyboard.press('Enter')
+            print("[SearchAdv] ✓ Formulario enviado con Enter")
         
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
         
         # Verificar si se encontró
         rows = await page.locator('#gridMyWorks tbody tr, .grid tbody tr').count()
@@ -450,10 +489,13 @@ async def search_expediente_advanced(page: Page, num_expediente: str) -> bool:
             print(f"[SearchAdv] ✓ Expediente encontrado ({rows} filas)")
             return True
         
+        print("[SearchAdv] ✗ Expediente no encontrado")
         return False
         
     except Exception as e:
         print(f"[SearchAdv] Error: {e}")
+        import traceback
+        print(f"[SearchAdv] Traceback: {traceback.format_exc()}")
         return False
 
 
@@ -849,10 +891,11 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
             print("[Init] Esperando carga completa de la página...")
             await asyncio.sleep(5)
             
-            # Navegar a Mi Trabajo y filtrar Autorizado
+            # Navegar a Mi Trabajo
             print("[Init] Navegando a Mi Trabajo...")
-            if not await navigate_to_mi_trabajo(page):
-                print("[Init] ⚠ No se pudo navegar a Mi Trabajo, intentando continuar...")
+            mi_trabajo_ok = await navigate_to_mi_trabajo(page)
+            if not mi_trabajo_ok:
+                print("[Init] ⚠ No se pudo navegar a Mi Trabajo normalmente")
                 # Tomar screenshot para debugging
                 try:
                     await page.screenshot(path="/tmp/chubb_error_navigate.png")
@@ -860,9 +903,10 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
                 except:
                     pass
             
-            print("[Init] Aplicando filtro Autorizado...")
-            if not await apply_autorizado_filter(page):
-                print("[Init] ⚠ No se pudo aplicar filtro Autorizado, intentando continuar...")
+            # Intentar aplicar filtro Autorizado (opcional)
+            if mi_trabajo_ok:
+                print("[Init] Aplicando filtro Autorizado...")
+                await apply_autorizado_filter(page)
             
             # Procesar cada expediente
             for idx, expediente in enumerate(expedientes, 1):

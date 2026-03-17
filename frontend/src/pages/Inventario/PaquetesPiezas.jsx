@@ -209,7 +209,7 @@ function PackageModal({
           <>
             <div className="grid gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
               <section className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2 md:items-start">
                   <SearchableSelect
                     label="Proveedor"
                     value={form.proveedor}
@@ -220,7 +220,7 @@ function PackageModal({
                     onAdd={onAddProvider}
                     addLabel="Crear proveedor manual"
                   />
-                  <label className="space-y-2">
+                  <label className="space-y-2 md:row-span-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Reporte / Siniestro
                     </span>

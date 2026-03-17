@@ -207,7 +207,7 @@ function PackageModal({
           </div>
         ) : (
           <>
-            <div className="grid gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
+            <div className="grid items-stretch gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
               <section className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 md:items-start">
                   <div className="space-y-2">
@@ -381,8 +381,8 @@ function PackageModal({
                 </label>
               </section>
 
-              <aside className="space-y-5">
-                <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-5 min-h-[620px]">
+              <aside className="flex h-full">
+                <div className="flex h-full w-full flex-col rounded-2xl border border-border-dark bg-background-dark/70 p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
@@ -416,7 +416,7 @@ function PackageModal({
                     </button>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-2 gap-3 auto-rows-fr">
+                  <div className="mt-5 grid flex-1 grid-cols-2 gap-3 auto-rows-fr content-start">
                     {photos.length ? (
                       photos.map((photo) => {
                         const isImage =
@@ -450,7 +450,7 @@ function PackageModal({
                         );
                       })
                     ) : (
-                      <div className="col-span-2 flex min-h-[360px] flex-col items-center justify-center rounded-xl border border-dashed border-border-dark bg-surface-dark/50 px-5 text-center">
+                      <div className="col-span-2 flex h-full min-h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-border-dark bg-surface-dark/50 px-5 text-center">
                         <span className="material-symbols-outlined text-5xl text-slate-600">inventory_2</span>
                         <p className="mt-3 text-sm font-semibold text-slate-300">Sin evidencia capturada</p>
                         <p className="mt-1 text-xs text-slate-500">

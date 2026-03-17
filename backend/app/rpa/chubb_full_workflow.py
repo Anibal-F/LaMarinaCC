@@ -905,7 +905,7 @@ async def set_page_size_to_100(page) -> bool:
         print("[Extract] ✓ Seleccionado 100 registros por página, esperando recarga...")
         
         # Esperar a que la tabla se recargue (más tiempo por la recarga de DataTables)
-        await asyncio.sleep(5)
+        await asyncio.sleep(8)
         
         # Esperar a que la tabla esté lista (puede que no haya filas si no hay registros)
         try:
@@ -920,6 +920,16 @@ async def set_page_size_to_100(page) -> bool:
                 print("[Extract] ⚠ Tabla no encontrada después del cambio")
                 return False
         
+        # Esperar adicional para que la paginación se actualice
+        print("[Extract] Esperando actualización de paginación...")
+        await asyncio.sleep(3)
+        
+        # Verificar estado del botón de siguiente
+        next_btn = page.locator('a#table-rateRelations_next')
+        if await next_btn.count() > 0:
+            class_attr = await next_btn.get_attribute('class') or ''
+            print(f"[Extract] Debug - Clase del botón siguiente después de recarga: '{class_attr}'")
+        
         return True
         
     except Exception as e:
@@ -931,6 +941,12 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
     """Extrae los datos de la tabla actual."""
     try:
         print("[Extract] Extrayendo datos de tabla...")
+        
+        # Verificar primero si hay filas en la tabla
+        row_count = await page.locator('#gridMyWorks tbody tr').count()
+        if row_count == 0:
+            print("[Extract] ✓ No hay filas en la tabla (0 registros)")
+            return []
         
         # Esperar a que la tabla esté visible
         await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 // URL base de la API - usa el proxy del vite.config.js o la variable de entorno
 const getApiUrl = () => {
@@ -11,6 +11,15 @@ const getApiUrl = () => {
   return '';
 };
 
+// Opciones de estatus AudaTrace comunes
+const ESTATUS_AUDATRACE_OPTIONS = [
+  { value: '', label: 'Todos' },
+  { value: 'NULL', label: 'Sin estatus (NULL)' },
+  { value: 'Unidad terminada (no entregada)', label: 'Unidad terminada (no entregada)' },
+  { value: 'Unidad Entregada', label: 'Unidad Entregada' },
+  { value: 'Procesado', label: 'Procesado' }
+];
+
 export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial = '' }) {
   const [expedientes, setExpedientes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +28,12 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
   const [pageSize, setPageSize] = useState(10);
   const [estadoFiltro, setEstadoFiltro] = useState(filtroEstadoInicial);
   const [estadosDisponibles, setEstadosDisponibles] = useState([]);
+  
+  // Nuevos filtros
+  const [busquedaExpediente, setBusquedaExpediente] = useState('');
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
+  const [estatusAudaTraceFiltro, setEstatusAudaTraceFiltro] = useState('');
   
   const pageSizeOptions = [10, 25, 50, 100];
   const API_BASE = getApiUrl();
@@ -89,9 +104,67 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
     }
   };
 
+  // Limpiar todos los filtros
+  const limpiarFiltros = () => {
+    setBusquedaExpediente('');
+    setFechaInicio('');
+    setFechaFin('');
+    setEstatusAudaTraceFiltro('');
+    setEstadoFiltro('');
+    setPage(1);
+  };
+
+  // Filtrar expedientes localmente
+  const expedientesFiltrados = useMemo(() => {
+    return expedientes.filter((exp) => {
+      // Filtro por búsqueda de expediente
+      if (busquedaExpediente) {
+        const searchLower = busquedaExpediente.toLowerCase();
+        const numExp = (exp.num_expediente || '').toLowerCase();
+        if (!numExp.includes(searchLower)) {
+          return false;
+        }
+      }
+
+      // Filtro por rango de fechas (fecha_creacion)
+      if (fechaInicio || fechaFin) {
+        const fechaCreacion = exp.fecha_creacion ? new Date(exp.fecha_creacion) : null;
+        if (fechaCreacion) {
+          // Ajustar a timezone local para comparación correcta
+          const fechaCreacionLocal = new Date(fechaCreacion.getTime() + fechaCreacion.getTimezoneOffset() * 60000);
+          
+          if (fechaInicio) {
+            const inicio = new Date(fechaInicio + 'T00:00:00');
+            if (fechaCreacionLocal < inicio) return false;
+          }
+          if (fechaFin) {
+            const fin = new Date(fechaFin + 'T23:59:59');
+            if (fechaCreacionLocal > fin) return false;
+          }
+        }
+      }
+
+      // Filtro por estatus AudaTrace
+      if (estatusAudaTraceFiltro) {
+        if (estatusAudaTraceFiltro === 'NULL') {
+          // Buscar los que tienen estatus_audatrace vacío o NULL
+          if (exp.estatus_audatrace && exp.estatus_audatrace.trim() !== '') {
+            return false;
+          }
+        } else {
+          if (exp.estatus_audatrace !== estatusAudaTraceFiltro) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+  }, [expedientes, busquedaExpediente, fechaInicio, fechaFin, estatusAudaTraceFiltro]);
+
   // Paginación
-  const totalPages = Math.ceil(expedientes.length / pageSize);
-  const pagedExpedientes = expedientes.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.ceil(expedientesFiltrados.length / pageSize);
+  const pagedExpedientes = expedientesFiltrados.slice((page - 1) * pageSize, page * pageSize);
   
   // Resetear página cuando cambia el tamaño o filtro
   const handlePageSizeChange = (newSize) => {
@@ -103,6 +176,9 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
     setEstadoFiltro(newEstado);
     setPage(1);
   };
+
+  // Verificar si hay filtros activos
+  const hayFiltrosActivos = busquedaExpediente || fechaInicio || fechaFin || estatusAudaTraceFiltro;
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
@@ -141,6 +217,9 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
     if (estadoLower.includes('complemento')) {
       return 'bg-alert-amber/20 text-alert-amber';
     }
+    if (estadoLower.includes('pérdida') || estadoLower.includes('perdida')) {
+      return 'bg-orange-500/20 text-orange-400';
+    }
     return 'bg-slate-700 text-slate-400';
   };
 
@@ -173,24 +252,76 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
 
   return (
     <div className="mt-6 bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b border-border-dark gap-3">
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-purple-500">folder_open</span>
-          <h4 className="text-sm font-bold text-white">Expedientes</h4>
-          <span className="text-xs text-slate-400">({expedientes.length} total)</span>
-        </div>
-        
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Filtro por estado */}
+      {/* Header con filtros */}
+      <div className="px-4 py-3 border-b border-border-dark space-y-3">
+        {/* Título y controles principales */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Estado:</span>
+            <span className="material-symbols-outlined text-purple-500">folder_open</span>
+            <h4 className="text-sm font-bold text-white">Expedientes</h4>
+            <span className="text-xs text-slate-400">
+              ({expedientesFiltrados.length} de {expedientes.length})
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Selector de cantidad */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Mostrar:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(e.target.value)}
+                className="bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+              >
+                {pageSizeOptions.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <button
+              onClick={fetchExpedientes}
+              className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+              title="Recargar"
+            >
+              <span className="material-symbols-outlined text-sm">refresh</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filtros avanzados */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border-dark/50">
+          {/* Búsqueda por expediente */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase font-bold">No. Expediente</label>
+            <div className="relative">
+              <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                search
+              </span>
+              <input
+                type="text"
+                value={busquedaExpediente}
+                onChange={(e) => {
+                  setBusquedaExpediente(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Buscar expediente..."
+                className="w-full bg-background-dark border border-border-dark rounded pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          </div>
+
+          {/* Filtro por estado */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase font-bold">Estado</label>
             <select
               value={estadoFiltro}
               onChange={(e) => handleEstadoChange(e.target.value)}
-              className="bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+              className="bg-background-dark border border-border-dark rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
             >
-              <option value="">Todos</option>
+              <option value="">Todos los estados</option>
               {estadosDisponibles.map((estado) => (
                 <option key={estado.estado} value={estado.estado}>
                   {estado.estado} ({estado.cantidad})
@@ -199,30 +330,97 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
             </select>
           </div>
 
-          {/* Selector de cantidad */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Mostrar:</span>
+          {/* Filtro por estatus AudaTrace */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase font-bold">Estatus AudaTrace</label>
             <select
-              value={pageSize}
-              onChange={(e) => handlePageSizeChange(e.target.value)}
-              className="bg-surface-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+              value={estatusAudaTraceFiltro}
+              onChange={(e) => {
+                setEstatusAudaTraceFiltro(e.target.value);
+                setPage(1);
+              }}
+              className="bg-background-dark border border-border-dark rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
             >
-              {pageSizeOptions.map((size) => (
-                <option key={size} value={size}>
-                  {size}
+              {ESTATUS_AUDATRACE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
                 </option>
               ))}
             </select>
           </div>
-          
-          <button
-            onClick={fetchExpedientes}
-            className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-            title="Recargar"
-          >
-            <span className="material-symbols-outlined text-sm">refresh</span>
-          </button>
+
+          {/* Botón limpiar filtros */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase font-bold">Acciones</label>
+            <button
+              onClick={limpiarFiltros}
+              disabled={!hayFiltrosActivos}
+              className={`flex items-center justify-center gap-1 px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                hayFiltrosActivos
+                  ? 'bg-slate-700 hover:bg-slate-600 text-white'
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">clear_all</span>
+              Limpiar filtros
+            </button>
+          </div>
         </div>
+
+        {/* Filtro por rango de fechas */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase font-bold">Fecha creación - Desde</label>
+            <input
+              type="date"
+              value={fechaInicio}
+              onChange={(e) => {
+                setFechaInicio(e.target.value);
+                setPage(1);
+              }}
+              className="bg-background-dark border border-border-dark rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase font-bold">Fecha creación - Hasta</label>
+            <input
+              type="date"
+              value={fechaFin}
+              onChange={(e) => {
+                setFechaFin(e.target.value);
+                setPage(1);
+              }}
+              className="bg-background-dark border border-border-dark rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+            />
+          </div>
+        </div>
+
+        {/* Indicadores de filtros activos */}
+        {hayFiltrosActivos && (
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <span className="text-[10px] text-slate-500">Filtros activos:</span>
+            {busquedaExpediente && (
+              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[10px]">
+                Expediente: {busquedaExpediente}
+              </span>
+            )}
+            {fechaInicio && (
+              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[10px]">
+                Desde: {fechaInicio}
+              </span>
+            )}
+            {fechaFin && (
+              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[10px]">
+                Hasta: {fechaFin}
+              </span>
+            )}
+            {estatusAudaTraceFiltro && (
+              <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-[10px]">
+                AudaTrace: {ESTATUS_AUDATRACE_OPTIONS.find(o => o.value === estatusAudaTraceFiltro)?.label}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabla con scroll y encabezados fijos */}
@@ -297,10 +495,13 @@ export default function ChubbExpedientes({ fechaExtraccion, filtroEstadoInicial 
       </div>
 
       {/* Paginación */}
-      {(totalPages > 1 || expedientes.length > pageSizeOptions[0]) && (
+      {(totalPages > 1 || expedientesFiltrados.length > pageSizeOptions[0]) && (
         <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-border-dark gap-3">
           <p className="text-xs text-slate-400">
-            Mostrando {pagedExpedientes.length} de {expedientes.length} registros
+            Mostrando {pagedExpedientes.length} de {expedientesFiltrados.length} registros
+            {expedientesFiltrados.length !== expedientes.length && (
+              <span className="text-slate-500"> (filtrados de {expedientes.length} total)</span>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <button

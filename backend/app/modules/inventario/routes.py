@@ -19,7 +19,7 @@ router = APIRouter(prefix="/inventario", tags=["inventario"])
 # =====================================================
 
 class ProveedorBase(BaseModel):
-    id_externo: int
+    id_externo: Optional[int] = None
     fuente: str
     nombre: str
     email: Optional[str] = None
@@ -44,6 +44,30 @@ def ensure_proveedores_schema(conn) -> None:
             ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE
             """
         )
+
+
+def _normalize_proveedor_fuente(value: Optional[str]) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "qualitas":
+        return "Qualitas"
+    if normalized == "chubb":
+        return "CHUBB"
+    if normalized == "manual":
+        return "Manual"
+    return str(value or "").strip()
+
+
+def _next_manual_proveedor_id_externo(conn) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COALESCE(MIN(id_externo), 0) - 1
+            FROM proveedores
+            WHERE fuente = 'Manual'
+            """
+        )
+        row = cur.fetchone()
+        return int(row[0] or -1)
 
 
 class PiezaBase(BaseModel):
@@ -637,6 +661,17 @@ def create_proveedor(proveedor: ProveedorBase):
     try:
         with get_connection() as conn:
             ensure_proveedores_schema(conn)
+            fuente = _normalize_proveedor_fuente(proveedor.fuente)
+            nombre = str(proveedor.nombre or "").strip()
+            if not nombre:
+                raise HTTPException(status_code=400, detail="Nombre de proveedor requerido")
+
+            id_externo = proveedor.id_externo
+            if id_externo is None:
+                if fuente != "Manual":
+                    raise HTTPException(status_code=400, detail="id_externo requerido para proveedores no manuales")
+                id_externo = _next_manual_proveedor_id_externo(conn)
+
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO proveedores (id_externo, fuente, nombre, email, celular, activo)
@@ -648,11 +683,13 @@ def create_proveedor(proveedor: ProveedorBase):
                         activo = EXCLUDED.activo,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING *
-                """, (proveedor.id_externo, proveedor.fuente, proveedor.nombre,
+                """, (id_externo, fuente, nombre,
                       proveedor.email, proveedor.celular, proveedor.activo))
                 row = cur.fetchone()
                 columns = [desc[0] for desc in cur.description]
                 return dict(zip(columns, row))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -663,7 +700,23 @@ def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
     try:
         with get_connection() as conn:
             ensure_proveedores_schema(conn)
+            fuente = _normalize_proveedor_fuente(proveedor.fuente)
+            nombre = str(proveedor.nombre or "").strip()
+            if not nombre:
+                raise HTTPException(status_code=400, detail="Nombre de proveedor requerido")
+
             with conn.cursor() as cur:
+                cur.execute("SELECT id_externo, fuente FROM proveedores WHERE id = %s", (proveedor_id,))
+                existing = cur.fetchone()
+                if not existing:
+                    raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+
+                id_externo = proveedor.id_externo
+                if id_externo is None:
+                    if fuente != "Manual":
+                        raise HTTPException(status_code=400, detail="id_externo requerido para proveedores no manuales")
+                    id_externo = existing[0] if existing[1] == "Manual" else _next_manual_proveedor_id_externo(conn)
+
                 cur.execute(
                     """
                     UPDATE proveedores
@@ -679,9 +732,9 @@ def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
                     RETURNING *
                     """,
                     (
-                        proveedor.id_externo,
-                        proveedor.fuente,
-                        proveedor.nombre,
+                        id_externo,
+                        fuente,
+                        nombre,
                         proveedor.email,
                         proveedor.celular,
                         proveedor.activo,
@@ -689,8 +742,6 @@ def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
                     ),
                 )
                 row = cur.fetchone()
-                if not row:
-                    raise HTTPException(status_code=404, detail="Proveedor no encontrado")
                 columns = [desc[0] for desc in cur.description]
                 return dict(zip(columns, row))
     except HTTPException:

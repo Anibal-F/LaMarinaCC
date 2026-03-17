@@ -52,6 +52,8 @@ export default function SearchableSelect({
       await onAdd(query.trim());
       setQuery("");
       setIsOpen(false);
+    } catch {
+      // El componente padre reporta el error.
     } finally {
       setAdding(false);
     }

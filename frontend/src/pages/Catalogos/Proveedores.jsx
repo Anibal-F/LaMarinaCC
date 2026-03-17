@@ -5,6 +5,7 @@ function loadAuxiliary() {
     fuentes: [
       { value: "Qualitas", label: "Qualitas" },
       { value: "CHUBB", label: "CHUBB" },
+      { value: "Manual", label: "Manual" },
     ],
   });
 }

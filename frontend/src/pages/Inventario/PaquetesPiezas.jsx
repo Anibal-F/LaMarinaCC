@@ -113,6 +113,7 @@ function PackageModal({
   mode,
   form,
   providerOptions,
+  onAddProvider,
   onChange,
   onClose,
   onSave,
@@ -169,6 +170,8 @@ function PackageModal({
                     options={providerOptions}
                     placeholder="Selecciona un proveedor"
                     emptyLabel="Sin proveedores disponibles"
+                    onAdd={onAddProvider}
+                    addLabel="Crear proveedor manual"
                   />
                   <label className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
@@ -433,28 +436,28 @@ export default function PaquetesPiezas() {
     if (form.proveedor?.trim()) {
       options.add(form.proveedor.trim());
     }
-    return Array.from(options);
+    return Array.from(options).sort((a, b) => a.localeCompare(b, "es"));
   }, [providers, form.proveedor]);
 
-  useEffect(() => {
-    const loadProviders = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/inventario/proveedores?activo=true`);
-        if (!response.ok) {
-          throw new Error("No se pudo cargar el catálogo de proveedores.");
-        }
-        const payload = await response.json();
-        const providerNames = Array.isArray(payload)
-          ? payload
-              .map((item) => String(item?.nombre || "").trim())
-              .filter(Boolean)
-          : [];
-        setProviders(Array.from(new Set(providerNames)));
-      } catch (err) {
-        setError((prev) => prev || err.message || "No se pudo cargar el catálogo de proveedores.");
+  const loadProviders = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/inventario/proveedores?activo=true`);
+      if (!response.ok) {
+        throw new Error("No se pudo cargar el catálogo de proveedores.");
       }
-    };
+      const payload = await response.json();
+      const providerNames = Array.isArray(payload)
+        ? payload
+            .map((item) => String(item?.nombre || "").trim())
+            .filter(Boolean)
+        : [];
+      setProviders(Array.from(new Set(providerNames)));
+    } catch (err) {
+      setError((prev) => prev || err.message || "No se pudo cargar el catálogo de proveedores.");
+    }
+  };
 
+  useEffect(() => {
     loadProviders();
   }, []);
 
@@ -520,6 +523,39 @@ export default function PaquetesPiezas() {
 
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddProvider = async (providerName) => {
+    const trimmedName = String(providerName || "").trim();
+    if (!trimmedName) return;
+
+    try {
+      setError("");
+      const response = await fetch(`${API_BASE}/inventario/proveedores`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nombre: trimmedName,
+          fuente: "Manual",
+          email: null,
+          celular: null,
+          activo: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "No se pudo crear el proveedor.");
+      }
+
+      await loadProviders();
+      setForm((prev) => ({ ...prev, proveedor: trimmedName }));
+    } catch (err) {
+      setError(err.message || "No se pudo crear el proveedor.");
+      throw err;
+    }
   };
 
   const uploadFilesToPackage = async (packageId, files) => {
@@ -908,6 +944,7 @@ export default function PaquetesPiezas() {
         mode={modalMode}
         form={form}
         providerOptions={providerOptions}
+        onAddProvider={handleAddProvider}
         photos={draftPhotos}
         onChange={handleFormChange}
         onClose={closeModal}

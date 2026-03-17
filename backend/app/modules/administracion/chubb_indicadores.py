@@ -748,3 +748,133 @@ async def get_estados_disponibles():
             "fecha_extraccion": latest['fecha_extraccion'],
             "total": sum(row['cantidad'] for row in rows)
         }
+
+
+# ============================================================================
+# PIEZAS CHUBB (INPART) - Se almacenan en bitacora_piezas
+# ============================================================================
+
+
+@router.get("/expedientes/pendientes")
+async def get_expedientes_pendientes(limit: int = 50):
+    """
+    Obtiene expedientes CHUBB autorizados sin información de AudaTrace (Inpart).
+    Estos son los expedientes que necesitan extraerse sus piezas.
+    """
+    ensure_tables_exists()
+    
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        rows = conn.execute("""
+            SELECT DISTINCT ON (num_expediente) 
+                id,
+                num_expediente,
+                tipo_vehiculo,
+                estado,
+                placas,
+                estatus_audatrace,
+                fecha_extraccion
+            FROM chubb_expedientes
+            WHERE estado = 'Autorizado'
+              AND (estatus_audatrace IS NULL OR estatus_audatrace = '')
+            ORDER BY num_expediente, fecha_extraccion DESC
+            LIMIT %s
+        """, (limit,)).fetchall()
+        
+        return {
+            "expedientes": [serialize_row(dict(row)) for row in rows],
+            "total": len(rows),
+            "mensaje": f"{len(rows)} expedientes pendientes de extraer piezas" if rows else "No hay expedientes pendientes"
+        }
+
+
+@router.get("/piezas")
+async def get_piezas(
+    num_expediente: Optional[str] = None,
+    estatus: Optional[str] = None,
+    limit: int = 500
+):
+    """
+    Obtiene las piezas extraídas de CHUBB (Inpart) desde la bitacora_piezas.
+    
+    Args:
+        num_expediente: Filtrar por número de expediente específico
+        estatus: Filtrar por estatus (Recibido, En Proceso, etc.)
+        limit: Límite de resultados
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        
+        query = """
+            SELECT 
+                bp.*,
+                p.id_externo as proveedor_id_externo,
+                p.nombre as proveedor_nombre,
+                p.email as proveedor_email,
+                p.celular as proveedor_celular
+            FROM bitacora_piezas bp
+            LEFT JOIN proveedores p ON bp.proveedor_id = p.id
+            WHERE bp.fuente = 'CHUBB'
+        """
+        params = []
+        
+        if num_expediente:
+            query += " AND bp.num_expediente = %s"
+            params.append(num_expediente)
+        
+        if estatus:
+            query += " AND bp.estatus = %s"
+            params.append(estatus)
+        
+        query += " ORDER BY bp.fecha_extraccion DESC, bp.num_expediente LIMIT %s"
+        params.append(limit)
+        
+        rows = conn.execute(query, params).fetchall()
+        
+        return {
+            "piezas": [serialize_row(dict(row)) for row in rows],
+            "total": len(rows),
+            "filtros": {
+                "num_expediente": num_expediente,
+                "estatus": estatus
+            }
+        }
+
+
+@router.get("/piezas/resumen")
+async def get_piezas_resumen():
+    """
+    Obtiene un resumen de las piezas extraídas de CHUBB por estatus.
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        
+        # Contar por estatus
+        rows = conn.execute("""
+            SELECT 
+                estatus,
+                COUNT(*) as cantidad,
+                COUNT(DISTINCT num_expediente) as expedientes
+            FROM bitacora_piezas
+            WHERE fuente = 'CHUBB'
+            GROUP BY estatus
+            ORDER BY cantidad DESC
+        """).fetchall()
+        
+        # Total de piezas
+        total = conn.execute("""
+            SELECT COUNT(*) as total FROM bitacora_piezas WHERE fuente = 'CHUBB'
+        """).fetchone()
+        
+        # Total de expedientes con piezas
+        expedientes = conn.execute("""
+            SELECT COUNT(DISTINCT num_expediente) as total 
+            FROM bitacora_piezas 
+            WHERE fuente = 'CHUBB'
+        """).fetchone()
+        
+        return {
+            "por_estatus": [dict(row) for row in rows],
+            "total_piezas": total['total'] if total else 0,
+            "total_expedientes": expedientes['total'] if expedientes else 0
+        }

@@ -998,3 +998,179 @@ def reset_piezas_checkpoint():
             "status": "error",
             "message": str(e)
         }
+
+
+# =====================================================
+# ENDPOINTS PARA EXTRACCIÓN DE PIEZAS CHUBB
+# =====================================================
+
+class ChubbPiezasExtractionRequest(BaseModel):
+    """Solicitud para extraer piezas de expedientes CHUBB autorizados."""
+    headless: bool = Field(default=True, description="Ejecutar sin ventana visible")
+    max_expedientes: Optional[int] = Field(default=None, description="Máximo de expedientes a procesar (None = todos)")
+
+
+def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Optional[int] = None):
+    """
+    Ejecuta el script de extracción de piezas de CHUBB en un proceso separado.
+    Esta función corre en background.
+    """
+    backend_dir = Path(__file__).resolve().parents[3]
+    script_name = "chubb_piezas_extractor.py"
+    script_path = backend_dir / "app" / "rpa" / script_name
+    
+    # Configurar archivo de log
+    log_dir = backend_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"chubb_piezas_{job_id}.log"
+    
+    def log_message(msg: str):
+        """Escribe mensaje al log y lo almacena en el job."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_line = f"[{timestamp}] {msg}\n"
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_line)
+        # También guardar en memoria
+        if "logs" not in rpa_jobs[job_id]:
+            rpa_jobs[job_id]["logs"] = []
+        rpa_jobs[job_id]["logs"].append(log_line)
+    
+    if not script_path.exists():
+        rpa_jobs[job_id]["status"] = "failed"
+        rpa_jobs[job_id]["error"] = f"Script no encontrado: {script_path}"
+        rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        log_message(f"ERROR: Script no encontrado: {script_path}")
+        return
+    
+    try:
+        # Construir comando
+        cmd = [
+            "python3", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}",
+            "--use-db"  # Usar credenciales de BD
+        ]
+        
+        # Siempre headless en Docker
+        is_docker = os.path.exists('/.dockerenv') or os.getenv('DOCKER_CONTAINER', False)
+        if headless or is_docker:
+            cmd.append("--headless")
+            log_message("Modo: HEADLESS")
+        else:
+            log_message("Modo: VISUAL")
+        
+        # Ejecutar
+        rpa_jobs[job_id]["status"] = "running"
+        rpa_jobs[job_id]["started_at"] = datetime.now().isoformat()
+        rpa_jobs[job_id]["log_file"] = str(log_file)
+        rpa_jobs[job_id]["seguro"] = "CHUBB"
+        rpa_jobs[job_id]["tipo"] = "piezas"
+        log_message(f"Job iniciado: {job_id}")
+        log_message(f"Comando: {' '.join(cmd)}")
+        
+        # Ejecutar con Popen para capturar output en tiempo real
+        process = subprocess.Popen(
+            cmd,
+            cwd=str(backend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            bufsize=1
+        )
+        
+        # Capturar output
+        full_output = []
+        try:
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    full_output.append(line)
+                    log_message(f"RPA: {line}")
+                    # Mantener solo últimas 100 líneas en memoria
+                    if len(rpa_jobs[job_id]["logs"]) > 100:
+                        rpa_jobs[job_id]["logs"] = rpa_jobs[job_id]["logs"][-100:]
+        except Exception as e:
+            log_message(f"Error leyendo output: {e}")
+        
+        # Esperar proceso
+        try:
+            process.wait(timeout=3600)  # 1 hora timeout (muchos expedientes)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            rpa_jobs[job_id]["status"] = "failed"
+            rpa_jobs[job_id]["error"] = "Timeout: El proceso tardó más de 1 hora"
+            log_message("ERROR: Timeout de 1 hora")
+            rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+            return
+        
+        # Verificar resultado
+        if process.returncode == 0:
+            rpa_jobs[job_id]["status"] = "completed"
+            rpa_jobs[job_id]["message"] = "Extracción de piezas CHUBB completada"
+            log_message("✓ Proceso completado exitosamente")
+        else:
+            rpa_jobs[job_id]["status"] = "failed"
+            rpa_jobs[job_id]["error"] = f"Error en ejecución (código {process.returncode})"
+            log_message(f"✗ Error en ejecución (código {process.returncode})")
+        
+        rpa_jobs[job_id]["output"] = "\n".join(full_output)
+        
+    except Exception as e:
+        rpa_jobs[job_id]["status"] = "failed"
+        rpa_jobs[job_id]["error"] = str(e)
+        log_message(f"ERROR: {e}")
+    
+    rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+
+
+@router.post("/chubb/piezas", response_model=RPAResponse)
+def extract_piezas_chubb(
+    request: ChubbPiezasExtractionRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Ejecuta el RPA para extraer piezas de expedientes CHUBB autorizados.
+    
+    Este endpoint:
+    1. Obtiene los expedientes CHUBB con estado "Autorizado" y estatus_audatrace vacío
+    2. Por cada expediente, navega a Inpart -> Estatus de Piezas
+    3. Extrae la tabla de piezas con todos sus datos
+    4. Guarda las piezas en la tabla chubb_piezas
+    
+    El proceso se ejecuta en background. Usa el endpoint /status/{job_id} para consultar progreso.
+    """
+    import uuid
+    
+    job_id = str(uuid.uuid4())
+    
+    # Crear entrada inicial
+    rpa_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Extracción de piezas de CHUBB encolada",
+        "started_at": None,
+        "completed_at": None,
+        "output": None,
+        "error": None,
+        "logs": [],
+        "seguro": "CHUBB",
+        "tipo": "piezas"
+    }
+    
+    # Ejecutar en background
+    background_tasks.add_task(
+        run_chubb_piezas_extraction,
+        job_id=job_id,
+        headless=request.headless,
+        max_expedientes=request.max_expedientes
+    )
+    
+    return RPAResponse(
+        job_id=job_id,
+        status="queued",
+        message="Extracción de piezas de CHUBB encolada. Usa /status/{job_id} para consultar progreso.",
+        started_at=None,
+        completed_at=None,
+        output=None,
+        error=None
+    )

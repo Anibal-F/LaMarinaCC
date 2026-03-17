@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Sidebar from '../../components/Sidebar.jsx';
 import AppHeader from '../../components/AppHeader.jsx';
 import QualitasPiezasExtractor from '../../components/QualitasPiezasExtractor.jsx';
+import ChubbPiezasExtractor from '../../components/ChubbPiezasExtractor.jsx';
 import { getSession } from '../../utils/auth.js';
 
 // URL base de la API
@@ -875,9 +876,11 @@ export default function BitacoraPiezas() {
                 </button>
                 <button
                   onClick={() => setFuenteActiva('Chubb')}
-                  disabled
-                  className="flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold text-slate-600 cursor-not-allowed"
-                  title="Próximamente"
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+                    fuenteActiva === 'Chubb'
+                      ? 'bg-green-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
                   <img src="/assets/CHUBB_profile.jpg" alt="CHUBB" className="w-4 h-4 rounded object-cover" />
                   CHUBB
@@ -893,6 +896,17 @@ export default function BitacoraPiezas() {
                   Importar desde Qualitas
                 </h3>
                 <QualitasPiezasExtractor onExtractionComplete={fetchPiezas} />
+              </div>
+            )}
+
+            {/* Extracción automática de CHUBB */}
+            {fuenteActiva === 'Chubb' && (
+              <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
+                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-green-500">cloud_download</span>
+                  Importar desde CHUBB
+                </h3>
+                <ChubbPiezasExtractor onExtractionComplete={fetchPiezas} />
               </div>
             )}
 

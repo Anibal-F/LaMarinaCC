@@ -1,0 +1,708 @@
+"""
+RPA para extraer información de piezas (Inpart) de expedientes CHUBB.
+
+Este módulo extrae el estatus de piezas de los expedientes autorizados
+que no tengan información de AudaTrace.
+"""
+
+import argparse
+import asyncio
+import json
+import os
+import re
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Any, Optional
+from playwright.async_api import async_playwright, Page, Browser, TimeoutError
+
+# Agregar el backend al path para importar el módulo de DB
+import sys
+backend_dir = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(backend_dir))
+
+from app.rpa.credentials_helper import get_chubb_credentials
+from app.rpa.stealth import Stealth
+
+# Configuración de timeouts
+NAVIGATION_TIMEOUT = 30000  # 30 segundos
+ELEMENT_TIMEOUT = 10000     # 10 segundos
+
+
+async def get_expedientes_pendientes() -> List[Dict[str, Any]]:
+    """
+    Obtiene de la base de datos los expedientes CHUBB autorizados
+    con Estatus AudaTrace vacío o NULL.
+    """
+    from app.core.db import get_connection
+    
+    try:
+        with get_connection() as conn:
+            rows = conn.execute("""
+                SELECT DISTINCT ON (num_expediente) 
+                    id,
+                    num_expediente,
+                    tipo_vehiculo,
+                    estado,
+                    placas,
+                    fecha_extraccion
+                FROM chubb_expedientes
+                WHERE estado = 'Autorizado'
+                  AND (estatus_audatrace IS NULL OR estatus_audatrace = '')
+                ORDER BY num_expediente, fecha_extraccion DESC
+                LIMIT 50
+            """).fetchall()
+            
+            return [
+                {
+                    'id': row[0],
+                    'num_expediente': row[1],
+                    'tipo_vehiculo': row[2],
+                    'estado': row[3],
+                    'placas': row[4],
+                    'fecha_extraccion': row[5]
+                }
+                for row in rows
+            ]
+    except Exception as e:
+        print(f"[DB] Error obteniendo expedientes: {e}")
+        return []
+
+
+async def do_login(page: Page, use_db: bool = True) -> bool:
+    """
+    Realiza el login en CHUBB/Audatex.
+    Copiado de chubb_full_workflow.py
+    """
+    try:
+        print("[Login] Navegando a CHUBB/Audatex...")
+        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/', 
+                       timeout=NAVIGATION_TIMEOUT, wait_until='networkidle')
+        
+        # Cargar credenciales
+        if use_db:
+            creds = get_chubb_credentials()
+            if creds:
+                os.environ['CHUBB_USER'] = creds['usuario']
+                os.environ['CHUBB_PASSWORD'] = creds['password']
+                print(f"[Login] Usando credenciales de DB: {creds['usuario']}")
+            else:
+                print("[Login] ⚠ No se encontraron credenciales en DB, usando .env")
+        
+        user = os.getenv('CHUBB_USER', '')
+        password = os.getenv('CHUBB_PASSWORD', '')
+        
+        if not user or not password:
+            print("[Login] ✗ No hay credenciales configuradas")
+            return False
+        
+        # Aceptar cookies
+        try:
+            cookie_btn = page.locator('#onetrust-accept-btn-handler')
+            if await cookie_btn.count() > 0:
+                await cookie_btn.click(timeout=5000)
+                print("[Login] ✓ Cookies aceptadas")
+        except:
+            pass
+        
+        # PASO 1: Ingresar usuario
+        await page.wait_for_selector('#UserName', timeout=ELEMENT_TIMEOUT)
+        await page.fill('#UserName', user)
+        print("[Login] ✓ Usuario ingresado")
+        
+        # Aceptar términos
+        terms = page.locator('#AcceptTerms')
+        if await terms.count() > 0:
+            await terms.check()
+            print("[Login] ✓ Términos aceptados")
+        
+        # Click en NEXT
+        await page.click('#continueButton')
+        await asyncio.sleep(2)
+        
+        # PASO 2: Ingresar contraseña
+        await page.wait_for_selector('#Password', timeout=ELEMENT_TIMEOUT)
+        await page.fill('#Password', password)
+        print("[Login] ✓ Contraseña ingresada")
+        
+        # Click en ACEPTAR
+        await page.click('#btnEnter')
+        await asyncio.sleep(5)
+        
+        print("[Login] ✓ Login exitoso")
+        return True
+        
+    except Exception as e:
+        print(f"[Login] ✗ Error: {e}")
+        return False
+
+
+async def handle_billing_modal(page: Page) -> bool:
+    """
+    Maneja el modal de volante informativo post-login.
+    Copiado de chubb_full_workflow.py
+    """
+    try:
+        print("[Billing] Verificando volante informativo...")
+        await asyncio.sleep(3)
+        
+        # Buscar botón "Al Corriente"
+        btn_al_corriente = page.locator('button:has-text("Al Corriente")')
+        if await btn_al_corriente.count() > 0 and await btn_al_corriente.is_visible():
+            await btn_al_corriente.click()
+            print("[Billing] ✓ Botón 'Al Corriente' clickeado")
+            await asyncio.sleep(2)
+            return True
+        
+        print("[Billing] No se detectó volante")
+        return False
+        
+    except Exception as e:
+        print(f"[Billing] Error: {e}")
+        return False
+
+
+async def navigate_to_mi_trabajo(page: Page) -> bool:
+    """Navega a la sección Mi Trabajo."""
+    try:
+        print("[Navigate] Navegando a Mi Trabajo...")
+        
+        # Click en MI TRABAJO
+        mi_trabajo = page.locator('#ui-id-3')
+        await mi_trabajo.click()
+        await asyncio.sleep(3)
+        
+        print("[Navigate] ✓ Click en Mi Trabajo")
+        return True
+        
+    except Exception as e:
+        print(f"[Navigate] Error: {e}")
+        return False
+
+
+async def apply_autorizado_filter(page: Page) -> bool:
+    """Aplica el filtro 'Autorizado' en Mi Trabajo."""
+    try:
+        print("[Filter] Aplicando filtro 'Autorizado'...")
+        
+        # Usar JavaScript para aplicar el filtro
+        result = await page.evaluate("""() => {
+            const li = document.querySelector('#73768ba0-9d2b-a10e-e044-002264e496dc');
+            if (li) {
+                li.click();
+                return {success: true, text: li.textContent.trim()};
+            }
+            return {success: false, error: 'Elemento no encontrado'};
+        }""")
+        
+        if result.get('success'):
+            print(f"[Filter] ✓ Filtro aplicado: {result.get('text')}")
+            await asyncio.sleep(3)
+            return True
+        else:
+            print(f"[Filter] ✗ Error: {result}")
+            return False
+            
+    except Exception as e:
+        print(f"[Filter] Error: {e}")
+        return False
+
+
+async def search_expediente(page: Page, num_expediente: str) -> bool:
+    """Busca un expediente específico en la tabla."""
+    try:
+        print(f"[Search] Buscando expediente: {num_expediente}")
+        
+        # Limpiar y llenar campo de búsqueda
+        search_input = page.locator('#searchCriteria')
+        await search_input.fill('')
+        await search_input.fill(num_expediente)
+        await asyncio.sleep(1)
+        
+        # Buscar botón Buscar
+        btn_buscar = page.locator('button:has-text("Buscar")').first
+        if await btn_buscar.count() > 0:
+            await btn_buscar.click()
+        else:
+            # Disparar evento de búsqueda
+            await search_input.press('Enter')
+        
+        await asyncio.sleep(3)
+        
+        # Verificar si se encontró el expediente
+        rows = await page.locator('#gridMyWorks tbody tr').count()
+        if rows > 0:
+            print(f"[Search] ✓ Expediente encontrado ({rows} filas)")
+            return True
+        else:
+            print(f"[Search] ✗ Expediente no encontrado")
+            return False
+            
+    except Exception as e:
+        print(f"[Search] Error: {e}")
+        return False
+
+
+async def open_expediente_details(page: Page) -> bool:
+    """Abre el expediente haciendo click en la lupa."""
+    try:
+        print("[Open] Abriendo detalle del expediente...")
+        
+        # Click en el icono de la lupa
+        lupa = page.locator('img.imageButtonGrid.buttonView').first
+        if await lupa.count() > 0:
+            await lupa.click()
+            await asyncio.sleep(3)
+            
+            # Manejar modal de confirmación "Sí"
+            try:
+                btn_si = page.locator('button:has-text("Si")').first
+                if await btn_si.count() > 0 and await btn_si.is_visible():
+                    await btn_si.click()
+                    print("[Open] ✓ Modal confirmación aceptado")
+                    await asyncio.sleep(3)
+            except:
+                pass
+            
+            return True
+        else:
+            print("[Open] ✗ No se encontró el botón de visualizar")
+            return False
+            
+    except Exception as e:
+        print(f"[Open] Error: {e}")
+        return False
+
+
+async def navigate_to_inpart(page: Page) -> bool:
+    """Navega a la pestaña Inpart."""
+    try:
+        print("[Inpart] Navegando a pestaña Inpart...")
+        
+        tab_inpart = page.locator('#tabAsmtInpartInt')
+        if await tab_inpart.count() > 0:
+            await tab_inpart.click()
+            await asyncio.sleep(3)
+            print("[Inpart] ✓ Tab Inpart seleccionado")
+            return True
+        else:
+            print("[Inpart] ✗ Tab Inpart no encontrado")
+            return False
+            
+    except Exception as e:
+        print(f"[Inpart] Error: {e}")
+        return False
+
+
+async def open_estatus_piezas(page: Page) -> bool:
+    """Abre el modal de Estatus de Piezas."""
+    try:
+        print("[Estatus] Abriendo Estatus de Piezas...")
+        
+        btn_estatus = page.locator('#btnViewStatus')
+        if await btn_estatus.count() > 0:
+            await btn_estatus.click()
+            await asyncio.sleep(3)
+            print("[Estatus] ✓ Modal de Estatus de Piezas abierto")
+            return True
+        else:
+            print("[Estatus] ✗ Botón Estatus de Piezas no encontrado")
+            return False
+            
+    except Exception as e:
+        print(f"[Estatus] Error: {e}")
+        return False
+
+
+async def extract_piezas_data(page: Page, num_expediente: str) -> List[Dict[str, Any]]:
+    """Extrae los datos de la tabla de piezas."""
+    piezas = []
+    
+    try:
+        print("[Extract] Extrayendo datos de piezas...")
+        
+        # Esperar a que la tabla esté visible
+        await page.wait_for_selector('#gridStatusOfParts tbody tr', timeout=10000)
+        
+        # Extraer datos de la tabla
+        rows_result = await page.evaluate("""() => {
+            const rows = document.querySelectorAll('#gridStatusOfParts tbody tr');
+            const data = [];
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 18) {
+                    data.push({
+                        proveedor: cells[0]?.textContent?.trim() || '',
+                        rfc_proveedor: cells[1]?.textContent?.trim() || '',
+                        estado_proveedor: cells[2]?.textContent?.trim() || '',
+                        descripcion: cells[3]?.textContent?.trim() || '',
+                        precio: cells[4]?.textContent?.trim() || '',
+                        estatus: cells[5]?.textContent?.trim() || '',
+                        num_cotizacion: cells[6]?.textContent?.trim() || '',
+                        num_orden: cells[7]?.textContent?.trim() || '',
+                        fecha_envio_inpart: cells[8]?.textContent?.trim() || '',
+                        fecha_pedido_generado: cells[9]?.textContent?.trim() || '',
+                        fecha_promesa_entrega: cells[10]?.textContent?.trim() || '',
+                        fecha_en_procesamiento: cells[11]?.textContent?.trim() || '',
+                        fecha_entregado: cells[12]?.textContent?.trim() || '',
+                        entregado_por: cells[13]?.textContent?.trim() || '',
+                        fecha_recibido: cells[14]?.textContent?.trim() || '',
+                        recibido_por: cells[15]?.textContent?.trim() || '',
+                        fecha_cancelado_devuelto: cells[16]?.textContent?.trim() || '',
+                        cancelado_devuelto_por: cells[17]?.textContent?.trim() || ''
+                    });
+                }
+            });
+            
+            return data;
+        }""")
+        
+        piezas = rows_result if rows_result else []
+        print(f"[Extract] ✓ {len(piezas)} piezas extraídas")
+        
+    except Exception as e:
+        print(f"[Extract] Error: {e}")
+    
+    return piezas
+
+
+async def close_expediente_and_return(page: Page) -> bool:
+    """Cierra el expediente y vuelve a la búsqueda."""
+    try:
+        print("[Close] Cerrando expediente...")
+        
+        # Click en botón Cerrar
+        btn_cerrar = page.locator('button:has-text("Cerrar")').first
+        if await btn_cerrar.count() > 0:
+            await btn_cerrar.click()
+            await asyncio.sleep(2)
+        
+        # Navegar a Buscar -> Expedientes
+        menu_buscar = page.locator('a.dropdown-toggle:has-text("Buscar")')
+        if await menu_buscar.count() > 0:
+            await menu_buscar.click()
+            await asyncio.sleep(1)
+            
+            # Click en Expedientes
+            link_expedientes = page.locator('a:has-text("Expedientes")')
+            if await link_expedientes.count() > 0:
+                await link_expedientes.click()
+                await asyncio.sleep(3)
+        
+        print("[Close] ✓ Vuelto a pantalla de búsqueda")
+        return True
+        
+    except Exception as e:
+        print(f"[Close] Error: {e}")
+        return False
+
+
+def parse_chubb_date(value):
+    """Convierte fecha de formato CHUBB español a datetime."""
+    if not value or value == '' or value == '-----' or value == '-':
+        return None
+    
+    import re
+    from datetime import datetime
+    
+    try:
+        value = value.strip()
+        
+        # Patrón para fechas en español: DD/MM/YYYY HH:MM:SS a. m./p. m.
+        pattern = r'(\d{2})/(\d{2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(a\.?\s*m\.?|p\.?\s*m\.?)'
+        match = re.match(pattern, value, re.IGNORECASE)
+        
+        if match:
+            day, month, year, hour, minute, second, ampm = match.groups()
+            hour = int(hour)
+            minute = int(minute)
+            second = int(second)
+            
+            # Convertir a formato 24 horas
+            ampm_clean = ampm.lower().replace('.', '').replace(' ', '')
+            if ampm_clean == 'pm' and hour != 12:
+                hour += 12
+            elif ampm_clean == 'am' and hour == 12:
+                hour = 0
+            
+            # Crear fecha en formato ISO
+            dt = datetime(int(year), int(month), int(day), hour, minute, second)
+            return dt.isoformat()
+        
+        return None
+    except Exception:
+        return None
+
+
+async def save_piezas_to_db(num_expediente: str, piezas: List[Dict[str, Any]], 
+                            fecha_extraccion: str) -> int:
+    """Guarda las piezas extraídas en la tabla bitacora_piezas."""
+    from app.core.db import get_connection
+    
+    if not piezas:
+        return 0
+    
+    count = 0
+    try:
+        with get_connection() as conn:
+            # Insertar piezas en bitacora_piezas
+            for pieza in piezas:
+                # Mapear estatus de CHUBB al formato de la bitácora
+                estatus_chubb = pieza.get('estatus', '')
+                estatus_map = {
+                    'Recibido': 'Recibido',
+                    'En Procesamiento': 'En Proceso',
+                    'Entregado': 'Entregado',
+                    'Cancelado': 'Cancelada',
+                    'Devuelto': 'Cancelada'
+                }
+                estatus = estatus_map.get(estatus_chubb, estatus_chubb)
+                
+                # Determinar tipo de registro basado en el estatus
+                tipo_registro = 'Proceso de Surtido' if estatus not in ['Cancelada', 'Devuelto'] else 'Reasignada/Cancelada'
+                
+                # Generar id_externo único
+                id_externo = f"CHUBB_{num_expediente}_{pieza.get('num_orden', count)}_{count}"
+                
+                # Fecha promesa
+                fecha_promesa = parse_chubb_date(pieza.get('fecha_promesa_entrega'))
+                
+                # Fecha de estatus (usar fecha_entregado, fecha_recibido o fecha_en_procesamiento)
+                fecha_estatus = None
+                if estatus == 'Recibido':
+                    fecha_estatus = parse_chubb_date(pieza.get('fecha_recibido'))
+                elif estatus == 'Entregado':
+                    fecha_estatus = parse_chubb_date(pieza.get('fecha_entregado'))
+                elif estatus == 'En Proceso':
+                    fecha_estatus = parse_chubb_date(pieza.get('fecha_en_procesamiento'))
+                
+                conn.execute("""
+                    INSERT INTO bitacora_piezas (
+                        nombre, origen, numero_parte, observaciones,
+                        numero_orden, numero_reporte,
+                        fecha_promesa, fecha_estatus, estatus,
+                        ubicacion, recibido, entregado, portal,
+                        fuente, tipo_registro, num_expediente, id_externo
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id_externo, fuente) DO UPDATE SET
+                        nombre = EXCLUDED.nombre,
+                        estatus = EXCLUDED.estatus,
+                        fecha_promesa = EXCLUDED.fecha_promesa,
+                        fecha_estatus = EXCLUDED.fecha_estatus,
+                        recibido = EXCLUDED.recibido,
+                        entregado = EXCLUDED.entregado,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    pieza.get('descripcion', 'Sin descripción')[:250],
+                    pieza.get('proveedor', 'CHUBB'),
+                    None,  # numero_parte (no viene en CHUBB)
+                    f"Cotización: {pieza.get('num_cotizacion', 'N/A')}",
+                    pieza.get('num_orden'),
+                    num_expediente,  # numero_reporte = num_expediente para CHUBB
+                    fecha_promesa,
+                    fecha_estatus,
+                    estatus,
+                    'ND',  # ubicación por defecto
+                    estatus == 'Recibido',
+                    estatus == 'Entregado',
+                    True,  # portal = true para CHUBB
+                    'CHUBB',
+                    tipo_registro,
+                    num_expediente,
+                    id_externo
+                ))
+                count += 1
+            
+            conn.commit()
+            
+            print(f"[DB] ✓ {count} piezas guardadas en bitacora_piezas")
+            
+    except Exception as e:
+        print(f"[DB] Error guardando piezas: {e}")
+        import traceback
+        print(f"[DB] Traceback: {traceback.format_exc()}")
+    
+    return count
+
+
+async def process_single_expediente(page: Page, expediente: Dict[str, Any], 
+                                    fecha_extraccion: str) -> Dict[str, Any]:
+    """Procesa un solo expediente extrayendo sus piezas."""
+    num_exp = expediente['num_expediente']
+    print(f"\n{'='*60}")
+    print(f"Procesando expediente: {num_exp}")
+    print(f"{'='*60}")
+    
+    result = {
+        'num_expediente': num_exp,
+        'success': False,
+        'piezas_count': 0,
+        'error': None
+    }
+    
+    try:
+        # 1. Buscar expediente
+        if not await search_expediente(page, num_exp):
+            result['error'] = 'Expediente no encontrado'
+            return result
+        
+        # 2. Abrir detalle
+        if not await open_expediente_details(page):
+            result['error'] = 'No se pudo abrir el expediente'
+            return result
+        
+        # 3. Navegar a Inpart
+        if not await navigate_to_inpart(page):
+            result['error'] = 'No se pudo navegar a Inpart'
+            # Cerrar y volver
+            await close_expediente_and_return(page)
+            return result
+        
+        # 4. Abrir Estatus de Piezas
+        if not await open_estatus_piezas(page):
+            result['error'] = 'No se pudo abrir Estatus de Piezas'
+            # Cerrar y volver
+            await close_expediente_and_return(page)
+            return result
+        
+        # 5. Extraer piezas
+        piezas = await extract_piezas_data(page, num_exp)
+        
+        # 6. Guardar en BD
+        count = await save_piezas_to_db(num_exp, piezas, fecha_extraccion)
+        
+        result['success'] = True
+        result['piezas_count'] = count
+        
+        # 7. Cerrar y volver
+        await close_expediente_and_return(page)
+        
+    except Exception as e:
+        result['error'] = str(e)
+        print(f"[Process] Error procesando {num_exp}: {e}")
+        # Intentar cerrar y volver
+        await close_expediente_and_return(page)
+    
+    return result
+
+
+async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
+    """Ejecuta la extracción completa de piezas."""
+    print("="*70)
+    print("RPA CHUBB - EXTRACCIÓN DE PIEZAS (INPART)")
+    print("="*70)
+    
+    # Obtener expedientes pendientes
+    print("\n[Init] Obteniendo expedientes pendientes...")
+    expedientes = await get_expedientes_pendientes()
+    
+    if not expedientes:
+        print("[Init] No hay expedientes pendientes para procesar")
+        return {
+            'success': True,
+            'message': 'No hay expedientes pendientes',
+            'processed': 0,
+            'errors': []
+        }
+    
+    print(f"[Init] {len(expedientes)} expedientes pendientes encontrados")
+    
+    fecha_extraccion = datetime.now().isoformat()
+    results = []
+    errors = []
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=headless,
+            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+        )
+        
+        context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+        page = await context.new_page()
+        
+        stealth = Stealth(navigator_languages_override=('es-MX', 'es'))
+        await stealth.apply_stealth_async(page)
+        
+        try:
+            # Login
+            if not await do_login(page, use_db=use_db):
+                raise RuntimeError("Login fallido")
+            
+            # Manejar modal post-login
+            await handle_billing_modal(page)
+            
+            # Navegar a Mi Trabajo y filtrar Autorizado
+            await navigate_to_mi_trabajo(page)
+            await apply_autorizado_filter(page)
+            
+            # Procesar cada expediente
+            for idx, expediente in enumerate(expedientes, 1):
+                print(f"\n[Progress] {idx}/{len(expedientes)}")
+                
+                result = await process_single_expediente(page, expediente, fecha_extraccion)
+                results.append(result)
+                
+                if result['error']:
+                    errors.append(f"{expediente['num_expediente']}: {result['error']}")
+                
+                # Pequeña pausa entre expedientes
+                await asyncio.sleep(2)
+            
+        except Exception as e:
+            print(f"\n[Error] {e}")
+            
+        finally:
+            # Logout
+            try:
+                await page.evaluate("LogOff()")
+                print("\n[Cleanup] Sesión cerrada")
+            except:
+                pass
+            
+            await browser.close()
+    
+    # Resumen
+    successful = sum(1 for r in results if r['success'])
+    total_piezas = sum(r['piezas_count'] for r in results)
+    
+    print("\n" + "="*70)
+    print("RESUMEN DE EXTRACCIÓN")
+    print("="*70)
+    print(f"Expedientes procesados: {len(results)}")
+    print(f"Exitosos: {successful}")
+    print(f"Errores: {len(errors)}")
+    print(f"Total piezas extraídas: {total_piezas}")
+    
+    if errors:
+        print("\nErrores:")
+        for error in errors:
+            print(f"  - {error}")
+    
+    return {
+        'success': True,
+        'expedientes_processed': len(results),
+        'successful': successful,
+        'errors': errors,
+        'total_piezas': total_piezas,
+        'results': results
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="RPA CHUBB - Extracción de Piezas (Inpart)")
+    parser.add_argument("--headless", action="store_true", help="Modo headless")
+    parser.add_argument("--use-db", action="store_true", default=True, 
+                       help="Usar credenciales desde la base de datos")
+    args = parser.parse_args()
+    
+    result = asyncio.run(run_piezas_extraction(
+        headless=args.headless,
+        use_db=args.use_db
+    ))
+    
+    print("\n[Done] Extracción completada")
+    print(f"Resultado: {json.dumps(result, indent=2, default=str)}")
+
+
+if __name__ == "__main__":
+    main()

@@ -882,16 +882,44 @@ async def set_page_size_to_100(page) -> bool:
             print("[Extract] ⚠ No se encontró el dropdown de registros por página")
             return False
         
-        # Seleccionar la opción 100
+        # Verificar valor actual
+        current_value = await page_size_select.input_value()
+        if current_value == '100':
+            print("[Extract] ✓ Ya está configurado a 100 registros por página")
+            return True
+        
+        # Seleccionar la opción 100 y disparar evento change para DataTables
         await page_size_select.select_option('100')
-        print("[Extract] ✓ Seleccionado 100 registros por página")
         
-        # Esperar a que la tabla se recargue con los nuevos datos
-        await asyncio.sleep(3)
+        # Disparar evento change para que DataTables detecte el cambio
+        await page.evaluate("""() => {
+            const select = document.querySelector('#ctrPageSize');
+            if (select) {
+                // Crear y disparar evento change
+                const event = new Event('change', { bubbles: true });
+                select.dispatchEvent(event);
+                console.log('[RPA] Evento change disparado');
+            }
+        }""")
         
-        # Esperar a que la tabla esté lista
-        await page.wait_for_selector('#gridMyWorks tbody tr', timeout=10000)
-        print("[Extract] ✓ Tabla actualizada con 100 registros")
+        print("[Extract] ✓ Seleccionado 100 registros por página, esperando recarga...")
+        
+        # Esperar a que la tabla se recargue (más tiempo por la recarga de DataTables)
+        await asyncio.sleep(5)
+        
+        # Esperar a que la tabla esté lista (puede que no haya filas si no hay registros)
+        try:
+            await page.wait_for_selector('#gridMyWorks tbody tr', timeout=15000)
+            print("[Extract] ✓ Tabla actualizada con nuevos registros")
+        except:
+            # Si no hay filas, verificar si la tabla existe (puede ser que no haya registros)
+            table_exists = await page.locator('#gridMyWorks').count() > 0
+            if table_exists:
+                print("[Extract] ✓ Tabla existe pero sin registros (0 filas)")
+            else:
+                print("[Extract] ⚠ Tabla no encontrada después del cambio")
+                return False
+        
         return True
         
     except Exception as e:
@@ -999,19 +1027,25 @@ async def extract_table_data(page) -> List[Dict[str, Any]]:
 async def has_next_page(page) -> bool:
     """Verifica si hay página siguiente disponible."""
     try:
-        # Buscar botón siguiente - verificar que NO tenga la clase 'paginate_button_disabled'
+        # Buscar botón siguiente
         next_btn = page.locator('a#table-rateRelations_next')
-        if await next_btn.count() == 0:
+        count = await next_btn.count()
+        
+        if count == 0:
+            print("[Extract] Debug - Botón siguiente NO encontrado")
             return False
         
-        # Verificar si tiene la clase disabled
+        # Verificar atributos
         class_attr = await next_btn.get_attribute('class') or ''
         is_disabled = 'paginate_button_disabled' in class_attr or 'disabled' in class_attr
-        
-        # También verificar si es visible
         is_visible = await next_btn.is_visible()
         
-        return is_visible and not is_disabled
+        print(f"[Extract] Debug - Botón siguiente: count={count}, visible={is_visible}, class='{class_attr}', disabled={is_disabled}")
+        
+        result = is_visible and not is_disabled
+        print(f"[Extract] Debug - Hay siguiente página: {result}")
+        return result
+        
     except Exception as e:
         print(f"[Extract] Error verificando siguiente página: {e}")
         return False

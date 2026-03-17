@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
+import SearchableSelect from "../../components/SearchableSelect.jsx";
 
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
@@ -111,6 +112,7 @@ function PackageModal({
   isOpen,
   mode,
   form,
+  providerOptions,
   onChange,
   onClose,
   onSave,
@@ -160,18 +162,14 @@ function PackageModal({
             <div className="grid gap-6 p-6 xl:grid-cols-[1.25fr_0.9fr]">
               <section className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-2">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Proveedor
-                    </span>
-                    <input
-                      type="text"
-                      value={form.proveedor}
-                      onChange={(event) => onChange("proveedor", event.target.value)}
-                      className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                      placeholder="Proveedor o paquetería"
-                    />
-                  </label>
+                  <SearchableSelect
+                    label="Proveedor"
+                    value={form.proveedor}
+                    onChange={(value) => onChange("proveedor", value)}
+                    options={providerOptions}
+                    placeholder="Selecciona un proveedor"
+                    emptyLabel="Sin proveedores disponibles"
+                  />
                   <label className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Reporte / Siniestro
@@ -363,6 +361,7 @@ function PackageModal({
 
 export default function PaquetesPiezas() {
   const [packages, setPackages] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -429,6 +428,35 @@ export default function PaquetesPiezas() {
   const totalPages = Math.max(1, Math.ceil(packages.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
   const pagedPackages = packages.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+  const providerOptions = useMemo(() => {
+    const options = new Set(providers);
+    if (form.proveedor?.trim()) {
+      options.add(form.proveedor.trim());
+    }
+    return Array.from(options);
+  }, [providers, form.proveedor]);
+
+  useEffect(() => {
+    const loadProviders = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/inventario/proveedores`);
+        if (!response.ok) {
+          throw new Error("No se pudo cargar el catálogo de proveedores.");
+        }
+        const payload = await response.json();
+        const providerNames = Array.isArray(payload)
+          ? payload
+              .map((item) => String(item?.nombre || "").trim())
+              .filter(Boolean)
+          : [];
+        setProviders(Array.from(new Set(providerNames)));
+      } catch (err) {
+        setError((prev) => prev || err.message || "No se pudo cargar el catálogo de proveedores.");
+      }
+    };
+
+    loadProviders();
+  }, []);
 
   const resetModal = () => {
     revokeDraftUrls(draftPhotos);
@@ -879,6 +907,7 @@ export default function PaquetesPiezas() {
         isOpen={modalOpen}
         mode={modalMode}
         form={form}
+        providerOptions={providerOptions}
         photos={draftPhotos}
         onChange={handleFormChange}
         onClose={closeModal}

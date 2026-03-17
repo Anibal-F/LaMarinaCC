@@ -1,79 +1,16 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 
-const INITIAL_PACKAGES = [
-  {
-    id: 1,
-    folio: "PKG-001",
-    arriboFecha: "2026-03-14",
-    arriboHora: "09:15",
-    proveedor: "Refacciones Selectas S.A.",
-    ot: "OT-4521",
-    reporte: "04251889452",
-    piezas: ["Fascia delantera", "Faro derecho", "Sensores de impacto"],
-    comentarios: "Revisar empaque del sensor derecho antes de liberar a almacén.",
-    estado: "Pendiente",
-    fotos: [
-      {
-        id: "pkg-1-a",
-        name: "paquete-fascia.jpg",
-        url: "https://images.unsplash.com/photo-1613214149922-f1809c99b414?auto=format&fit=crop&w=240&q=80",
-      },
-    ],
-  },
-  {
-    id: 2,
-    folio: "PKG-002",
-    arriboFecha: "2026-03-14",
-    arriboHora: "10:40",
-    proveedor: "Collision Parts Co.",
-    ot: "OT-4489",
-    reporte: "04251877100",
-    piezas: ["Parrilla central", "Emblema cromado"],
-    comentarios: "",
-    estado: "Pendiente",
-    fotos: [],
-  },
-  {
-    id: 3,
-    folio: "PKG-003",
-    arriboFecha: "2026-03-14",
-    arriboHora: "12:05",
-    proveedor: "AutoGlass Pro",
-    ot: "OT-4505",
-    reporte: "04251877681",
-    piezas: ["Parabrisas laminado", "Kit de sellador uretano"],
-    comentarios: "Paquete completo, pendiente validación dimensional.",
-    estado: "Demorado",
-    fotos: [
-      {
-        id: "pkg-3-a",
-        name: "parabrisas.jpg",
-        url: "https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&w=240&q=80",
-      },
-    ],
-  },
-  {
-    id: 4,
-    folio: "PKG-004",
-    arriboFecha: "2026-03-14",
-    arriboHora: "14:20",
-    proveedor: "Motores y Más",
-    ot: "OT-4530",
-    reporte: "04251878121",
-    piezas: ["Radiador", "Ventilador principal", "Mangueras"],
-    comentarios: "El radiador llegó con etiqueta parcial; documentado en evidencia.",
-    estado: "Recibido",
-    fotos: [
-      {
-        id: "pkg-4-a",
-        name: "radiador.jpg",
-        url: "https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?auto=format&fit=crop&w=240&q=80",
-      },
-    ],
-  },
-];
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
+    return envUrl.replace(/\/$/, "");
+  }
+  return "";
+};
+
+const API_BASE = getApiUrl();
 
 const EMPTY_FORM = {
   proveedor: "",
@@ -90,9 +27,10 @@ const STATUS_STYLES = {
   Demorado: "bg-alert-red/15 text-alert-red border-alert-red/30",
 };
 
-function formatArribo(fecha, hora) {
-  const date = new Date(`${fecha}T${hora}:00`);
-  if (Number.isNaN(date.getTime())) return `${fecha} ${hora}`;
+function formatArribo(dateTime) {
+  if (!dateTime) return "-";
+  const date = new Date(dateTime);
+  if (Number.isNaN(date.getTime())) return String(dateTime);
   return date.toLocaleDateString("es-MX", {
     day: "2-digit",
     month: "short",
@@ -100,22 +38,70 @@ function formatArribo(fecha, hora) {
   });
 }
 
-function formatHour(hora) {
-  const date = new Date(`2026-01-01T${hora}:00`);
-  if (Number.isNaN(date.getTime())) return hora;
+function formatHour(dateTime) {
+  if (!dateTime) return "-";
+  const date = new Date(dateTime);
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleTimeString("es-MX", {
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
-function buildFolio(items) {
-  const maxValue = items.reduce((max, item) => {
-    const match = String(item.folio || "").match(/(\d+)$/);
-    const number = match ? Number(match[1]) : 0;
-    return Math.max(max, number);
-  }, 0);
-  return `PKG-${String(maxValue + 1).padStart(3, "0")}`;
+function splitPieces(piezasText) {
+  return String(piezasText || "")
+    .split(/\n|,/)
+    .map((pieza) => pieza.trim())
+    .filter(Boolean);
+}
+
+function buildMediaUrl(filePath) {
+  if (!filePath) return "";
+  if (/^https?:\/\//i.test(filePath)) return filePath;
+  return `${API_BASE}${filePath}`;
+}
+
+function mapPackageSummary(item) {
+  return {
+    id: item.id,
+    folio: item.folio,
+    proveedor: item.proveedor_nombre || "",
+    ot: item.folio_ot || "",
+    reporte: item.numero_reporte_siniestro || "",
+    estado: item.estatus || "Pendiente",
+    arribo: item.fecha_arribo,
+    piezasCount: item.piezas_count || 0,
+    mediaCount: item.media_count || 0,
+    portadaPath: item.portada_path || "",
+    comentarios: item.comentarios || "",
+  };
+}
+
+function mapMediaItem(item) {
+  return {
+    id: item.id,
+    name: item.original_name || `archivo-${item.id}`,
+    url: buildMediaUrl(item.file_path),
+    mediaType: item.media_type || "photo",
+    mimeType: item.mime_type || "",
+    persisted: true,
+  };
+}
+
+function buildPayload(form) {
+  const piezas = splitPieces(form.piezasText);
+  return {
+    folio_ot: form.ot.trim().toUpperCase(),
+    numero_reporte_siniestro: form.reporte.trim(),
+    proveedor_nombre: form.proveedor.trim(),
+    estatus: form.estado,
+    comentarios: form.comentarios.trim() || null,
+    relaciones: piezas.map((pieza) => ({
+      nombre_pieza: pieza,
+      cantidad: 1,
+      estatus: form.estado,
+    })),
+  };
 }
 
 function PackageModal({
@@ -129,6 +115,8 @@ function PackageModal({
   onCameraClick,
   onUploadClick,
   onRemovePhoto,
+  isSaving,
+  isLoading,
 }) {
   if (!isOpen) return null;
 
@@ -157,214 +145,239 @@ function PackageModal({
           </button>
         </div>
 
-        <div className="grid gap-6 p-6 xl:grid-cols-[1.25fr_0.9fr]">
-          <section className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  Proveedor
-                </span>
-                <input
-                  type="text"
-                  value={form.proveedor}
-                  onChange={(event) => onChange("proveedor", event.target.value)}
-                  className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                  placeholder="Proveedor o paquetería"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  OT Relacionada
-                </span>
-                <input
-                  type="text"
-                  value={form.ot}
-                  onChange={(event) => onChange("ot", event.target.value.toUpperCase())}
-                  className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                  placeholder="OT-4521"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  Reporte / Siniestro
-                </span>
-                <input
-                  type="text"
-                  value={form.reporte}
-                  onChange={(event) => onChange("reporte", event.target.value)}
-                  className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                  placeholder="04251889452"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  Estado
-                </span>
-                <select
-                  value={form.estado}
-                  onChange={(event) => onChange("estado", event.target.value)}
-                  className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                >
-                  <option value="Pendiente">Pendiente</option>
-                  <option value="Recibido">Recibido</option>
-                  <option value="Demorado">Demorado</option>
-                </select>
-              </label>
+        {isLoading ? (
+          <div className="flex min-h-[460px] items-center justify-center px-6 py-16">
+            <div className="text-center">
+              <span className="material-symbols-outlined text-5xl text-slate-500">progress_activity</span>
+              <p className="mt-3 text-sm text-slate-400">Cargando detalle del paquete...</p>
             </div>
-
-            <label className="space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                Piezas incluidas
-              </span>
-              <textarea
-                value={form.piezasText}
-                onChange={(event) => onChange("piezasText", event.target.value)}
-                className="min-h-[140px] w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                placeholder="Captura una pieza por línea o separa por comas."
-              />
-              <div className="flex flex-wrap gap-2">
-                {form.piezasText
-                  .split(/\n|,/)
-                  .map((pieza) => pieza.trim())
-                  .filter(Boolean)
-                  .slice(0, 12)
-                  .map((pieza) => (
-                    <span
-                      key={pieza}
-                      className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                    >
-                      {pieza}
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-6 p-6 xl:grid-cols-[1.25fr_0.9fr]">
+              <section className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      Proveedor
                     </span>
-                  ))}
-              </div>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                Comentarios
-              </span>
-              <textarea
-                value={form.comentarios}
-                onChange={(event) => onChange("comentarios", event.target.value)}
-                className="min-h-[160px] w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                placeholder="Observaciones del arribo, daños al empaque, discrepancias o notas de almacén."
-              />
-            </label>
-          </section>
-
-          <aside className="space-y-5">
-            <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    Evidencia
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">
-                    {photos.length} archivo{photos.length === 1 ? "" : "s"}
-                  </h3>
-                </div>
-                <div className="rounded-xl bg-primary/15 p-3 text-primary">
-                  <span className="material-symbols-outlined text-[28px]">photo_library</span>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <button
-                  type="button"
-                  onClick={onCameraClick}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-bold text-primary hover:bg-primary/15 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[20px]">photo_camera</span>
-                  Tomar foto
-                </button>
-                <button
-                  type="button"
-                  onClick={onUploadClick}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-border-dark bg-surface-dark px-4 py-3 text-sm font-bold text-slate-200 hover:bg-slate-700/70 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[20px]">upload_file</span>
-                  Subir archivo
-                </button>
-              </div>
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                {photos.length ? (
-                  photos.map((photo) => (
-                    <div
-                      key={photo.id}
-                      className="group relative overflow-hidden rounded-xl border border-border-dark bg-surface-dark"
+                    <input
+                      type="text"
+                      value={form.proveedor}
+                      onChange={(event) => onChange("proveedor", event.target.value)}
+                      className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                      placeholder="Proveedor o paquetería"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      OT Relacionada
+                    </span>
+                    <input
+                      type="text"
+                      value={form.ot}
+                      onChange={(event) => onChange("ot", event.target.value.toUpperCase())}
+                      className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                      placeholder="OT-4521"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      Reporte / Siniestro
+                    </span>
+                    <input
+                      type="text"
+                      value={form.reporte}
+                      onChange={(event) => onChange("reporte", event.target.value)}
+                      className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                      placeholder="04251889452"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      Estado
+                    </span>
+                    <select
+                      value={form.estado}
+                      onChange={(event) => onChange("estado", event.target.value)}
+                      className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
                     >
-                      <img src={photo.url} alt={photo.name} className="h-28 w-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => onRemovePhoto(photo.id)}
-                        className="absolute right-2 top-2 rounded-lg bg-black/60 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                        title="Eliminar evidencia"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                      </button>
-                      <div className="border-t border-border-dark px-3 py-2 text-[11px] text-slate-400 truncate">
-                        {photo.name}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="col-span-2 flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-border-dark bg-surface-dark/50 px-5 text-center">
-                    <span className="material-symbols-outlined text-5xl text-slate-600">inventory_2</span>
-                    <p className="mt-3 text-sm font-semibold text-slate-300">Sin evidencia capturada</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Toma o sube fotografías del paquete, etiquetas y contenido recibido.
-                    </p>
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Recibido">Recibido</option>
+                      <option value="Demorado">Demorado</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="space-y-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    Piezas incluidas
+                  </span>
+                  <textarea
+                    value={form.piezasText}
+                    onChange={(event) => onChange("piezasText", event.target.value)}
+                    className="min-h-[140px] w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                    placeholder="Captura una pieza por línea o separa por comas."
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {splitPieces(form.piezasText)
+                      .slice(0, 12)
+                      .map((pieza) => (
+                        <span
+                          key={pieza}
+                          className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                        >
+                          {pieza}
+                        </span>
+                      ))}
                   </div>
-                )}
-              </div>
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    Comentarios
+                  </span>
+                  <textarea
+                    value={form.comentarios}
+                    onChange={(event) => onChange("comentarios", event.target.value)}
+                    className="min-h-[160px] w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                    placeholder="Observaciones del arribo, daños al empaque, discrepancias o notas de almacén."
+                  />
+                </label>
+              </section>
+
+              <aside className="space-y-5">
+                <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                        Evidencia
+                      </p>
+                      <h3 className="mt-1 text-lg font-bold text-white">
+                        {photos.length} archivo{photos.length === 1 ? "" : "s"}
+                      </h3>
+                    </div>
+                    <div className="rounded-xl bg-primary/15 p-3 text-primary">
+                      <span className="material-symbols-outlined text-[28px]">photo_library</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                    <button
+                      type="button"
+                      onClick={onCameraClick}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-bold text-primary hover:bg-primary/15 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+                      Tomar foto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onUploadClick}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-border-dark bg-surface-dark px-4 py-3 text-sm font-bold text-slate-200 hover:bg-slate-700/70 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">upload_file</span>
+                      Subir archivo
+                    </button>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    {photos.length ? (
+                      photos.map((photo) => {
+                        const isImage =
+                          photo.mediaType === "photo" ||
+                          String(photo.mimeType || "").startsWith("image/");
+
+                        return (
+                          <div
+                            key={photo.id}
+                            className="group relative overflow-hidden rounded-xl border border-border-dark bg-surface-dark"
+                          >
+                            {isImage ? (
+                              <img src={photo.url} alt={photo.name} className="h-28 w-full object-cover" />
+                            ) : (
+                              <div className="flex h-28 w-full items-center justify-center bg-background-dark text-slate-500">
+                                <span className="material-symbols-outlined text-4xl">description</span>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => onRemovePhoto(photo.id)}
+                              className="absolute right-2 top-2 rounded-lg bg-black/60 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                              title="Eliminar evidencia"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                            </button>
+                            <div className="border-t border-border-dark px-3 py-2 text-[11px] text-slate-400 truncate">
+                              {photo.name}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="col-span-2 flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-border-dark bg-surface-dark/50 px-5 text-center">
+                        <span className="material-symbols-outlined text-5xl text-slate-600">inventory_2</span>
+                        <p className="mt-3 text-sm font-semibold text-slate-300">Sin evidencia capturada</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Toma o sube fotografías del paquete, etiquetas y contenido recibido.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-5">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    Recomendación operativa
+                  </p>
+                  <div className="mt-4 space-y-3 text-sm text-slate-400">
+                    <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
+                      <span className="material-symbols-outlined text-primary">qr_code_2</span>
+                      <span>Vincula el paquete con la OT antes de enviarlo a almacén o taller.</span>
+                    </div>
+                    <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
+                      <span className="material-symbols-outlined text-alert-amber">rule</span>
+                      <span>Documenta en comentarios cualquier faltante, daño o diferencia de proveedor.</span>
+                    </div>
+                  </div>
+                </div>
+              </aside>
             </div>
 
-            <div className="rounded-2xl border border-border-dark bg-background-dark/70 p-5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                Recomendación operativa
-              </p>
-              <div className="mt-4 space-y-3 text-sm text-slate-400">
-                <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
-                  <span className="material-symbols-outlined text-primary">qr_code_2</span>
-                  <span>Vincula el paquete con la OT antes de enviarlo a almacén o taller.</span>
-                </div>
-                <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
-                  <span className="material-symbols-outlined text-alert-amber">rule</span>
-                  <span>Documenta en comentarios cualquier faltante, daño o diferencia de proveedor.</span>
-                </div>
-              </div>
+            <div className="flex items-center justify-end gap-3 border-t border-border-dark px-6 py-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-border-dark px-5 py-2.5 text-sm font-semibold text-slate-300 hover:bg-background-dark transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={isSaving}
+                className="rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+              >
+                {isSaving ? "Guardando..." : mode === "create" ? "Guardar paquete" : "Guardar cambios"}
+              </button>
             </div>
-          </aside>
-        </div>
-
-        <div className="flex items-center justify-end gap-3 border-t border-border-dark px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-border-dark px-5 py-2.5 text-sm font-semibold text-slate-300 hover:bg-background-dark transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white hover:bg-primary/90 transition-colors"
-          >
-            {mode === "create" ? "Guardar paquete" : "Guardar cambios"}
-          </button>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 export default function PaquetesPiezas() {
-  const [packages, setPackages] = useState(INITIAL_PACKAGES);
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 8;
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
   const [modalMode, setModalMode] = useState("create");
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -372,59 +385,112 @@ export default function PaquetesPiezas() {
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
+  const revokeDraftUrls = (photos) => {
+    photos.forEach((photo) => {
+      if (photo.persisted || !photo.url?.startsWith("blob:")) return;
+      try {
+        URL.revokeObjectURL(photo.url);
+      } catch {
+        // noop
+      }
+    });
+  };
+
+  const loadPackages = async (searchValue = search) => {
+    try {
+      setLoading(true);
+      setError("");
+      const params = new URLSearchParams({ limit: "200", offset: "0" });
+      if (searchValue.trim()) params.set("search", searchValue.trim());
+
+      const response = await fetch(`${API_BASE}/inventario/paquetes?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los paquetes.");
+      }
+
+      const payload = await response.json();
+      setPackages(Array.isArray(payload) ? payload.map(mapPackageSummary) : []);
+    } catch (err) {
+      setError(err.message || "No se pudieron cargar los paquetes.");
+      setPackages([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setPage(1);
+      loadPackages(search);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [search]);
+
   const metrics = useMemo(() => {
     const pendientes = packages.filter((item) => item.estado === "Pendiente").length;
     const demoradas = packages.filter((item) => item.estado === "Demorado").length;
     return { pendientes, demoradas };
   }, [packages]);
 
-  const filteredPackages = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return packages;
-    return packages.filter((item) => {
-      const haystack = [
-        item.folio,
-        item.proveedor,
-        item.ot,
-        item.reporte,
-        item.comentarios,
-        ...item.piezas,
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(term);
-    });
-  }, [packages, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredPackages.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(packages.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
-  const pagedPackages = filteredPackages.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+  const pagedPackages = packages.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
 
   const resetModal = () => {
+    revokeDraftUrls(draftPhotos);
     setModalMode("create");
     setActiveId(null);
     setForm(EMPTY_FORM);
     setDraftPhotos([]);
+    setModalLoading(false);
+  };
+
+  const hydrateModalFromDetail = (detail, mode) => {
+    setModalMode(mode);
+    setActiveId(detail?.id || null);
+    setForm({
+      proveedor: detail?.proveedor_nombre || "",
+      ot: detail?.folio_ot || "",
+      reporte: detail?.numero_reporte_siniestro || "",
+      piezasText: (detail?.relaciones || []).map((item) => item.nombre_pieza).join("\n"),
+      comentarios: detail?.comentarios || "",
+      estado: detail?.estatus || "Pendiente",
+    });
+    setDraftPhotos((detail?.media || []).map(mapMediaItem));
   };
 
   const openCreateModal = () => {
     resetModal();
+    setModalMode("create");
     setModalOpen(true);
   };
 
-  const openEditModal = (pkg) => {
-    setModalMode("edit");
-    setActiveId(pkg.id);
-    setForm({
-      proveedor: pkg.proveedor,
-      ot: pkg.ot,
-      reporte: pkg.reporte,
-      piezasText: pkg.piezas.join("\n"),
-      comentarios: pkg.comentarios,
-      estado: pkg.estado,
-    });
-    setDraftPhotos(pkg.fotos);
-    setModalOpen(true);
+  const fetchPackageDetail = async (packageId) => {
+    const response = await fetch(`${API_BASE}/inventario/paquetes/${packageId}`);
+    if (!response.ok) {
+      throw new Error("No se pudo cargar el detalle del paquete.");
+    }
+    return response.json();
+  };
+
+  const openEditModal = async (pkg, triggerCamera = false) => {
+    try {
+      setError("");
+      setModalOpen(true);
+      setModalLoading(true);
+      const detail = await fetchPackageDetail(pkg.id);
+      hydrateModalFromDetail(detail, "edit");
+      if (triggerCamera) {
+        requestAnimationFrame(() => cameraInputRef.current?.click());
+      }
+    } catch (err) {
+      setError(err.message || "No se pudo abrir el paquete.");
+      setModalOpen(false);
+      resetModal();
+    } finally {
+      setModalLoading(false);
+    }
   };
 
   const closeModal = () => {
@@ -436,76 +502,152 @@ export default function PaquetesPiezas() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleFilesSelected = (files) => {
-    const nextPhotos = Array.from(files || []).map((file) => ({
-      id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name,
-      url: URL.createObjectURL(file),
-    }));
-    setDraftPhotos((prev) => [...prev, ...nextPhotos]);
+  const uploadFilesToPackage = async (packageId, files) => {
+    const uploaded = [];
+
+    for (const file of Array.from(files || [])) {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`${API_BASE}/inventario/paquetes/${packageId}/media?media_type=photo`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`No se pudo subir ${file.name}.`);
+      }
+
+      const payload = await response.json();
+      uploaded.push(mapMediaItem(payload));
+    }
+
+    return uploaded;
   };
 
-  const handleSave = () => {
-    const piezas = form.piezasText
-      .split(/\n|,/)
-      .map((pieza) => pieza.trim())
-      .filter(Boolean);
+  const handleFilesSelected = async (files) => {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+
+    try {
+      setError("");
+
+      if (modalMode === "edit" && activeId) {
+        const uploaded = await uploadFilesToPackage(activeId, selectedFiles);
+        setDraftPhotos((prev) => [...prev, ...uploaded]);
+        await loadPackages(search);
+        return;
+      }
+
+      const nextPhotos = selectedFiles.map((file) => ({
+        id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name,
+        url: URL.createObjectURL(file),
+        file,
+        mediaType: "photo",
+        mimeType: file.type,
+        persisted: false,
+      }));
+      setDraftPhotos((prev) => [...prev, ...nextPhotos]);
+    } catch (err) {
+      setError(err.message || "No se pudieron cargar los archivos.");
+    }
+  };
+
+  const handleSave = async () => {
+    const piezas = splitPieces(form.piezasText);
 
     if (!form.ot.trim() || !form.reporte.trim() || !form.proveedor.trim() || !piezas.length) {
       window.alert("Completa proveedor, OT, reporte y al menos una pieza.");
       return;
     }
 
-    if (modalMode === "create") {
-      const newPackage = {
-        id: Date.now(),
-        folio: buildFolio(packages),
-        arriboFecha: new Date().toISOString().slice(0, 10),
-        arriboHora: new Date().toLocaleTimeString("es-MX", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }),
-        proveedor: form.proveedor.trim(),
-        ot: form.ot.trim().toUpperCase(),
-        reporte: form.reporte.trim(),
-        piezas,
-        comentarios: form.comentarios.trim(),
-        estado: form.estado,
-        fotos: draftPhotos,
-      };
-      setPackages((prev) => [newPackage, ...prev]);
-      setPage(1);
-    } else {
-      setPackages((prev) =>
-        prev.map((item) =>
-          item.id === activeId
-            ? {
-                ...item,
-                proveedor: form.proveedor.trim(),
-                ot: form.ot.trim().toUpperCase(),
-                reporte: form.reporte.trim(),
-                piezas,
-                comentarios: form.comentarios.trim(),
-                estado: form.estado,
-                fotos: draftPhotos,
-              }
-            : item
-        )
-      );
-    }
+    try {
+      setSaving(true);
+      setError("");
+      const payload = buildPayload(form);
+      const endpoint =
+        modalMode === "create"
+          ? `${API_BASE}/inventario/paquetes`
+          : `${API_BASE}/inventario/paquetes/${activeId}`;
 
-    closeModal();
+      const response = await fetch(endpoint, {
+        method: modalMode === "create" ? "POST" : "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(modalMode === "create" ? "No se pudo guardar el paquete." : "No se pudo actualizar el paquete.");
+      }
+
+      const savedPackage = await response.json();
+      const pendingPhotos = draftPhotos.filter((photo) => !photo.persisted && photo.file);
+
+      if (pendingPhotos.length) {
+        await uploadFilesToPackage(
+          savedPackage.id,
+          pendingPhotos.map((photo) => photo.file)
+        );
+      }
+
+      await loadPackages(search);
+      closeModal();
+      setPage(1);
+    } catch (err) {
+      setError(err.message || "No se pudo guardar el paquete.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = (pkg) => {
+  const handleDelete = async (pkg) => {
     const confirmed = window.confirm(`Eliminar ${pkg.folio} y su evidencia asociada?`);
     if (!confirmed) return;
-    setPackages((prev) => prev.filter((item) => item.id !== pkg.id));
+
+    try {
+      setError("");
+      const response = await fetch(`${API_BASE}/inventario/paquetes/${pkg.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo eliminar el paquete.");
+      }
+
+      await loadPackages(search);
+    } catch (err) {
+      setError(err.message || "No se pudo eliminar el paquete.");
+    }
   };
 
-  const removeDraftPhoto = (photoId) => {
-    setDraftPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+  const removeDraftPhoto = async (photoId) => {
+    const targetPhoto = draftPhotos.find((photo) => photo.id === photoId);
+    if (!targetPhoto) return;
+
+    if (!targetPhoto.persisted) {
+      revokeDraftUrls([targetPhoto]);
+      setDraftPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+      return;
+    }
+
+    try {
+      setError("");
+      const response = await fetch(`${API_BASE}/inventario/paquetes/media/${photoId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo eliminar la evidencia.");
+      }
+
+      setDraftPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+      await loadPackages(search);
+    } catch (err) {
+      setError(err.message || "No se pudo eliminar la evidencia.");
+    }
   };
 
   return (
@@ -563,6 +705,12 @@ export default function PaquetesPiezas() {
               </div>
             </section>
 
+            {error ? (
+              <section className="rounded-2xl border border-alert-red/30 bg-alert-red/10 px-4 py-3 text-sm text-alert-red">
+                {error}
+              </section>
+            ) : null}
+
             <section className="overflow-hidden rounded-2xl border border-border-dark bg-surface-dark shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="min-w-[1100px] w-full text-left">
@@ -579,7 +727,7 @@ export default function PaquetesPiezas() {
                       ].map((label) => (
                         <th
                           key={label}
-                          className="px-4 py-4 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
+                          className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
                         >
                           {label}
                         </th>
@@ -587,21 +735,30 @@ export default function PaquetesPiezas() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-dark">
-                    {pagedPackages.length ? (
+                    {loading ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-14 text-center">
+                          <div className="flex flex-col items-center gap-3 text-slate-500">
+                            <span className="material-symbols-outlined text-5xl">progress_activity</span>
+                            <p className="text-base font-semibold text-slate-300">Cargando paquetes...</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : pagedPackages.length ? (
                       pagedPackages.map((pkg) => (
                         <tr key={pkg.id} className="transition-colors hover:bg-white/5">
                           <td className="px-4 py-4 text-sm font-bold text-primary">{pkg.folio}</td>
                           <td className="px-4 py-4 text-sm text-slate-300">
-                            <div className="font-semibold">{formatArribo(pkg.arriboFecha, pkg.arriboHora)}</div>
-                            <div className="text-xs italic text-slate-500">{formatHour(pkg.arriboHora)}</div>
+                            <div className="font-semibold">{formatArribo(pkg.arribo)}</div>
+                            <div className="text-xs italic text-slate-500">{formatHour(pkg.arribo)}</div>
                           </td>
-                          <td className="px-4 py-4 text-sm font-medium text-slate-200">{pkg.proveedor}</td>
+                          <td className="px-4 py-4 text-sm font-medium text-slate-200">{pkg.proveedor || "-"}</td>
                           <td className="px-4 py-4">
                             <span className="inline-flex rounded-lg bg-background-dark px-3 py-1.5 text-xs font-bold text-white border border-border-dark">
-                              {pkg.ot}
+                              {pkg.ot || "-"}
                             </span>
                           </td>
-                          <td className="px-4 py-4 text-sm text-slate-300">{pkg.reporte}</td>
+                          <td className="px-4 py-4 text-sm text-slate-300">{pkg.reporte || "-"}</td>
                           <td className="px-4 py-4">
                             <span
                               className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${
@@ -615,10 +772,7 @@ export default function PaquetesPiezas() {
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  openEditModal(pkg);
-                                  requestAnimationFrame(() => cameraInputRef.current?.click());
-                                }}
+                                onClick={() => openEditModal(pkg, true)}
                                 className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-primary/15 hover:text-primary"
                                 title="Tomar foto"
                               >
@@ -664,7 +818,7 @@ export default function PaquetesPiezas() {
               <div className="flex flex-col gap-3 border-t border-border-dark bg-background-dark/20 px-4 py-4 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
                 <div>
                   Mostrando <span className="font-bold text-white">{pagedPackages.length}</span> de{" "}
-                  <span className="font-bold text-white">{filteredPackages.length}</span> paquetes registrados
+                  <span className="font-bold text-white">{packages.length}</span> paquetes registrados
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -712,7 +866,10 @@ export default function PaquetesPiezas() {
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={(event) => handleFilesSelected(event.target.files)}
+        onChange={(event) => {
+          handleFilesSelected(event.target.files);
+          event.target.value = "";
+        }}
       />
       <input
         ref={uploadInputRef}
@@ -720,7 +877,10 @@ export default function PaquetesPiezas() {
         accept="image/*"
         multiple
         className="hidden"
-        onChange={(event) => handleFilesSelected(event.target.files)}
+        onChange={(event) => {
+          handleFilesSelected(event.target.files);
+          event.target.value = "";
+        }}
       />
 
       <PackageModal
@@ -734,6 +894,8 @@ export default function PaquetesPiezas() {
         onCameraClick={() => cameraInputRef.current?.click()}
         onUploadClick={() => uploadInputRef.current?.click()}
         onRemovePhoto={removeDraftPhoto}
+        isSaving={saving}
+        isLoading={modalLoading}
       />
     </div>
   );

@@ -8,6 +8,18 @@ const getApiUrl = () => {
   return '';
 };
 
+// Formatear fecha a Mazatlán
+const formatMazatlanDate = (date) => {
+  if (!date) return 'Nunca';
+  return new Date(date).toLocaleString('es-MX', {
+    timeZone: 'America/Mazatlan',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 export default function QualitasPiezasExtractor({ onExtractionComplete }) {
   const [isExtracting, setIsExtracting] = useState(false);
   const [jobId, setJobId] = useState(null);
@@ -15,9 +27,38 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
   const [showLogs, setShowLogs] = useState(false);
   const [maxOrdenes, setMaxOrdenes] = useState('');
   const [resetCheckpoint, setResetCheckpoint] = useState(false);
+  const [lastExecution, setLastExecution] = useState(null);
   const logsEndRef = useRef(null);
   const logsContainerRef = useRef(null);
   const intervalRef = useRef(null);
+
+  // Cargar última ejecución al montar
+  useEffect(() => {
+    fetchLastExecution();
+  }, []);
+
+  // Consultar última ejecución del checkpoint
+  const fetchLastExecution = async () => {
+    try {
+      const response = await fetch(getApiUrl() + '/admin/rpa/qualitas/piezas/checkpoint');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.checkpoint && data.checkpoint.last_update) {
+          setLastExecution(new Date(data.checkpoint.last_update));
+        }
+      }
+    } catch (err) {
+      console.error('Error al consultar última ejecución:', err);
+    }
+  };
+
+  // Calcular si la ejecución es reciente (< 4 horas)
+  const isExecutionFresh = () => {
+    if (!lastExecution) return false;
+    const now = new Date();
+    const diffHours = (now - lastExecution) / (1000 * 60 * 60);
+    return diffHours < 4;
+  };
 
   // Auto-scroll logs DENTRO del contenedor (no de la página) y solo si está cerca del final
   useEffect(() => {
@@ -101,6 +142,8 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
             clearInterval(intervalRef.current);
             setIsExtracting(false);
             addLog('✓ Extracción completada exitosamente');
+            // Actualizar última ejecución
+            setLastExecution(new Date());
             if (onExtractionComplete) {
               onExtractionComplete();
             }
@@ -123,29 +166,42 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
 
   return (
     <div className="space-y-3">
-      {/* Controles */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <button
-          onClick={startExtraction}
-          disabled={isExtracting}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-            isExtracting
-              ? 'bg-slate-700 text-slate-400 cursor-wait'
-              : 'bg-blue-600 hover:bg-blue-500 text-white'
-          }`}
-        >
-          {isExtracting ? (
-            <>
-              <span className="material-symbols-outlined animate-spin">refresh</span>
-              <span>Extrayendo piezas...</span>
-            </>
-          ) : (
-            <>
-              <img src="/assets/Qualitas_profile.jpg" alt="Qualitas" className="w-4 h-4 rounded" />
-              <span>Extraer Piezas de Qualitas</span>
-            </>
+      {/* Header con última ejecución */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-4 flex-wrap">
+          <button
+            onClick={startExtraction}
+            disabled={isExtracting}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              isExtracting
+                ? 'bg-slate-700 text-slate-400 cursor-wait'
+                : 'bg-blue-600 hover:bg-blue-500 text-white'
+            }`}
+          >
+            {isExtracting ? (
+              <>
+                <span className="material-symbols-outlined animate-spin">refresh</span>
+                <span>Extrayendo piezas...</span>
+              </>
+            ) : (
+              <>
+                <img src="/assets/Qualitas_profile.jpg" alt="Qualitas" className="w-4 h-4 rounded" />
+                <span>Extraer Piezas de Qualitas</span>
+              </>
+            )}
+          </button>
+          
+          {/* Última ejecución */}
+          {lastExecution && (
+            <div className={`flex items-center gap-1 text-xs ${isExecutionFresh() ? 'text-alert-green' : 'text-alert-amber'}`}>
+              <span className="material-symbols-outlined text-sm">schedule</span>
+              <span>
+                Última: {formatMazatlanDate(lastExecution)}
+                {!isExecutionFresh() && ' (+' + Math.floor((new Date() - lastExecution) / (1000 * 60 * 60)) + 'h)'}
+              </span>
+            </div>
           )}
-        </button>
+        </div>
 
         {/* Input para máximo de órdenes */}
         <div className="flex items-center gap-2">

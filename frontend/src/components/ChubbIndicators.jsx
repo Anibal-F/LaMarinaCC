@@ -301,6 +301,22 @@ export default function ChubbIndicators({ onRefresh }) {
             </button>
           </div>
           
+          {/* Botón Ver Logs */}
+          {logs && !updating && (
+            <button
+              onClick={() => setShowLogs(!showLogs)}
+              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                showLogs 
+                  ? 'bg-purple-500/20 text-purple-400' 
+                  : 'bg-background-dark text-slate-400 hover:text-white border border-border-dark'
+              }`}
+              title="Ver logs de ejecución"
+            >
+              <span className="material-symbols-outlined text-sm">terminal</span>
+              <span>{showLogs ? 'Ocultar logs' : 'Ver logs'}</span>
+            </button>
+          )}
+          
           {/* Botón Actualizar */}
           <button
             onClick={handleRefresh}
@@ -355,23 +371,28 @@ export default function ChubbIndicators({ onRefresh }) {
             <span className="material-symbols-outlined text-alert-red">error</span>
             <span className="text-xs text-alert-red font-bold">{error}</span>
           </div>
-          
-          {logs && (
-            <div className="mt-2">
-              <button
-                onClick={() => setShowLogs(!showLogs)}
-                className="text-[10px] text-alert-red underline hover:no-underline"
-              >
-                {showLogs ? 'Ocultar logs' : 'Ver logs de debug'}
-              </button>
-              
-              {showLogs && (
-                <div className="mt-2 p-2 bg-black/50 rounded text-[9px] font-mono text-slate-300 overflow-auto max-h-48">
-                  <pre>{logs}</pre>
-                </div>
-              )}
+        </div>
+      )}
+      
+      {/* Logs Panel */}
+      {showLogs && logs && !updating && (
+        <div className="bg-slate-950 border border-purple-500/20 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 bg-purple-500/10 border-b border-purple-500/20">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-xs text-purple-400">terminal</span>
+              <span className="text-xs font-medium text-purple-400">Logs de ejecución</span>
             </div>
-          )}
+            <button
+              onClick={() => setShowLogs(false)}
+              className="text-slate-500 hover:text-slate-300 transition-colors"
+              title="Cerrar"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+          <div className="p-3 overflow-auto max-h-64">
+            <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed">{logs}</pre>
+          </div>
         </div>
       )}
 

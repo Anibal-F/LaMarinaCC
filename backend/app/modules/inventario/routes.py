@@ -174,6 +174,21 @@ class PaquetePiezaMedia(BaseModel):
     created_at: datetime
 
 
+class PaqueteReporteConflict(BaseModel):
+    id: int
+    folio: str
+    proveedor_nombre: str
+    estatus: str
+
+
+class PaqueteReporteValidation(BaseModel):
+    numero_reporte_siniestro: str
+    reporte_normalizado: Optional[str] = None
+    orden_admision_encontrada: bool
+    orden_admision_id: Optional[int] = None
+    paquete_existente: Optional[PaqueteReporteConflict] = None
+
+
 class PaquetePiezasBase(BaseModel):
     orden_admision_id: Optional[int] = None
     folio_ot: Optional[str] = None
@@ -427,6 +442,24 @@ def _normalize_paquete_status(value: Optional[str]) -> str:
     return str(value or "Generado").strip() or "Generado"
 
 
+def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]) -> Optional[dict[str, Any]]:
+    reporte = str(numero_reporte_siniestro or "").strip()
+    if not reporte:
+        return None
+
+    conn.row_factory = dict_row
+    return conn.execute(
+        """
+        SELECT id, reporte_siniestro
+        FROM orden_admision
+        WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) = LOWER(TRIM(%s))
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (reporte,),
+    ).fetchone()
+
+
 def _get_orden_admision_snapshot(conn, orden_admision_id: Optional[int]) -> Optional[dict[str, Any]]:
     if not orden_admision_id:
         return None
@@ -450,23 +483,49 @@ def _get_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]
     if not reporte:
         raise HTTPException(status_code=400, detail="numero_reporte_siniestro requerido")
 
-    conn.row_factory = dict_row
-    orden = conn.execute(
-        """
-        SELECT id, reporte_siniestro
-        FROM orden_admision
-        WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) = LOWER(TRIM(%s))
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (reporte,),
-    ).fetchone()
+    orden = _find_orden_admision_by_reporte(conn, reporte)
     if not orden:
         raise HTTPException(
             status_code=404,
             detail="No se encontró una orden de admisión para ese reporte/siniestro",
         )
     return orden
+
+
+def _find_paquete_by_reporte(
+    conn,
+    numero_reporte_siniestro: Optional[str],
+    exclude_paquete_id: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    reporte = str(numero_reporte_siniestro or "").strip()
+    if not reporte:
+        return None
+
+    conn.row_factory = dict_row
+    query = """
+        SELECT id, folio, proveedor_nombre, estatus
+        FROM paquetes_piezas
+        WHERE LOWER(TRIM(COALESCE(numero_reporte_siniestro, ''))) = LOWER(TRIM(%s))
+    """
+    params: list[Any] = [reporte]
+    if exclude_paquete_id is not None:
+        query += " AND id <> %s"
+        params.append(exclude_paquete_id)
+    query += " ORDER BY id DESC LIMIT 1"
+    return conn.execute(query, params).fetchone()
+
+
+def _ensure_unique_paquete_report(
+    conn,
+    numero_reporte_siniestro: Optional[str],
+    exclude_paquete_id: Optional[int] = None,
+) -> None:
+    existing = _find_paquete_by_reporte(conn, numero_reporte_siniestro, exclude_paquete_id=exclude_paquete_id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"El reporte/siniestro ya está asignado al paquete {existing.get('folio')}",
+        )
 
 
 def _ensure_paquete_exists(conn, paquete_id: int) -> dict[str, Any]:
@@ -1105,6 +1164,38 @@ def get_paquetes(
         return rows
 
 
+@router.get("/paquetes/validate-report", response_model=PaqueteReporteValidation)
+def validate_paquete_report(
+    numero_reporte_siniestro: str = Query(..., description="Reporte/siniestro a validar"),
+    exclude_paquete_id: Optional[int] = Query(None, description="Excluir paquete actual al editar"),
+):
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        ensure_paquetes_piezas_tables(conn)
+
+        reporte = str(numero_reporte_siniestro or "").strip()
+        orden = _find_orden_admision_by_reporte(conn, reporte)
+        normalized_report = str(orden.get("reporte_siniestro") or "").strip() if orden else reporte
+        existing = _find_paquete_by_reporte(conn, normalized_report, exclude_paquete_id=exclude_paquete_id)
+
+        return {
+            "numero_reporte_siniestro": reporte,
+            "reporte_normalizado": normalized_report or None,
+            "orden_admision_encontrada": bool(orden),
+            "orden_admision_id": orden.get("id") if orden else None,
+            "paquete_existente": (
+                {
+                    "id": existing["id"],
+                    "folio": existing["folio"],
+                    "proveedor_nombre": existing["proveedor_nombre"],
+                    "estatus": _normalize_paquete_status(existing.get("estatus")),
+                }
+                if existing
+                else None
+            ),
+        }
+
+
 @router.get("/paquetes/{paquete_id}", response_model=PaquetePiezasDetail)
 def get_paquete(paquete_id: int):
     with get_connection() as conn:
@@ -1124,6 +1215,7 @@ def create_paquete(payload: PaquetePiezasCreate):
 
         orden = _get_orden_admision_by_reporte(conn, payload.numero_reporte_siniestro)
         numero_reporte = str(orden.get("reporte_siniestro") or "").strip()
+        _ensure_unique_paquete_report(conn, numero_reporte)
 
         paquete = conn.execute(
             """
@@ -1176,6 +1268,9 @@ def update_paquete(paquete_id: int, payload: PaquetePiezasUpdate):
 
         if "estatus" in updates:
             updates["estatus"] = _normalize_paquete_status(updates["estatus"])
+
+        if "numero_reporte_siniestro" in updates and updates["numero_reporte_siniestro"]:
+            _ensure_unique_paquete_report(conn, updates["numero_reporte_siniestro"], exclude_paquete_id=paquete_id)
 
         query_updates: list[str] = []
         params: list[Any] = []

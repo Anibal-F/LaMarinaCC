@@ -114,6 +114,8 @@ function PackageModal({
   form,
   providerOptions,
   onAddProvider,
+  reportValidation,
+  isValidatingReport,
   onChange,
   onClose,
   onSave,
@@ -123,6 +125,7 @@ function PackageModal({
   onRemovePhoto,
   isSaving,
   isLoading,
+  saveDisabled,
 }) {
   if (!isOpen) return null;
 
@@ -184,9 +187,29 @@ function PackageModal({
                       className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
                       placeholder="04251889452"
                     />
-                    <p className="text-xs text-slate-500">
-                      Este dato vincula automáticamente el paquete con la orden de admisión.
-                    </p>
+                    {isValidatingReport ? (
+                      <p className="text-xs text-slate-500">Validando reporte/siniestro...</p>
+                    ) : null}
+                    {!isValidatingReport && reportValidation?.reportMissing ? (
+                      <p className="text-xs text-slate-500">
+                        Este dato vincula automáticamente el paquete con la orden de admisión.
+                      </p>
+                    ) : null}
+                    {!isValidatingReport && reportValidation?.reportProvided && reportValidation?.orderFound ? (
+                      <p className="text-xs text-alert-green">
+                        Orden de admisión encontrada para este reporte/siniestro.
+                      </p>
+                    ) : null}
+                    {!isValidatingReport && reportValidation?.reportProvided && !reportValidation?.orderFound ? (
+                      <p className="text-xs text-alert-red">
+                        No existe una orden de admisión con ese reporte/siniestro.
+                      </p>
+                    ) : null}
+                    {!isValidatingReport && reportValidation?.duplicatePackage ? (
+                      <p className="text-xs text-alert-amber">
+                        Este reporte/siniestro ya está asignado al paquete {reportValidation.duplicatePackage.folio}.
+                      </p>
+                    ) : null}
                   </label>
                   <label className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
@@ -349,7 +372,7 @@ function PackageModal({
               <button
                 type="button"
                 onClick={onSave}
-                disabled={isSaving}
+                disabled={isSaving || saveDisabled}
                 className="rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
                 {isSaving ? "Guardando..." : mode === "create" ? "Guardar paquete" : "Guardar cambios"}
@@ -377,6 +400,13 @@ export default function PaquetesPiezas() {
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [draftPhotos, setDraftPhotos] = useState([]);
+  const [reportValidation, setReportValidation] = useState({
+    reportMissing: true,
+    reportProvided: false,
+    orderFound: false,
+    duplicatePackage: null,
+  });
+  const [validatingReport, setValidatingReport] = useState(false);
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
@@ -468,6 +498,13 @@ export default function PaquetesPiezas() {
     setForm(EMPTY_FORM);
     setDraftPhotos([]);
     setModalLoading(false);
+    setReportValidation({
+      reportMissing: true,
+      reportProvided: false,
+      orderFound: false,
+      duplicatePackage: null,
+    });
+    setValidatingReport(false);
   };
 
   const hydrateModalFromDetail = (detail, mode) => {
@@ -482,6 +519,59 @@ export default function PaquetesPiezas() {
     });
     setDraftPhotos((detail?.media || []).map(mapMediaItem));
   };
+
+  useEffect(() => {
+    if (!modalOpen || modalLoading) return;
+
+    const report = String(form.reporte || "").trim();
+    if (!report) {
+      setValidatingReport(false);
+      setReportValidation({
+        reportMissing: true,
+        reportProvided: false,
+        orderFound: false,
+        duplicatePackage: null,
+      });
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setValidatingReport(true);
+        const params = new URLSearchParams({ numero_reporte_siniestro: report });
+        if (activeId) params.set("exclude_paquete_id", String(activeId));
+
+        const response = await fetch(`${API_BASE}/inventario/paquetes/validate-report?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error("No se pudo validar el reporte/siniestro.");
+        }
+
+        const payload = await response.json();
+        setReportValidation({
+          reportMissing: false,
+          reportProvided: true,
+          orderFound: Boolean(payload?.orden_admision_encontrada),
+          duplicatePackage: payload?.paquete_existente || null,
+        });
+      } catch (err) {
+        setReportValidation({
+          reportMissing: false,
+          reportProvided: true,
+          orderFound: false,
+          duplicatePackage: null,
+        });
+        setError((prev) => prev || err.message || "No se pudo validar el reporte/siniestro.");
+      } finally {
+        setValidatingReport(false);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [modalOpen, modalLoading, form.reporte, activeId]);
+
+  const reportHasBlockingIssue =
+    reportValidation.reportProvided &&
+    (!reportValidation.orderFound || Boolean(reportValidation.duplicatePackage));
 
   const openCreateModal = () => {
     resetModal();
@@ -615,6 +705,18 @@ export default function PaquetesPiezas() {
 
     if (!form.reporte.trim() || !form.proveedor.trim() || !piezas.length) {
       window.alert("Completa proveedor, reporte y al menos una pieza.");
+      return;
+    }
+    if (validatingReport) {
+      window.alert("Espera a que termine la validación del reporte/siniestro.");
+      return;
+    }
+    if (!reportValidation.orderFound) {
+      window.alert("El reporte/siniestro no existe en Orden de Admisión.");
+      return;
+    }
+    if (reportValidation.duplicatePackage) {
+      window.alert(`El reporte/siniestro ya está asignado al paquete ${reportValidation.duplicatePackage.folio}.`);
       return;
     }
 
@@ -945,6 +1047,8 @@ export default function PaquetesPiezas() {
         form={form}
         providerOptions={providerOptions}
         onAddProvider={handleAddProvider}
+        reportValidation={reportValidation}
+        isValidatingReport={validatingReport}
         photos={draftPhotos}
         onChange={handleFormChange}
         onClose={closeModal}
@@ -954,6 +1058,7 @@ export default function PaquetesPiezas() {
         onRemovePhoto={removeDraftPhoto}
         isSaving={saving}
         isLoading={modalLoading}
+        saveDisabled={validatingReport || reportHasBlockingIssue}
       />
     </div>
   );

@@ -392,31 +392,32 @@ def get_indicadores_history(limit: int = 30) -> List[Dict[str, Any]]:
 
 
 def get_latest_expedientes(limit: int = 500, estado: Optional[str] = None) -> list:
-    """Obtiene los últimos expedientes extraídos."""
+    """Obtiene los últimos expedientes extraídos (solo última extracción)."""
     ensure_tables_exists()
     
     with get_connection() as conn:
         conn.row_factory = dict_row
         
+        # Obtener la última fecha de extracción
+        latest = conn.execute("""
+            SELECT DISTINCT fecha_extraccion 
+            FROM chubb_expedientes 
+            ORDER BY fecha_extraccion DESC 
+            LIMIT 1
+        """).fetchone()
+        
+        if not latest:
+            return []
+        
+        # Siempre filtrar por última extracción, opcionalmente por estado
         if estado:
             rows = conn.execute("""
                 SELECT * FROM chubb_expedientes
-                WHERE estado = %s
-                ORDER BY fecha_extraccion DESC, fecha_creacion DESC NULLS LAST
+                WHERE fecha_extraccion = %s AND estado = %s
+                ORDER BY fecha_creacion DESC NULLS LAST
                 LIMIT %s
-            """, (estado, limit)).fetchall()
+            """, (latest['fecha_extraccion'], estado, limit)).fetchall()
         else:
-            # Obtener solo los de la última extracción
-            latest = conn.execute("""
-                SELECT DISTINCT fecha_extraccion 
-                FROM chubb_expedientes 
-                ORDER BY fecha_extraccion DESC 
-                LIMIT 1
-            """).fetchone()
-            
-            if not latest:
-                return []
-            
             rows = conn.execute("""
                 SELECT * FROM chubb_expedientes
                 WHERE fecha_extraccion = %s

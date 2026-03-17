@@ -139,6 +139,7 @@ class PaquetePiezaRelacionBase(BaseModel):
     nombre_pieza: str
     numero_parte: Optional[str] = None
     cantidad: int = 1
+    almacen: Optional[str] = None
     estatus: str = "Generado"
     observaciones: Optional[str] = None
 
@@ -152,6 +153,7 @@ class PaquetePiezaRelacionUpdate(BaseModel):
     nombre_pieza: Optional[str] = None
     numero_parte: Optional[str] = None
     cantidad: Optional[int] = None
+    almacen: Optional[str] = None
     estatus: Optional[str] = None
     observaciones: Optional[str] = None
 
@@ -193,6 +195,7 @@ class PaquetePiezaSuggestion(BaseModel):
     bitacora_pieza_id: int
     nombre_pieza: str
     numero_parte: Optional[str] = None
+    cantidad: int = 1
     proveedor_nombre: Optional[str] = None
     estatus: Optional[str] = None
 
@@ -333,11 +336,18 @@ def ensure_paquetes_piezas_tables(conn):
             nombre_pieza VARCHAR(255) NOT NULL,
             numero_parte VARCHAR(100),
             cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
+            almacen VARCHAR(50),
             estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
             observaciones TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas_relaciones
+        ADD COLUMN IF NOT EXISTS almacen VARCHAR(50)
         """
     )
     conn.execute(
@@ -554,15 +564,17 @@ def _get_bitacora_piezas_by_reporte(
     rows = conn.execute(
         """
         SELECT
-            bp.id AS bitacora_pieza_id,
+            MIN(bp.id)::int AS bitacora_pieza_id,
             bp.nombre AS nombre_pieza,
             bp.numero_parte,
-            bp.estatus,
-            p.nombre AS proveedor_nombre
+            COUNT(*)::int AS cantidad,
+            MAX(bp.estatus) AS estatus,
+            MAX(p.nombre) AS proveedor_nombre
         FROM bitacora_piezas bp
         LEFT JOIN proveedores p ON p.id = bp.proveedor_id
         WHERE LOWER(TRIM(COALESCE(bp.numero_reporte, ''))) = LOWER(TRIM(%s))
-        ORDER BY bp.id ASC
+        GROUP BY bp.nombre, bp.numero_parte
+        ORDER BY bp.nombre ASC, bp.numero_parte ASC
         """,
         (reporte,),
     ).fetchall()
@@ -596,6 +608,7 @@ def _list_paquete_relaciones(conn, paquete_id: int) -> List[dict[str, Any]]:
             nombre_pieza,
             numero_parte,
             cantidad,
+            almacen,
             estatus,
             observaciones,
             created_at,
@@ -679,10 +692,11 @@ def _insert_paquete_relaciones(conn, paquete_id: int, relaciones: List[PaquetePi
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                almacen,
                 estatus,
                 observaciones
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 paquete_id,
@@ -690,6 +704,7 @@ def _insert_paquete_relaciones(conn, paquete_id: int, relaciones: List[PaquetePi
                 relacion.nombre_pieza.strip(),
                 (relacion.numero_parte or "").strip() or None,
                 relacion.cantidad,
+                (relacion.almacen or "").strip() or None,
                 _normalize_paquete_status(relacion.estatus),
                 (relacion.observaciones or "").strip() or None,
             ),
@@ -1456,10 +1471,11 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                almacen,
                 estatus,
                 observaciones
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING
                 id,
                 paquete_id,
@@ -1467,6 +1483,7 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                almacen,
                 estatus,
                 observaciones,
                 created_at,
@@ -1478,6 +1495,7 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 payload.nombre_pieza.strip(),
                 (payload.numero_parte or "").strip() or None,
                 payload.cantidad,
+                (payload.almacen or "").strip() or None,
                 _normalize_paquete_status(payload.estatus),
                 (payload.observaciones or "").strip() or None,
             ),
@@ -1494,7 +1512,7 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
 
     query_updates: list[str] = []
     params: list[Any] = []
-    for field in ("bitacora_pieza_id", "nombre_pieza", "numero_parte", "cantidad", "estatus", "observaciones"):
+    for field in ("bitacora_pieza_id", "nombre_pieza", "numero_parte", "cantidad", "almacen", "estatus", "observaciones"):
         if field not in updates:
             continue
         value = updates[field]
@@ -1521,6 +1539,7 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                almacen,
                 estatus,
                 observaciones,
                 created_at,

@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS paquetes_piezas_relaciones (
     nombre_pieza VARCHAR(255) NOT NULL,
     numero_parte VARCHAR(100),
     cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
+    almacen VARCHAR(50),
     estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
     observaciones TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -94,6 +95,9 @@ ALTER TABLE paquetes_piezas
 
 ALTER TABLE paquetes_piezas_relaciones
     ALTER COLUMN estatus SET DEFAULT 'Generado';
+
+ALTER TABLE paquetes_piezas_relaciones
+    ADD COLUMN IF NOT EXISTS almacen VARCHAR(50);
 
 UPDATE paquetes_piezas
 SET estatus = CASE

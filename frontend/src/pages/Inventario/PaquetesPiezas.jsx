@@ -12,11 +12,52 @@ const getApiUrl = () => {
 };
 
 const API_BASE = getApiUrl();
+const ALMACEN_OPTIONS = ["Oficina", "1er Piso", "2do Piso"];
+
+function createPieceRow(overrides = {}) {
+  return {
+    rowId: overrides.rowId || `piece-${Math.random().toString(36).slice(2, 10)}`,
+    bitacoraPiezaId: overrides.bitacoraPiezaId || null,
+    descripcion: overrides.descripcion || "",
+    cantidad: overrides.cantidad ?? 1,
+    almacen: overrides.almacen || "",
+    numeroParte: overrides.numeroParte || "",
+  };
+}
+
+function normalizePieceRows(relaciones = []) {
+  const rows = Array.isArray(relaciones)
+    ? relaciones
+        .map((item) =>
+          createPieceRow({
+            bitacoraPiezaId: item?.bitacora_pieza_id || null,
+            descripcion: item?.nombre_pieza || "",
+            cantidad: item?.cantidad ?? 1,
+            almacen: item?.almacen || "",
+            numeroParte: item?.numero_parte || "",
+          })
+        )
+        .filter((item) => item.descripcion || item.numeroParte || item.almacen || item.cantidad)
+    : [];
+
+  return rows.length ? rows : [createPieceRow()];
+}
+
+function serializePieceRows(rows = []) {
+  return JSON.stringify(
+    rows.map((item) => ({
+      descripcion: String(item?.descripcion || "").trim(),
+      cantidad: Number(item?.cantidad || 0),
+      almacen: String(item?.almacen || "").trim(),
+      numeroParte: String(item?.numeroParte || "").trim(),
+    }))
+  );
+}
 
 const EMPTY_FORM = {
   proveedor: "",
   reporte: "",
-  piezasText: "",
+  piezas: [createPieceRow()],
   comentarios: "",
   estado: "Generado",
 };
@@ -53,13 +94,6 @@ function formatHour(dateTime) {
   });
 }
 
-function splitPieces(piezasText) {
-  return String(piezasText || "")
-    .split(/\n|,/)
-    .map((pieza) => pieza.trim())
-    .filter(Boolean);
-}
-
 function buildMediaUrl(filePath) {
   if (!filePath) return "";
   if (/^https?:\/\//i.test(filePath)) return filePath;
@@ -94,17 +128,23 @@ function mapMediaItem(item) {
 }
 
 function buildPayload(form) {
-  const piezas = splitPieces(form.piezasText);
+  const piezas = (form.piezas || [])
+    .map((pieza) => ({
+      bitacora_pieza_id: pieza.bitacoraPiezaId || null,
+      nombre_pieza: String(pieza.descripcion || "").trim(),
+      numero_parte: String(pieza.numeroParte || "").trim() || null,
+      cantidad: Math.max(1, Number(pieza.cantidad || 1)),
+      almacen: String(pieza.almacen || "").trim() || null,
+      estatus: form.estado,
+    }))
+    .filter((pieza) => pieza.nombre_pieza);
+
   return {
     numero_reporte_siniestro: form.reporte.trim(),
     proveedor_nombre: form.proveedor.trim(),
     estatus: form.estado,
     comentarios: form.comentarios.trim() || null,
-    relaciones: piezas.map((pieza) => ({
-      nombre_pieza: pieza,
-      cantidad: 1,
-      estatus: form.estado,
-    })),
+    relaciones: piezas,
   };
 }
 
@@ -118,6 +158,9 @@ function PackageModal({
   isValidatingReport,
   autofillInfo,
   onChange,
+  onPieceChange,
+  onAddPieceRow,
+  onRemovePieceRow,
   onClose,
   onSave,
   photos,
@@ -231,12 +274,83 @@ function PackageModal({
                   <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                     Piezas incluidas
                   </span>
-                  <textarea
-                    value={form.piezasText}
-                    onChange={(event) => onChange("piezasText", event.target.value)}
-                    className="min-h-[140px] w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                    placeholder="Captura una pieza por línea o separa por comas."
-                  />
+                  <div className="overflow-hidden rounded-xl border border-border-dark bg-background-dark">
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="min-w-full text-left">
+                        <thead className="border-b border-border-dark bg-surface-dark/70">
+                          <tr>
+                            {["No. Concepto", "Descripción", "Cantidad", "Almacén", "Acciones"].map((label) => (
+                              <th
+                                key={label}
+                                className="px-3 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400"
+                              >
+                                {label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-dark">
+                          {(form.piezas || []).map((pieza, index) => (
+                            <tr key={pieza.rowId}>
+                              <td className="px-3 py-3 text-sm font-semibold text-slate-300">{index + 1}</td>
+                              <td className="px-3 py-3">
+                                <input
+                                  type="text"
+                                  value={pieza.descripcion}
+                                  onChange={(event) => onPieceChange(pieza.rowId, "descripcion", event.target.value)}
+                                  className="w-full rounded-lg border border-border-dark bg-surface-dark px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                                  placeholder="Descripción de la pieza"
+                                />
+                              </td>
+                              <td className="px-3 py-3">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={pieza.cantidad}
+                                  onChange={(event) => onPieceChange(pieza.rowId, "cantidad", event.target.value)}
+                                  className="w-24 rounded-lg border border-border-dark bg-surface-dark px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                                />
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={pieza.almacen}
+                                  onChange={(event) => onPieceChange(pieza.rowId, "almacen", event.target.value)}
+                                  className="w-full rounded-lg border border-border-dark bg-surface-dark px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                                >
+                                  <option value="">Selecciona almacén</option>
+                                  {ALMACEN_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => onRemovePieceRow(pieza.rowId)}
+                                  className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-alert-red/15 hover:text-alert-red"
+                                  title="Eliminar fila"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="border-t border-border-dark px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={onAddPieceRow}
+                        className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-primary transition-colors hover:bg-primary/15"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">add</span>
+                        Agregar fila
+                      </button>
+                    </div>
+                  </div>
                   {autofillInfo?.fetched ? (
                     autofillInfo.count ? (
                       <p className="text-xs text-primary">
@@ -248,18 +362,6 @@ function PackageModal({
                       </p>
                     )
                   ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    {splitPieces(form.piezasText)
-                      .slice(0, 12)
-                      .map((pieza) => (
-                        <span
-                          key={pieza}
-                          className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                        >
-                          {pieza}
-                        </span>
-                      ))}
-                  </div>
                 </label>
 
                 <label className="space-y-2">
@@ -414,7 +516,7 @@ export default function PaquetesPiezas() {
   const [draftPhotos, setDraftPhotos] = useState([]);
   const [autofillInfo, setAutofillInfo] = useState({
     report: "",
-    value: "",
+    signature: serializePieceRows(EMPTY_FORM.piezas),
     count: 0,
     fetched: false,
   });
@@ -518,7 +620,7 @@ export default function PaquetesPiezas() {
     setModalLoading(false);
     setAutofillInfo({
       report: "",
-      value: "",
+      signature: serializePieceRows(EMPTY_FORM.piezas),
       count: 0,
       fetched: false,
     });
@@ -537,14 +639,15 @@ export default function PaquetesPiezas() {
     setForm({
       proveedor: detail?.proveedor_nombre || "",
       reporte: detail?.numero_reporte_siniestro || "",
-      piezasText: (detail?.relaciones || []).map((item) => item.nombre_pieza).join("\n"),
+      piezas: normalizePieceRows(detail?.relaciones || []),
       comentarios: detail?.comentarios || "",
       estado: normalizeStatus(detail?.estatus),
     });
     setDraftPhotos((detail?.media || []).map(mapMediaItem));
+    const pieceRows = normalizePieceRows(detail?.relaciones || []);
     setAutofillInfo({
       report: detail?.numero_reporte_siniestro || "",
-      value: (detail?.relaciones || []).map((item) => item.nombre_pieza).join("\n"),
+      signature: serializePieceRows(pieceRows),
       count: (detail?.relaciones || []).length,
       fetched: true,
     });
@@ -557,7 +660,7 @@ export default function PaquetesPiezas() {
     if (report && report !== autofillInfo.report && autofillInfo.fetched) {
       setAutofillInfo({
         report,
-        value: "",
+        signature: autofillInfo.signature,
         count: 0,
         fetched: false,
       });
@@ -566,7 +669,7 @@ export default function PaquetesPiezas() {
       setValidatingReport(false);
       setAutofillInfo({
         report: "",
-        value: "",
+        signature: serializePieceRows(EMPTY_FORM.piezas),
         count: 0,
         fetched: false,
       });
@@ -634,21 +737,33 @@ export default function PaquetesPiezas() {
 
         const payload = await response.json();
         const suggestions = Array.isArray(payload?.sugerencias) ? payload.sugerencias : [];
-        const nextValue = suggestions.map((item) => item.nombre_pieza).join("\n");
+        const nextRows = suggestions.length
+          ? suggestions.map((item) =>
+              createPieceRow({
+                bitacoraPiezaId: item?.bitacora_pieza_id || null,
+                descripcion: item?.nombre_pieza || "",
+                cantidad: item?.cantidad ?? 1,
+                numeroParte: item?.numero_parte || "",
+              })
+            )
+          : [createPieceRow()];
+        const nextSignature = serializePieceRows(nextRows);
 
         setAutofillInfo((prev) => ({
           ...prev,
           report,
-          value: nextValue,
+          signature: nextSignature,
           count: suggestions.length,
           fetched: true,
         }));
 
         setForm((prev) => {
-          const currentPieces = String(prev.piezasText || "");
-          const canReplace = !currentPieces.trim() || currentPieces === autofillInfo.value;
+          const currentSignature = serializePieceRows(prev.piezas || []);
+          const canReplace =
+            !(prev.piezas || []).some((item) => String(item?.descripcion || "").trim()) ||
+            currentSignature === autofillInfo.signature;
           if (!canReplace) return prev;
-          return { ...prev, piezasText: nextValue };
+          return { ...prev, piezas: nextRows };
         });
       } catch (err) {
         setError((prev) => prev || err.message || "No se pudieron sugerir piezas desde bitácora.");
@@ -665,7 +780,7 @@ export default function PaquetesPiezas() {
     reportValidation.duplicatePackage,
     autofillInfo.report,
     autofillInfo.fetched,
-    autofillInfo.value,
+    autofillInfo.signature,
   ]);
 
   const reportHasBlockingIssue =
@@ -712,6 +827,37 @@ export default function PaquetesPiezas() {
 
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handlePieceChange = (rowId, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      piezas: (prev.piezas || []).map((pieza) =>
+        pieza.rowId === rowId
+          ? {
+              ...pieza,
+              [field]: field === "cantidad" ? Math.max(1, Number(value || 1)) : value,
+            }
+          : pieza
+      ),
+    }));
+  };
+
+  const handleAddPieceRow = () => {
+    setForm((prev) => ({
+      ...prev,
+      piezas: [...(prev.piezas || []), createPieceRow()],
+    }));
+  };
+
+  const handleRemovePieceRow = (rowId) => {
+    setForm((prev) => {
+      const nextRows = (prev.piezas || []).filter((pieza) => pieza.rowId !== rowId);
+      return {
+        ...prev,
+        piezas: nextRows.length ? nextRows : [createPieceRow()],
+      };
+    });
   };
 
   const handleAddProvider = async (providerName) => {
@@ -800,7 +946,7 @@ export default function PaquetesPiezas() {
   };
 
   const handleSave = async () => {
-    const piezas = splitPieces(form.piezasText);
+    const piezas = (form.piezas || []).filter((pieza) => String(pieza.descripcion || "").trim());
 
     if (!form.reporte.trim() || !form.proveedor.trim() || !piezas.length) {
       window.alert("Completa proveedor, reporte y al menos una pieza.");
@@ -1151,6 +1297,9 @@ export default function PaquetesPiezas() {
         autofillInfo={autofillInfo}
         photos={draftPhotos}
         onChange={handleFormChange}
+        onPieceChange={handlePieceChange}
+        onAddPieceRow={handleAddPieceRow}
+        onRemovePieceRow={handleRemovePieceRow}
         onClose={closeModal}
         onSave={handleSave}
         onCameraClick={() => cameraInputRef.current?.click()}

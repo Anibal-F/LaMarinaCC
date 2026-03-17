@@ -116,6 +116,7 @@ function PackageModal({
   onAddProvider,
   reportValidation,
   isValidatingReport,
+  autofillInfo,
   onChange,
   onClose,
   onSave,
@@ -236,6 +237,17 @@ function PackageModal({
                     className="min-h-[140px] w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
                     placeholder="Captura una pieza por línea o separa por comas."
                   />
+                  {autofillInfo?.fetched ? (
+                    autofillInfo.count ? (
+                      <p className="text-xs text-primary">
+                        Se autocompletaron {autofillInfo.count} pieza{autofillInfo.count === 1 ? "" : "s"} desde Bitácora de Piezas para este reporte/siniestro.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        No se encontraron piezas en Bitácora para este reporte/siniestro.
+                      </p>
+                    )
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     {splitPieces(form.piezasText)
                       .slice(0, 12)
@@ -400,6 +412,12 @@ export default function PaquetesPiezas() {
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [draftPhotos, setDraftPhotos] = useState([]);
+  const [autofillInfo, setAutofillInfo] = useState({
+    report: "",
+    value: "",
+    count: 0,
+    fetched: false,
+  });
   const [reportValidation, setReportValidation] = useState({
     reportMissing: true,
     reportProvided: false,
@@ -498,6 +516,12 @@ export default function PaquetesPiezas() {
     setForm(EMPTY_FORM);
     setDraftPhotos([]);
     setModalLoading(false);
+    setAutofillInfo({
+      report: "",
+      value: "",
+      count: 0,
+      fetched: false,
+    });
     setReportValidation({
       reportMissing: true,
       reportProvided: false,
@@ -518,14 +542,34 @@ export default function PaquetesPiezas() {
       estado: normalizeStatus(detail?.estatus),
     });
     setDraftPhotos((detail?.media || []).map(mapMediaItem));
+    setAutofillInfo({
+      report: detail?.numero_reporte_siniestro || "",
+      value: (detail?.relaciones || []).map((item) => item.nombre_pieza).join("\n"),
+      count: (detail?.relaciones || []).length,
+      fetched: true,
+    });
   };
 
   useEffect(() => {
     if (!modalOpen || modalLoading) return;
 
     const report = String(form.reporte || "").trim();
+    if (report && report !== autofillInfo.report && autofillInfo.fetched) {
+      setAutofillInfo({
+        report,
+        value: "",
+        count: 0,
+        fetched: false,
+      });
+    }
     if (!report) {
       setValidatingReport(false);
+      setAutofillInfo({
+        report: "",
+        value: "",
+        count: 0,
+        fetched: false,
+      });
       setReportValidation({
         reportMissing: true,
         reportProvided: false,
@@ -567,7 +611,62 @@ export default function PaquetesPiezas() {
     }, 350);
 
     return () => window.clearTimeout(timeoutId);
-  }, [modalOpen, modalLoading, form.reporte, activeId]);
+  }, [modalOpen, modalLoading, form.reporte, activeId, autofillInfo.report, autofillInfo.fetched]);
+
+  useEffect(() => {
+    if (!modalOpen || modalLoading) return;
+    if (!reportValidation.reportProvided || !reportValidation.orderFound || reportValidation.duplicatePackage) return;
+
+    const report = String(form.reporte || "").trim();
+    if (!report) return;
+    if (autofillInfo.report === report && autofillInfo.fetched) return;
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE}/inventario/paquetes/suggest-relaciones?${new URLSearchParams({
+            numero_reporte_siniestro: report,
+          }).toString()}`
+        );
+        if (!response.ok) {
+          throw new Error("No se pudieron consultar las piezas de bitácora para ese reporte.");
+        }
+
+        const payload = await response.json();
+        const suggestions = Array.isArray(payload?.sugerencias) ? payload.sugerencias : [];
+        const nextValue = suggestions.map((item) => item.nombre_pieza).join("\n");
+
+        setAutofillInfo((prev) => ({
+          ...prev,
+          report,
+          value: nextValue,
+          count: suggestions.length,
+          fetched: true,
+        }));
+
+        setForm((prev) => {
+          const currentPieces = String(prev.piezasText || "");
+          const canReplace = !currentPieces.trim() || currentPieces === autofillInfo.value;
+          if (!canReplace) return prev;
+          return { ...prev, piezasText: nextValue };
+        });
+      } catch (err) {
+        setError((prev) => prev || err.message || "No se pudieron sugerir piezas desde bitácora.");
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    modalOpen,
+    modalLoading,
+    form.reporte,
+    reportValidation.reportProvided,
+    reportValidation.orderFound,
+    reportValidation.duplicatePackage,
+    autofillInfo.report,
+    autofillInfo.fetched,
+    autofillInfo.value,
+  ]);
 
   const reportHasBlockingIssue =
     reportValidation.reportProvided &&
@@ -1049,6 +1148,7 @@ export default function PaquetesPiezas() {
         onAddProvider={handleAddProvider}
         reportValidation={reportValidation}
         isValidatingReport={validatingReport}
+        autofillInfo={autofillInfo}
         photos={draftPhotos}
         onChange={handleFormChange}
         onClose={closeModal}

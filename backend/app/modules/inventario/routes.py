@@ -189,6 +189,20 @@ class PaqueteReporteValidation(BaseModel):
     paquete_existente: Optional[PaqueteReporteConflict] = None
 
 
+class PaquetePiezaSuggestion(BaseModel):
+    bitacora_pieza_id: int
+    nombre_pieza: str
+    numero_parte: Optional[str] = None
+    proveedor_nombre: Optional[str] = None
+    estatus: Optional[str] = None
+
+
+class PaquetePiezasSuggestionResponse(BaseModel):
+    numero_reporte_siniestro: str
+    reporte_normalizado: Optional[str] = None
+    sugerencias: List[PaquetePiezaSuggestion] = Field(default_factory=list)
+
+
 class PaquetePiezasBase(BaseModel):
     orden_admision_id: Optional[int] = None
     folio_ot: Optional[str] = None
@@ -526,6 +540,33 @@ def _ensure_unique_paquete_report(
             status_code=409,
             detail=f"El reporte/siniestro ya está asignado al paquete {existing.get('folio')}",
         )
+
+
+def _get_bitacora_piezas_by_reporte(
+    conn,
+    numero_reporte_siniestro: Optional[str],
+) -> List[dict[str, Any]]:
+    reporte = str(numero_reporte_siniestro or "").strip()
+    if not reporte:
+        return []
+
+    conn.row_factory = dict_row
+    rows = conn.execute(
+        """
+        SELECT
+            bp.id AS bitacora_pieza_id,
+            bp.nombre AS nombre_pieza,
+            bp.numero_parte,
+            bp.estatus,
+            p.nombre AS proveedor_nombre
+        FROM bitacora_piezas bp
+        LEFT JOIN proveedores p ON p.id = bp.proveedor_id
+        WHERE LOWER(TRIM(COALESCE(bp.numero_reporte, ''))) = LOWER(TRIM(%s))
+        ORDER BY bp.id ASC
+        """,
+        (reporte,),
+    ).fetchall()
+    return list(rows)
 
 
 def _ensure_paquete_exists(conn, paquete_id: int) -> dict[str, Any]:
@@ -1193,6 +1234,26 @@ def validate_paquete_report(
                 if existing
                 else None
             ),
+        }
+
+
+@router.get("/paquetes/suggest-relaciones", response_model=PaquetePiezasSuggestionResponse)
+def suggest_paquete_relaciones(
+    numero_reporte_siniestro: str = Query(..., description="Reporte/siniestro para buscar piezas en bitácora"),
+):
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        ensure_paquetes_piezas_tables(conn)
+
+        reporte = str(numero_reporte_siniestro or "").strip()
+        orden = _find_orden_admision_by_reporte(conn, reporte)
+        normalized_report = str(orden.get("reporte_siniestro") or "").strip() if orden else reporte
+        suggestions = _get_bitacora_piezas_by_reporte(conn, normalized_report)
+
+        return {
+            "numero_reporte_siniestro": reporte,
+            "reporte_normalizado": normalized_report or None,
+            "sugerencias": suggestions,
         }
 
 

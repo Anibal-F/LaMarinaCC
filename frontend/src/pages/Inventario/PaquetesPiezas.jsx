@@ -14,7 +14,6 @@ const API_BASE = getApiUrl();
 
 const EMPTY_FORM = {
   proveedor: "",
-  ot: "",
   reporte: "",
   piezasText: "",
   comentarios: "",
@@ -91,7 +90,6 @@ function mapMediaItem(item) {
 function buildPayload(form) {
   const piezas = splitPieces(form.piezasText);
   return {
-    folio_ot: form.ot.trim().toUpperCase(),
     numero_reporte_siniestro: form.reporte.trim(),
     proveedor_nombre: form.proveedor.trim(),
     estatus: form.estado,
@@ -132,7 +130,7 @@ function PackageModal({
               {mode === "create" ? "Nuevo Paquete de Piezas" : "Editar Paquete de Piezas"}
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Relaciona la recepción con una OT, registra contenido, evidencia y observaciones.
+              Vincula el paquete con la orden de admisión por reporte/siniestro y registra contenido, evidencia y observaciones.
             </p>
           </div>
           <button
@@ -171,18 +169,6 @@ function PackageModal({
                   </label>
                   <label className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      OT Relacionada
-                    </span>
-                    <input
-                      type="text"
-                      value={form.ot}
-                      onChange={(event) => onChange("ot", event.target.value.toUpperCase())}
-                      className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
-                      placeholder="OT-4521"
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Reporte / Siniestro
                     </span>
                     <input
@@ -192,6 +178,9 @@ function PackageModal({
                       className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
                       placeholder="04251889452"
                     />
+                    <p className="text-xs text-slate-500">
+                      Este dato vincula automáticamente el paquete con la orden de admisión.
+                    </p>
                   </label>
                   <label className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
@@ -333,7 +322,7 @@ function PackageModal({
                   <div className="mt-4 space-y-3 text-sm text-slate-400">
                     <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
                       <span className="material-symbols-outlined text-primary">qr_code_2</span>
-                      <span>Vincula el paquete con la OT antes de enviarlo a almacén o taller.</span>
+                      <span>El paquete se vincula automáticamente con la orden de admisión usando el reporte/siniestro.</span>
                     </div>
                     <div className="flex gap-3 rounded-xl border border-border-dark bg-surface-dark px-4 py-3">
                       <span className="material-symbols-outlined text-alert-amber">rule</span>
@@ -451,7 +440,6 @@ export default function PaquetesPiezas() {
     setActiveId(detail?.id || null);
     setForm({
       proveedor: detail?.proveedor_nombre || "",
-      ot: detail?.folio_ot || "",
       reporte: detail?.numero_reporte_siniestro || "",
       piezasText: (detail?.relaciones || []).map((item) => item.nombre_pieza).join("\n"),
       comentarios: detail?.comentarios || "",
@@ -557,8 +545,8 @@ export default function PaquetesPiezas() {
   const handleSave = async () => {
     const piezas = splitPieces(form.piezasText);
 
-    if (!form.ot.trim() || !form.reporte.trim() || !form.proveedor.trim() || !piezas.length) {
-      window.alert("Completa proveedor, OT, reporte y al menos una pieza.");
+    if (!form.reporte.trim() || !form.proveedor.trim() || !piezas.length) {
+      window.alert("Completa proveedor, reporte y al menos una pieza.");
       return;
     }
 

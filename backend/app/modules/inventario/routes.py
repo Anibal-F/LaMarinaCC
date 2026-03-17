@@ -389,6 +389,30 @@ def _get_orden_admision_snapshot(conn, orden_admision_id: Optional[int]) -> Opti
     return orden
 
 
+def _get_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]) -> dict[str, Any]:
+    reporte = str(numero_reporte_siniestro or "").strip()
+    if not reporte:
+        raise HTTPException(status_code=400, detail="numero_reporte_siniestro requerido")
+
+    conn.row_factory = dict_row
+    orden = conn.execute(
+        """
+        SELECT id, reporte_siniestro
+        FROM orden_admision
+        WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) = LOWER(TRIM(%s))
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (reporte,),
+    ).fetchone()
+    if not orden:
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontró una orden de admisión para ese reporte/siniestro",
+        )
+    return orden
+
+
 def _ensure_paquete_exists(conn, paquete_id: int) -> dict[str, Any]:
     conn.row_factory = dict_row
     paquete = conn.execute(
@@ -940,10 +964,8 @@ def create_paquete(payload: PaquetePiezasCreate):
         ensure_paquetes_piezas_tables(conn)
         _sync_paquetes_piezas_folio_sequence(conn)
 
-        orden = _get_orden_admision_snapshot(conn, payload.orden_admision_id)
-        numero_reporte = (payload.numero_reporte_siniestro or "").strip() or (
-            str(orden.get("reporte_siniestro") or "").strip() if orden else None
-        )
+        orden = _get_orden_admision_by_reporte(conn, payload.numero_reporte_siniestro)
+        numero_reporte = str(orden.get("reporte_siniestro") or "").strip()
 
         paquete = conn.execute(
             """
@@ -960,8 +982,8 @@ def create_paquete(payload: PaquetePiezasCreate):
             RETURNING id
             """,
             (
-                payload.orden_admision_id,
-                (payload.folio_ot or "").strip() or None,
+                orden["id"],
+                None,
                 numero_reporte,
                 payload.proveedor_nombre.strip(),
                 payload.fecha_arribo,
@@ -984,10 +1006,15 @@ def update_paquete(paquete_id: int, payload: PaquetePiezasUpdate):
         updates = payload.model_dump(exclude_unset=True)
         relaciones = updates.pop("relaciones", None) if "relaciones" in updates else None
 
-        if "orden_admision_id" in updates and updates["orden_admision_id"] is not None:
+        if "numero_reporte_siniestro" in updates:
+            orden = _get_orden_admision_by_reporte(conn, updates["numero_reporte_siniestro"])
+            updates["orden_admision_id"] = orden["id"]
+            updates["numero_reporte_siniestro"] = str(orden.get("reporte_siniestro") or "").strip() or None
+            updates["folio_ot"] = None
+        elif "orden_admision_id" in updates and updates["orden_admision_id"] is not None:
             orden = _get_orden_admision_snapshot(conn, updates["orden_admision_id"])
-            if "numero_reporte_siniestro" not in updates or not str(updates["numero_reporte_siniestro"] or "").strip():
-                updates["numero_reporte_siniestro"] = str(orden.get("reporte_siniestro") or "").strip() or None
+            updates["numero_reporte_siniestro"] = str(orden.get("reporte_siniestro") or "").strip() or None
+            updates["folio_ot"] = None
 
         query_updates: list[str] = []
         params: list[Any] = []

@@ -543,6 +543,19 @@ export default function Sidebar() {
               </span>
             </NavLink>
             <NavLink
+              to="/catalogos/proveedores"
+              className={({ isActive }) =>
+                `${navItemBase} ml-6 ${
+                  isActive ? "text-white" : "text-slate-400 hover:text-white"
+                }`
+              }
+            >
+              {showLabels ? <span className="text-sm font-medium">Proveedores</span> : null}
+              <span className="material-symbols-outlined text-[18px] ml-auto">
+                local_shipping
+              </span>
+            </NavLink>
+            <NavLink
               to="/catalogos/partes-auto"
               className={({ isActive }) =>
                 `${navItemBase} ml-6 ${

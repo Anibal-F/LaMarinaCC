@@ -16,6 +16,7 @@ import CatalogoGruposAutos from "./pages/Catalogos/GruposAutos.jsx";
 import CatalogoMarcasAutos from "./pages/Catalogos/MarcasAutos.jsx";
 import CatalogoModelosAutos from "./pages/Catalogos/ModelosAutos.jsx";
 import CatalogoAseguradoras from "./pages/Catalogos/Aseguradoras.jsx";
+import CatalogoProveedores from "./pages/Catalogos/Proveedores.jsx";
 import CatalogoPartesAuto from "./pages/Catalogos/PartesAuto.jsx";
 import CatalogoEstatusValuacion from "./pages/Catalogos/EstatusValuacion.jsx";
 import CatalogoExpedientes from "./pages/Catalogos/Expedientes.jsx";
@@ -119,6 +120,10 @@ export default function App() {
         <Route
           path="/catalogos/aseguradoras"
           element={authenticated ? <CatalogoAseguradoras /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/catalogos/proveedores"
+          element={authenticated ? <CatalogoProveedores /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/catalogos/partes-auto"

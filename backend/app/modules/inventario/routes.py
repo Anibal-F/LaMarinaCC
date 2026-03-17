@@ -637,6 +637,62 @@ def create_proveedor(proveedor: ProveedorBase):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/proveedores/{proveedor_id}", response_model=Proveedor)
+def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
+    """Actualiza un proveedor existente"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE proveedores
+                    SET
+                        id_externo = %s,
+                        fuente = %s,
+                        nombre = %s,
+                        email = %s,
+                        celular = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (
+                        proveedor.id_externo,
+                        proveedor.fuente,
+                        proveedor.nombre,
+                        proveedor.email,
+                        proveedor.celular,
+                        proveedor_id,
+                    ),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+                columns = [desc[0] for desc in cur.description]
+                return dict(zip(columns, row))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/proveedores/{proveedor_id}")
+def delete_proveedor(proveedor_id: int):
+    """Elimina un proveedor existente"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM proveedores WHERE id = %s RETURNING id", (proveedor_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+                return {"ok": True, "id": row[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =====================================================
 # ENDPOINTS DE PIEZAS
 # =====================================================

@@ -21,7 +21,6 @@ backend_dir = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(backend_dir))
 
 from app.rpa.credentials_helper import get_chubb_credentials
-from app.rpa.stealth import Stealth
 
 # Configuración de timeouts
 NAVIGATION_TIMEOUT = 30000  # 30 segundos
@@ -620,8 +619,7 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
         context = await browser.new_context(viewport={"width": 1920, "height": 1080})
         page = await context.new_page()
         
-        stealth = Stealth(navigator_languages_override=('es-MX', 'es'))
-        await stealth.apply_stealth_async(page)
+        # Stealth no disponible en este entorno
         
         try:
             # Login

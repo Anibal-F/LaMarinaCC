@@ -366,10 +366,33 @@ export default function ChubbIndicators({ onRefresh }) {
       {/* Error */}
       {error && !updating && (
         <div className="bg-alert-red/10 border border-alert-red/30 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="material-symbols-outlined text-alert-red">error</span>
-            <span className="text-xs text-alert-red font-bold">{error}</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-alert-red">error</span>
+              <span className="text-xs text-alert-red font-bold">{error}</span>
+            </div>
+            {/* Botón Ver logs cuando hay error */}
+            {logs && (
+              <button
+                onClick={() => setShowLogs(!showLogs)}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  showLogs 
+                    ? 'bg-alert-red/30 text-red-300' 
+                    : 'bg-alert-red/20 text-alert-red hover:bg-alert-red/30'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">terminal</span>
+                <span>{showLogs ? 'Ocultar logs' : 'Ver logs'}</span>
+              </button>
+            )}
           </div>
+          
+          {/* Logs cuando hay error */}
+          {showLogs && logs && (
+            <div className="mt-2 p-3 bg-black/70 rounded-lg border border-alert-red/20">
+              <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed overflow-auto max-h-64">{logs}</pre>
+            </div>
+          )}
         </div>
       )}
       

@@ -32,12 +32,16 @@ def _has_database_url():
 # Importar DB si estamos en Docker, si DATABASE_URL apunta a localhost, 
 # o si DATABASE_URL está configurado (para conexiones a RDS, etc.)
 try:
-    if _is_db_host_available() or 'localhost' in os.getenv('DATABASE_URL', '') or _has_database_url():
+    # Siempre intentar usar DB si DATABASE_URL está configurado
+    # o si podemos resolver el hostname 'db' (Docker local)
+    if _has_database_url() or _is_db_host_available():
         from app.core.db import get_connection
         from psycopg.rows import dict_row
         DB_AVAILABLE = True
+        print(f"[CredentialsHelper] DB disponible (DATABASE_URL configurado)")
     else:
         DB_AVAILABLE = False
+        print(f"[CredentialsHelper] DB no disponible (sin DATABASE_URL)")
 except Exception as e:
     print(f"[CredentialsHelper] Error al importar DB: {e}")
     DB_AVAILABLE = False

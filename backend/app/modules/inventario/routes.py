@@ -24,6 +24,7 @@ class ProveedorBase(BaseModel):
     nombre: str
     email: Optional[str] = None
     celular: Optional[str] = None
+    activo: bool = True
 
 
 class Proveedor(ProveedorBase):
@@ -33,6 +34,16 @@ class Proveedor(ProveedorBase):
 
     class Config:
         from_attributes = True
+
+
+def ensure_proveedores_schema(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            ALTER TABLE proveedores
+            ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE
+            """
+        )
 
 
 class PiezaBase(BaseModel):
@@ -568,11 +579,13 @@ def _insert_paquete_relaciones(conn, paquete_id: int, relaciones: List[PaquetePi
 @router.get("/proveedores", response_model=List[Proveedor])
 def get_proveedores(
     fuente: Optional[str] = Query(None, description="Filtrar por fuente: Qualitas o CHUBB"),
-    search: Optional[str] = Query(None, description="Buscar por nombre")
+    search: Optional[str] = Query(None, description="Buscar por nombre"),
+    activo: Optional[bool] = Query(None, description="Filtrar por activo/inactivo"),
 ):
     """Obtiene el listado de proveedores"""
     try:
         with get_connection() as conn:
+            ensure_proveedores_schema(conn)
             query = "SELECT * FROM proveedores WHERE 1=1"
             params = []
             
@@ -583,6 +596,10 @@ def get_proveedores(
             if search:
                 query += " AND nombre ILIKE %s"
                 params.append(f"%{search}%")
+
+            if activo is not None:
+                query += " AND activo = %s"
+                params.append(activo)
             
             query += " ORDER BY nombre"
             
@@ -600,6 +617,7 @@ def get_proveedor(proveedor_id: int):
     """Obtiene un proveedor por su ID"""
     try:
         with get_connection() as conn:
+            ensure_proveedores_schema(conn)
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM proveedores WHERE id = %s", (proveedor_id,))
                 row = cur.fetchone()
@@ -618,18 +636,20 @@ def create_proveedor(proveedor: ProveedorBase):
     """Crea un nuevo proveedor"""
     try:
         with get_connection() as conn:
+            ensure_proveedores_schema(conn)
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO proveedores (id_externo, fuente, nombre, email, celular)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO proveedores (id_externo, fuente, nombre, email, celular, activo)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id_externo, fuente) DO UPDATE SET
                         nombre = EXCLUDED.nombre,
                         email = EXCLUDED.email,
                         celular = EXCLUDED.celular,
+                        activo = EXCLUDED.activo,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING *
-                """, (proveedor.id_externo, proveedor.fuente, proveedor.nombre, 
-                      proveedor.email, proveedor.celular))
+                """, (proveedor.id_externo, proveedor.fuente, proveedor.nombre,
+                      proveedor.email, proveedor.celular, proveedor.activo))
                 row = cur.fetchone()
                 columns = [desc[0] for desc in cur.description]
                 return dict(zip(columns, row))
@@ -642,6 +662,7 @@ def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
     """Actualiza un proveedor existente"""
     try:
         with get_connection() as conn:
+            ensure_proveedores_schema(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -652,6 +673,7 @@ def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
                         nombre = %s,
                         email = %s,
                         celular = %s,
+                        activo = %s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                     RETURNING *
@@ -662,6 +684,7 @@ def update_proveedor(proveedor_id: int, proveedor: ProveedorBase):
                         proveedor.nombre,
                         proveedor.email,
                         proveedor.celular,
+                        proveedor.activo,
                         proveedor_id,
                     ),
                 )
@@ -681,6 +704,7 @@ def delete_proveedor(proveedor_id: int):
     """Elimina un proveedor existente"""
     try:
         with get_connection() as conn:
+            ensure_proveedores_schema(conn)
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM proveedores WHERE id = %s RETURNING id", (proveedor_id,))
                 row = cur.fetchone()

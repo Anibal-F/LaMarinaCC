@@ -439,7 +439,7 @@ export default function PaquetesPiezas() {
   useEffect(() => {
     const loadProviders = async () => {
       try {
-        const response = await fetch(`${API_BASE}/inventario/proveedores`);
+        const response = await fetch(`${API_BASE}/inventario/proveedores?activo=true`);
         if (!response.ok) {
           throw new Error("No se pudo cargar el catálogo de proveedores.");
         }

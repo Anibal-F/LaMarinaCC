@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS proveedores (
     nombre VARCHAR(255) NOT NULL,
     email VARCHAR(255),
     celular VARCHAR(20),
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
     
     -- Metadatos
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -31,8 +32,14 @@ CREATE INDEX IF NOT EXISTS idx_proveedores_fuente
 CREATE INDEX IF NOT EXISTS idx_proveedores_nombre 
     ON proveedores(nombre);
 
+CREATE INDEX IF NOT EXISTS idx_proveedores_activo
+    ON proveedores(activo);
+
 -- Comentario de la tabla
 COMMENT ON TABLE proveedores IS 'Catálogo de proveedores de Qualitas y CHUBB';
+
+ALTER TABLE proveedores
+    ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE;
 
 
 -- =====================================================

@@ -502,6 +502,31 @@ export default function ChubbIndicators({ onRefresh }) {
             </div>
             <p className="text-[10px] text-slate-500 mt-1">Complementos solicitados</p>
           </div>
+
+          {/* Card 5: Pérdida Total */}
+          <div 
+            onClick={() => setFiltroEstado(filtroEstado === 'Pérdida Total' ? '' : 'Pérdida Total')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstado === 'Pérdida Total' 
+                ? 'border-red-600 ring-2 ring-red-600/30' 
+                : 'border-border-dark hover:border-red-600/50'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Pérdida Total
+              </span>
+              <span className="material-symbols-outlined text-red-600 text-xl group-hover:scale-110 transition-transform">
+                car_crash
+              </span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extrabold text-white tracking-tight">
+                {formatNumber(indicadores.perdida_total)}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">Expedientes en pérdida total</p>
+          </div>
         </div>
       )}
 

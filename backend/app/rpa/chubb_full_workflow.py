@@ -871,9 +871,12 @@ async def get_total_records(page) -> int:
 
 
 async def set_page_size_to_100(page) -> bool:
-    """Cambia el dropdown de registros por página a 100."""
+    """
+    Intenta cambiar el dropdown de registros por página a 100.
+    Si no funciona, retorna False para que el llamador use navegación estándar.
+    """
     try:
-        print("[Extract] Cambiando a 100 registros por página...")
+        print("[Extract] Intentando cambiar a 100 registros por página...")
         
         # Buscar el select por ID
         page_size_select = page.locator('#ctrPageSize')
@@ -884,73 +887,37 @@ async def set_page_size_to_100(page) -> bool:
         
         # Verificar valor actual
         current_value = await page_size_select.input_value()
+        print(f"[Extract] Valor actual del dropdown: {current_value}")
+        
         if current_value == '100':
             print("[Extract] ✓ Ya está configurado a 100 registros por página")
             return True
         
-        # Seleccionar la opción 100 usando JavaScript para invocar DataTables API directamente
-        result = await page.evaluate("""() => {
+        # Usar Playwright para seleccionar la opción
+        await page_size_select.select_option('100')
+        
+        # Disparar evento change
+        await page.evaluate("""() => {
             const select = document.querySelector('#ctrPageSize');
-            if (!select) {
-                return {success: false, error: 'Select no encontrado'};
+            if (select) {
+                const event = new Event('change', { bubbles: true });
+                select.dispatchEvent(event);
             }
-            
-            // Cambiar el valor
-            select.value = '100';
-            
-            // Intentar invocar DataTables API directamente
-            try {
-                // Buscar la tabla DataTables
-                const table = $('#gridMyWorks');
-                if (table.length && table.DataTable) {
-                    const dt = table.DataTable();
-                    dt.page.len(100).draw();
-                    console.log('[RPA] DataTables API invocada: page.len(100).draw()');
-                    return {success: true, method: 'DataTables API'};
-                }
-            } catch (e) {
-                console.log('[RPA] Error con DataTables API:', e);
-            }
-            
-            // Fallback: disparar evento change
-            const event = new Event('change', { bubbles: true });
-            select.dispatchEvent(event);
-            console.log('[RPA] Evento change disparado (fallback)');
-            
-            return {success: true, method: 'Event change'};
         }""")
         
-        print(f"[Extract] Resultado cambio página: {result}")
+        # Esperar recarga
+        await asyncio.sleep(8)
         
-        print("[Extract] ✓ Seleccionado 100 registros por página, esperando recarga...")
+        # Verificar si el cambio funcionó contando filas
+        row_count = await page.locator('#gridMyWorks tbody tr').count()
+        print(f"[Extract] Filas después del cambio: {row_count}")
         
-        # Esperar a que la tabla se recargue con DataTables (puede tardar más)
-        await asyncio.sleep(10)
-        
-        # Esperar a que la tabla esté lista (puede que no haya filas si no hay registros)
-        try:
-            await page.wait_for_selector('#gridMyWorks tbody tr', timeout=20000)
-            print("[Extract] ✓ Tabla actualizada con nuevos registros")
-        except:
-            # Si no hay filas, verificar si la tabla existe (puede ser que no haya registros)
-            table_exists = await page.locator('#gridMyWorks').count() > 0
-            if table_exists:
-                print("[Extract] ✓ Tabla existe pero sin registros (0 filas)")
-            else:
-                print("[Extract] ⚠ Tabla no encontrada después del cambio")
-                return False
-        
-        # Esperar adicional para que la paginación se actualice completamente
-        print("[Extract] Esperando actualización de paginación...")
-        await asyncio.sleep(5)
-        
-        # Verificar estado del botón de siguiente
-        next_btn = page.locator('a#table-rateRelations_next')
-        if await next_btn.count() > 0:
-            class_attr = await next_btn.get_attribute('class') or ''
-            print(f"[Extract] Debug - Clase del botón siguiente después de recarga: '{class_attr}'")
-        
-        return True
+        if row_count > 10:
+            print(f"[Extract] ✓ Cambio exitoso - {row_count} filas visibles")
+            return True
+        else:
+            print(f"[Extract] ⚠ Cambio no funcionó - solo {row_count} filas, se usará navegación por páginas")
+            return False
         
     except Exception as e:
         print(f"[Extract] ⚠ Error cambiando registros por página: {e}")
@@ -1106,10 +1073,13 @@ async def extract_all_pages(page, estado_key: str) -> List[Dict[str, Any]]:
     """Extrae todos los datos de todas las páginas para un estado específico."""
     all_data = []
     page_num = 1
-    max_pages = 50  # Límite de seguridad
+    max_pages = 100  # Aumentado límite de seguridad para páginas de 10
     
-    # Primero cambiar a 100 registros por página para optimizar
-    await set_page_size_to_100(page)
+    # Intentar cambiar a 100 registros por página (optimización)
+    changed_to_100 = await set_page_size_to_100(page)
+    
+    if not changed_to_100:
+        print("[Extract] Usando navegación estándar de 10 registros por página")
     
     while page_num <= max_pages:
         print(f"[Extract] Procesando página {page_num}...")
@@ -1124,17 +1094,21 @@ async def extract_all_pages(page, estado_key: str) -> List[Dict[str, Any]]:
         all_data.extend(page_data)
         
         # Verificar si hay siguiente página
-        if not await has_next_page(page):
+        has_next = await has_next_page(page)
+        print(f"[Extract] ¿Hay siguiente página? {has_next}")
+        
+        if not has_next:
             print(f"[Extract] No hay más páginas")
             break
         
         # Ir a siguiente página
         if not await go_to_next_page(page):
+            print("[Extract] Error navegando a siguiente página")
             break
         
         page_num += 1
     
-    print(f"[Extract] ✓ Total de {len(all_data)} registros extraídos para {estado_key}")
+    print(f"[Extract] ✓ Total de {len(all_data)} registros extraídos para {estado_key} en {page_num} páginas")
     return all_data
 
 

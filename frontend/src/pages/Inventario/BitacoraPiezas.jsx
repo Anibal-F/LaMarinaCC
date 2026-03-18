@@ -42,7 +42,8 @@ const COLUMN_DEFS = [
   { key: 'fecha_estatus', label: 'Fecha Estatus', width: '110px', className: 'text-left' },
   { key: 'ubicacion', label: 'Ubicación', width: '100px', className: 'text-center' },
   { key: 'devolucion_proveedor', label: 'Dev. Prov.', width: '70px', className: 'text-center' },
-  { key: 'recibido', label: 'Recibido', width: '70px', className: 'text-center' },
+  { key: 'recibido', label: 'Rec. Scrapper', width: '85px', className: 'text-center' },
+  { key: 'recibido_sistema', label: 'Rec. Sistema', width: '90px', className: 'text-center' },
   { key: 'entregado', label: 'Entregado', width: '70px', className: 'text-center' },
   { key: 'portal', label: 'Portal', width: '60px', className: 'text-center' }
 ];
@@ -1396,6 +1397,19 @@ export default function BitacoraPiezas() {
                                         checked={pieza.recibido}
                                         onChange={(e) => handleCheckboxChange(pieza.id, 'recibido', e.target.checked)}
                                         className="w-4 h-4 rounded border-border-dark bg-background-dark text-primary focus:ring-primary"
+                                        title="Recibido según Scrapper (RPA)"
+                                      />
+                                    </td>
+                                  );
+                                case 'recibido_sistema':
+                                  return (
+                                    <td key={column.key} className={`${cellClass} text-center`} style={cellStyle}>
+                                      <input
+                                        type="checkbox"
+                                        checked={pieza.recibido_sistema}
+                                        disabled
+                                        className="w-4 h-4 rounded border-border-dark bg-slate-600 text-primary cursor-not-allowed opacity-70"
+                                        title="Recibido en Sistema (Paquetes) - Se sincroniza automáticamente"
                                       />
                                     </td>
                                   );

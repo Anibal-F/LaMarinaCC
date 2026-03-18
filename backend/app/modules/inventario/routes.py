@@ -86,7 +86,8 @@ class PiezaBase(BaseModel):
     demeritos: float = 0
     ubicacion: str = "ND"
     devolucion_proveedor: bool = False
-    recibido: bool = False
+    recibido: bool = False           # Del Scrapper (RPA)
+    recibido_sistema: bool = False   # Del Sistema (Paquetes)
     entregado: bool = False
     portal: bool = False
     fuente: str
@@ -1201,6 +1202,9 @@ def update_pieza(pieza_id: int, pieza: PiezaUpdate):
                 if pieza.recibido is not None:
                     updates.append("recibido = %s")
                     params.append(pieza.recibido)
+                if pieza.recibido_sistema is not None:
+                    updates.append("recibido_sistema = %s")
+                    params.append(pieza.recibido_sistema)
                 if pieza.entregado is not None:
                     updates.append("entregado = %s")
                     params.append(pieza.entregado)
@@ -1722,6 +1726,18 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
     with get_connection() as conn:
         conn.row_factory = dict_row
         ensure_paquetes_piezas_tables(conn)
+        
+        # Obtener bitacora_pieza_id antes de actualizar (para sincronización)
+        recibida_nueva = updates.get("recibida")
+        bitacora_pieza_id = None
+        if recibida_nueva is not None:
+            row = conn.execute(
+                "SELECT bitacora_pieza_id FROM paquetes_piezas_relaciones WHERE id = %s",
+                (relacion_id,)
+            ).fetchone()
+            if row:
+                bitacora_pieza_id = row["bitacora_pieza_id"]
+        
         params.append(relacion_id)
         relacion = conn.execute(
             f"""
@@ -1748,6 +1764,27 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
         ).fetchone()
         if not relacion:
             raise HTTPException(status_code=404, detail="Relación no encontrada")
+        
+        # Sincronizar recibido_sistema en bitacora_piezas cuando se marca como recibida
+        if recibida_nueva is True and bitacora_pieza_id:
+            conn.execute(
+                """
+                UPDATE bitacora_piezas 
+                SET recibido_sistema = TRUE, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = %s
+                """,
+                (bitacora_pieza_id,)
+            )
+        elif recibida_nueva is False and bitacora_pieza_id:
+            conn.execute(
+                """
+                UPDATE bitacora_piezas 
+                SET recibido_sistema = FALSE, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = %s
+                """,
+                (bitacora_pieza_id,)
+            )
+        
         relacion["estatus"] = _normalize_paquete_status(relacion.get("estatus"))
         return relacion
 

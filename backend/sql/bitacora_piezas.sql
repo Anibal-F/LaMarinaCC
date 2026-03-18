@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS bitacora_piezas (
     
     -- Checkboxes booleanos
     devolucion_proveedor BOOLEAN DEFAULT FALSE,
-    recibido BOOLEAN DEFAULT FALSE,
+    recibido BOOLEAN DEFAULT FALSE,              -- Del Scrapper (RPA Qualitas/Chubb)
+    recibido_sistema BOOLEAN DEFAULT FALSE,      -- Del Sistema (Paquetes de Piezas)
     entregado BOOLEAN DEFAULT FALSE,
     portal BOOLEAN DEFAULT FALSE,
     
@@ -169,7 +170,8 @@ SELECT
     
     -- Checkboxes
     bp.devolucion_proveedor,
-    bp.recibido,
+    bp.recibido,              -- Del Scrapper (RPA)
+    bp.recibido_sistema,      -- Del Sistema (Paquetes)
     bp.entregado,
     bp.portal,
     

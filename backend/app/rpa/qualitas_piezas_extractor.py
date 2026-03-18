@@ -399,12 +399,14 @@ class QualitasPiezasExtractor:
     async def _extract_ordenes_list_from_table(self, table_id: str) -> List[Dict]:
         """
         Extrae la lista de órdenes de una tabla específica.
+        Solo incluye órdenes del año 2026 o posteriores.
         Retorna lista con num_expediente, numero_reporte e índice de fila.
         
         Args:
             table_id: ID de la tabla (ej: 'tabletransito' o 'tablepiso')
         """
         ordenes = []
+        ordenes_filtradas = 0
         
         # Obtener todas las filas de la tabla
         rows = await self.page.locator(f'#{table_id} tbody tr').all()
@@ -419,6 +421,7 @@ class QualitasPiezasExtractor:
                 # La primera celda con datos suele ser # Exp (índice 0 o 1)
                 num_exp = None
                 numero_reporte = None
+                fecha_inicio = None
                 
                 for j, cell in enumerate(cells[:3]):  # Revisar primeras 3 celdas
                     text = await cell.text_content()
@@ -439,18 +442,39 @@ class QualitasPiezasExtractor:
                         else:
                             # Fallback: si no hay match, usar todo el texto
                             numero_reporte = text
+                    # Buscar fecha en formato: "2025-06-14\n16:01:09" o "2025-06-14<br>16:01:09"
+                    elif re.search(r'\d{4}-\d{2}-\d{2}', text):
+                        fecha_inicio = text
                 
+                # Verificar si la orden es del año 2026 o posterior
                 if num_exp:
-                    ordenes.append({
-                        'num_expediente': num_exp,
-                        'numero_reporte': numero_reporte,
-                        'row_index': i
-                    })
-                    print(f"  [Debug] Orden {num_exp} - Reporte: {numero_reporte}")
+                    # Extraer año de la fecha (formato: YYYY-MM-DD)
+                    es_orden_valida = True
+                    if fecha_inicio:
+                        match_anio = re.search(r'(\d{4})-\d{2}-\d{2}', fecha_inicio)
+                        if match_anio:
+                            anio = int(match_anio.group(1))
+                            if anio < 2026:
+                                # Orden de año anterior, omitir
+                                ordenes_filtradas += 1
+                                es_orden_valida = False
+                                print(f"  [Filtro] Orden {num_exp} omitida (año {anio} < 2026)")
+                    
+                    if es_orden_valida:
+                        ordenes.append({
+                            'num_expediente': num_exp,
+                            'numero_reporte': numero_reporte,
+                            'row_index': i
+                        })
+                        print(f"  [Debug] Orden {num_exp} - Reporte: {numero_reporte}")
                     
             except Exception as e:
                 print(f"  [Warning] Error extrayendo fila {i}: {e}")
                 continue
+        
+        if ordenes_filtradas > 0:
+            print(f"[PiezasExtractor] {ordenes_filtradas} órdenes filtradas (año < 2026)")
+        print(f"[PiezasExtractor] {len(ordenes)} órdenes válidas para procesar (año >= 2026)")
         
         return ordenes
     

@@ -279,7 +279,7 @@ function PackageModal({
                     Piezas incluidas
                   </span>
                   <div className="overflow-hidden rounded-xl border border-border-dark bg-background-dark">
-                    <div className="overflow-x-auto custom-scrollbar">
+                    <div className="max-h-[300px] overflow-x-auto overflow-y-auto custom-scrollbar">
                       <table className="min-w-full text-left">
                         <thead className="border-b border-border-dark bg-surface-dark/70">
                           <tr>

@@ -1170,7 +1170,7 @@ export default function PaquetesPiezas() {
                   Recepción y trazabilidad de paquetes vinculados a OT y siniestros
                 </p>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="flex items-center gap-4 rounded-2xl border border-border-dark bg-surface-dark px-5 py-4 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
                   <div className="rounded-xl bg-primary/15 p-3 text-primary">
                     <span className="material-symbols-outlined">pending_actions</span>

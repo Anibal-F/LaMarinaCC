@@ -217,7 +217,7 @@ class PaquetePiezasBase(BaseModel):
     orden_admision_id: Optional[int] = None
     folio_ot: Optional[str] = None
     numero_reporte_siniestro: Optional[str] = None
-    proveedor_nombre: str
+    proveedor_nombre: Optional[str] = None
     fecha_arribo: Optional[datetime] = None
     estatus: str = "Generado"
     comentarios: Optional[str] = None
@@ -289,7 +289,7 @@ def ensure_paquetes_piezas_tables(conn):
             orden_admision_id BIGINT REFERENCES orden_admision(id) ON DELETE SET NULL,
             folio_ot VARCHAR(50),
             numero_reporte_siniestro VARCHAR(100),
-            proveedor_nombre VARCHAR(255) NOT NULL,
+            proveedor_nombre VARCHAR(255),
             fecha_arribo TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             estatus VARCHAR(30) NOT NULL DEFAULT 'Generado',
             comentarios TEXT,
@@ -302,6 +302,12 @@ def ensure_paquetes_piezas_tables(conn):
         """
         ALTER TABLE paquetes_piezas
         ALTER COLUMN estatus SET DEFAULT 'Generado'
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas
+        ALTER COLUMN proveedor_nombre DROP NOT NULL
         """
     )
     conn.execute(
@@ -1396,8 +1402,7 @@ def get_paquete(paquete_id: int):
 
 @router.post("/paquetes", response_model=PaquetePiezasDetail, status_code=status.HTTP_201_CREATED)
 def create_paquete(payload: PaquetePiezasCreate):
-    if not payload.proveedor_nombre.strip():
-        raise HTTPException(status_code=400, detail="proveedor_nombre requerido")
+
 
     with get_connection() as conn:
         conn.row_factory = dict_row
@@ -1426,7 +1431,7 @@ def create_paquete(payload: PaquetePiezasCreate):
                 orden["id"],
                 None,
                 numero_reporte,
-                payload.proveedor_nombre.strip(),
+                (payload.proveedor_nombre or "").strip() or None,
                 payload.fecha_arribo,
                 _normalize_paquete_status(payload.estatus),
                 (payload.comentarios or "").strip() or None,

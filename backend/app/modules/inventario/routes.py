@@ -138,7 +138,10 @@ class PaquetePiezaRelacionBase(BaseModel):
     bitacora_pieza_id: Optional[int] = None
     nombre_pieza: str
     numero_parte: Optional[str] = None
-    cantidad: int = 1
+    cantidad: int = 1  # Cantidad esperada/original
+    cantidad_recibida: int = 0  # Cantidad realmente recibida
+    recibida: bool = False  # Estado de recepción
+    fecha_recepcion: Optional[datetime] = None
     almacen: Optional[str] = None
     estatus: str = "Generado"
     observaciones: Optional[str] = None
@@ -153,6 +156,9 @@ class PaquetePiezaRelacionUpdate(BaseModel):
     nombre_pieza: Optional[str] = None
     numero_parte: Optional[str] = None
     cantidad: Optional[int] = None
+    cantidad_recibida: Optional[int] = None
+    recibida: Optional[bool] = None
+    fecha_recepcion: Optional[datetime] = None
     almacen: Optional[str] = None
     estatus: Optional[str] = None
     observaciones: Optional[str] = None
@@ -356,6 +362,25 @@ def ensure_paquetes_piezas_tables(conn):
         ALTER COLUMN estatus SET DEFAULT 'Generado'
         """
     )
+    # Nuevas columnas para recepción parcial
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas_relaciones
+        ADD COLUMN IF NOT EXISTS recibida BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas_relaciones
+        ADD COLUMN IF NOT EXISTS cantidad_recibida INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas_relaciones
+        ADD COLUMN IF NOT EXISTS fecha_recepcion TIMESTAMPTZ
+        """
+    )
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_paquetes_piezas_relaciones_paquete
@@ -461,9 +486,48 @@ def _normalize_paquete_status(value: Optional[str]) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in {"completado", "recibido"}:
         return "Completado"
+    if normalized in {"parcial", "en recepcion"}:
+        return "Parcial"
     if normalized in {"generado", "pendiente", "demorado", ""}:
         return "Generado"
     return str(value or "Generado").strip() or "Generado"
+
+
+def _calcular_estatus_paquete(conn, paquete_id: int) -> str:
+    """
+    Calcula automáticamente el estatus del paquete basado en las piezas recibidas.
+    
+    Returns:
+        'Generado' - Si no hay piezas recibidas (recibida = false para todas)
+        'Parcial'  - Si hay al menos una pieza recibida pero no todas
+        'Completado' - Si todas las piezas están recibidas
+    """
+    conn.row_factory = dict_row
+    
+    # Obtener totales
+    result = conn.execute(
+        """
+        SELECT 
+            COUNT(*) as total_piezas,
+            COUNT(*) FILTER (WHERE recibida = TRUE) as piezas_recibidas
+        FROM paquetes_piezas_relaciones
+        WHERE paquete_id = %s
+        """,
+        (paquete_id,),
+    ).fetchone()
+    
+    if not result or result["total_piezas"] == 0:
+        return "Generado"
+    
+    total = result["total_piezas"]
+    recibidas = result["piezas_recibidas"]
+    
+    if recibidas == 0:
+        return "Generado"
+    elif recibidas == total:
+        return "Completado"
+    else:
+        return "Parcial"
 
 
 def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]) -> Optional[dict[str, Any]]:
@@ -646,6 +710,9 @@ def _list_paquete_relaciones(conn, paquete_id: int) -> List[dict[str, Any]]:
             nombre_pieza,
             numero_parte,
             cantidad,
+            cantidad_recibida,
+            recibida,
+            fecha_recepcion,
             almacen,
             estatus,
             observaciones,
@@ -730,11 +797,14 @@ def _insert_paquete_relaciones(conn, paquete_id: int, relaciones: List[PaquetePi
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                cantidad_recibida,
+                recibida,
+                fecha_recepcion,
                 almacen,
                 estatus,
                 observaciones
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 paquete_id,
@@ -742,6 +812,9 @@ def _insert_paquete_relaciones(conn, paquete_id: int, relaciones: List[PaquetePi
                 relacion.nombre_pieza.strip(),
                 (relacion.numero_parte or "").strip() or None,
                 relacion.cantidad,
+                relacion.cantidad_recibida or 0,
+                relacion.recibida or False,
+                relacion.fecha_recepcion,
                 (relacion.almacen or "").strip() or None,
                 _normalize_paquete_status(relacion.estatus),
                 (relacion.observaciones or "").strip() or None,
@@ -1357,6 +1430,18 @@ def create_paquete(payload: PaquetePiezasCreate):
         ).fetchone()
 
         _insert_paquete_relaciones(conn, paquete["id"], payload.relaciones)
+        
+        # Calcular estatus automáticamente basado en piezas recibidas
+        estatus_auto = _calcular_estatus_paquete(conn, paquete["id"])
+        conn.execute(
+            """
+            UPDATE paquetes_piezas
+            SET estatus = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (estatus_auto, paquete["id"]),
+        )
+        
         return _build_paquete_detail(conn, paquete["id"])
 
 
@@ -1435,7 +1520,71 @@ def update_paquete(paquete_id: int, payload: PaquetePiezasUpdate):
                 paquete_id,
                 [PaquetePiezaRelacionCreate(**relacion) if isinstance(relacion, dict) else relacion for relacion in relaciones],
             )
+            
+            # Calcular estatus automáticamente basado en piezas recibidas
+            # Solo si no se especificó manualmente el estatus 'Completado'
+            if "estatus" not in updates or updates.get("estatus") != "Completado":
+                estatus_auto = _calcular_estatus_paquete(conn, paquete_id)
+                conn.execute(
+                    """
+                    UPDATE paquetes_piezas
+                    SET estatus = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (estatus_auto, paquete_id),
+                )
 
+        return _build_paquete_detail(conn, paquete_id)
+
+
+@router.post("/paquetes/{paquete_id}/completar", response_model=PaquetePiezasDetail)
+def completar_paquete(paquete_id: int):
+    """
+    Marca un paquete como 'Completado'.
+    Verifica que todas las piezas estén recibidas antes de permitir completar.
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        ensure_paquetes_piezas_tables(conn)
+        _ensure_paquete_exists(conn, paquete_id)
+        
+        # Verificar que todas las piezas estén recibidas
+        result = conn.execute(
+            """
+            SELECT 
+                COUNT(*) as total_piezas,
+                COUNT(*) FILTER (WHERE recibida = TRUE) as piezas_recibidas
+            FROM paquetes_piezas_relaciones
+            WHERE paquete_id = %s
+            """,
+            (paquete_id,),
+        ).fetchone()
+        
+        total = result["total_piezas"] if result else 0
+        recibidas = result["piezas_recibidas"] if result else 0
+        
+        if total == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="No se puede completar un paquete sin piezas."
+            )
+        
+        if recibidas < total:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"No se puede completar. Faltan {total - recibidas} piezas por recepcionar."
+            )
+        
+        # Actualizar estatus a Completado
+        conn.execute(
+            """
+            UPDATE paquetes_piezas
+            SET estatus = 'Completado', updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (paquete_id,),
+        )
+        
         return _build_paquete_detail(conn, paquete_id)
 
 
@@ -1509,11 +1658,14 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                cantidad_recibida,
+                recibida,
+                fecha_recepcion,
                 almacen,
                 estatus,
                 observaciones
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING
                 id,
                 paquete_id,
@@ -1521,6 +1673,9 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                cantidad_recibida,
+                recibida,
+                fecha_recepcion,
                 almacen,
                 estatus,
                 observaciones,
@@ -1533,6 +1688,9 @@ def create_paquete_relacion(paquete_id: int, payload: PaquetePiezaRelacionCreate
                 payload.nombre_pieza.strip(),
                 (payload.numero_parte or "").strip() or None,
                 payload.cantidad,
+                payload.cantidad_recibida or 0,
+                payload.recibida or False,
+                payload.fecha_recepcion,
                 (payload.almacen or "").strip() or None,
                 _normalize_paquete_status(payload.estatus),
                 (payload.observaciones or "").strip() or None,
@@ -1550,7 +1708,7 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
 
     query_updates: list[str] = []
     params: list[Any] = []
-    for field in ("bitacora_pieza_id", "nombre_pieza", "numero_parte", "cantidad", "almacen", "estatus", "observaciones"):
+    for field in ("bitacora_pieza_id", "nombre_pieza", "numero_parte", "cantidad", "cantidad_recibida", "recibida", "fecha_recepcion", "almacen", "estatus", "observaciones"):
         if field not in updates:
             continue
         value = updates[field]
@@ -1577,6 +1735,9 @@ def update_paquete_relacion(relacion_id: int, payload: PaquetePiezaRelacionUpdat
                 nombre_pieza,
                 numero_parte,
                 cantidad,
+                cantidad_recibida,
+                recibida,
+                fecha_recepcion,
                 almacen,
                 estatus,
                 observaciones,

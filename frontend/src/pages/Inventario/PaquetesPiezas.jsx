@@ -20,6 +20,9 @@ function createPieceRow(overrides = {}) {
     bitacoraPiezaId: overrides.bitacoraPiezaId || null,
     descripcion: overrides.descripcion || "",
     cantidad: overrides.cantidad ?? 1,
+    cantidadRecibida: overrides.cantidadRecibida ?? 0,
+    recibida: overrides.recibida || false,
+    fechaRecepcion: overrides.fechaRecepcion || null,
     almacen: overrides.almacen || "",
     numeroParte: overrides.numeroParte || "",
   };
@@ -33,6 +36,9 @@ function normalizePieceRows(relaciones = []) {
             bitacoraPiezaId: item?.bitacora_pieza_id || null,
             descripcion: item?.nombre_pieza || "",
             cantidad: item?.cantidad ?? 1,
+            cantidadRecibida: item?.cantidad_recibida ?? 0,
+            recibida: item?.recibida || false,
+            fechaRecepcion: item?.fecha_recepcion || null,
             almacen: item?.almacen || "",
             numeroParte: item?.numero_parte || "",
           })
@@ -48,6 +54,7 @@ function serializePieceRows(rows = []) {
     rows.map((item) => ({
       descripcion: String(item?.descripcion || "").trim(),
       cantidad: Number(item?.cantidad || 0),
+      recibida: Boolean(item?.recibida),
       almacen: String(item?.almacen || "").trim(),
       numeroParte: String(item?.numeroParte || "").trim(),
     }))
@@ -64,12 +71,14 @@ const EMPTY_FORM = {
 
 const STATUS_STYLES = {
   Generado: "bg-alert-amber/15 text-alert-amber border-alert-amber/30",
+  Parcial: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   Completado: "bg-alert-green/15 text-alert-green border-alert-green/30",
 };
 
 function normalizeStatus(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "completado" || normalized === "recibido") return "Completado";
+  if (normalized === "parcial" || normalized === "en recepcion") return "Parcial";
   return "Generado";
 }
 
@@ -134,6 +143,9 @@ function buildPayload(form) {
       nombre_pieza: String(pieza.descripcion || "").trim(),
       numero_parte: String(pieza.numeroParte || "").trim() || null,
       cantidad: Math.max(1, Number(pieza.cantidad || 1)),
+      cantidad_recibida: Math.max(0, Number(pieza.cantidadRecibida || pieza.cantidad || 0)),
+      recibida: Boolean(pieza.recibida),
+      fecha_recepcion: pieza.recibida ? new Date().toISOString() : null,
       almacen: String(pieza.almacen || "").trim() || null,
       estatus: form.estado,
     }))
@@ -284,7 +296,7 @@ function PackageModal({
                       <table className="min-w-full text-left">
                         <thead className="border-b border-border-dark bg-surface-dark/70">
                           <tr>
-                            {["No.", "Descripción", "Cantidad", "Almacén", "Acciones"].map((label) => (
+                            {["No.", "Descripción", "Cantidad", "Recibida", "Almacén", "Acciones"].map((label) => (
                               <th
                                 key={label}
                                 className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400"
@@ -296,7 +308,7 @@ function PackageModal({
                         </thead>
                         <tbody className="divide-y divide-border-dark">
                           {(form.piezas || []).map((pieza, index) => (
-                            <tr key={pieza.rowId}>
+                            <tr key={pieza.rowId} className={pieza.recibida ? "bg-alert-green/5" : ""}>
                               <td className="px-3 py-3 text-sm font-semibold text-slate-300">{index + 1}</td>
                               <td className="px-3 py-3">
                                 <input
@@ -313,7 +325,16 @@ function PackageModal({
                                   min="1"
                                   value={pieza.cantidad}
                                   onChange={(event) => onPieceChange(pieza.rowId, "cantidad", event.target.value)}
-                                  className="w-24 rounded-lg border border-border-dark bg-surface-dark px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                                  className="w-20 rounded-lg border border-border-dark bg-surface-dark px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary"
+                                />
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={pieza.recibida || false}
+                                  onChange={(event) => onPieceChange(pieza.rowId, "recibida", event.target.checked)}
+                                  className="h-5 w-5 rounded border-border-dark bg-surface-dark text-primary focus:ring-primary cursor-pointer"
+                                  title={pieza.recibida ? "Pieza recibida" : "Marcar como recibida"}
                                 />
                               </td>
                               <td className="px-3 py-3">
@@ -356,6 +377,32 @@ function PackageModal({
                       </button>
                     </div>
                   </div>
+                  
+                  {/* Indicador de progreso de recepción */}
+                  {form.piezas && form.piezas.length > 0 && (
+                    <div className="flex items-center gap-3 px-1">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-slate-400">
+                            Progreso de recepción
+                          </span>
+                          <span className="text-xs font-bold text-white">
+                            {form.piezas.filter(p => p.recibida).length} / {form.piezas.length} piezas
+                          </span>
+                        </div>
+                        <div className="h-2 bg-surface-dark rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary rounded-full transition-all duration-300"
+                            style={{ width: `${(form.piezas.filter(p => p.recibida).length / form.piezas.length) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      {form.piezas.filter(p => p.recibida).length === form.piezas.length && form.piezas.length > 0 && (
+                        <span className="material-symbols-outlined text-alert-green text-xl">check_circle</span>
+                      )}
+                    </div>
+                  )}
+                  
                   {autofillInfo?.fetched ? (
                     autofillInfo.count ? (
                       <p className="text-xs text-primary">
@@ -518,6 +565,7 @@ export default function PaquetesPiezas() {
     duplicatePackage: null,
   });
   const [validatingReport, setValidatingReport] = useState(false);
+  const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
@@ -815,6 +863,76 @@ export default function PaquetesPiezas() {
     setModalOpen(false);
     resetModal();
   };
+  
+  const handleConfirmComplete = async () => {
+    setConfirmCompleteOpen(false);
+    setForm(prev => ({ ...prev, estado: "Completado" }));
+    // Llamar al endpoint especial para completar
+    try {
+      setSaving(true);
+      const response = await fetch(`${API_BASE}/inventario/paquetes/${activeId}/completar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "No se pudo completar el paquete.");
+      }
+      await loadPackages(search);
+      closeModal();
+    } catch (err) {
+      setError(err.message || "Error al completar el paquete.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  const handleCancelComplete = () => {
+    setConfirmCompleteOpen(false);
+    // Guardar normalmente sin completar
+    executeSave();
+  };
+  
+  const executeSave = async () => {
+    // Esta función contiene la lógica original de guardado
+    try {
+      setSaving(true);
+      setError("");
+      const payload = buildPayload(form);
+      const endpoint =
+        modalMode === "create"
+          ? `${API_BASE}/inventario/paquetes`
+          : `${API_BASE}/inventario/paquetes/${activeId}`;
+
+      const response = await fetch(endpoint, {
+        method: modalMode === "create" ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(modalMode === "create" ? "No se pudo guardar el paquete." : "No se pudo actualizar el paquete.");
+      }
+
+      const savedPackage = await response.json();
+      const pendingPhotos = draftPhotos.filter((photo) => !photo.persisted && photo.file);
+
+      if (pendingPhotos.length) {
+        await uploadFilesToPackage(
+          savedPackage.id,
+          pendingPhotos.map((photo) => photo.file)
+        );
+      }
+
+      await loadPackages(search);
+      closeModal();
+      setPage(1);
+    } catch (err) {
+      setError(err.message || "No se pudo guardar el paquete.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -955,46 +1073,20 @@ export default function PaquetesPiezas() {
       window.alert(`El reporte/siniestro ya está asignado al paquete ${reportValidation.duplicatePackage.folio}.`);
       return;
     }
-
-    try {
-      setSaving(true);
-      setError("");
-      const payload = buildPayload(form);
-      const endpoint =
-        modalMode === "create"
-          ? `${API_BASE}/inventario/paquetes`
-          : `${API_BASE}/inventario/paquetes/${activeId}`;
-
-      const response = await fetch(endpoint, {
-        method: modalMode === "create" ? "POST" : "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(modalMode === "create" ? "No se pudo guardar el paquete." : "No se pudo actualizar el paquete.");
-      }
-
-      const savedPackage = await response.json();
-      const pendingPhotos = draftPhotos.filter((photo) => !photo.persisted && photo.file);
-
-      if (pendingPhotos.length) {
-        await uploadFilesToPackage(
-          savedPackage.id,
-          pendingPhotos.map((photo) => photo.file)
-        );
-      }
-
-      await loadPackages(search);
-      closeModal();
-      setPage(1);
-    } catch (err) {
-      setError(err.message || "No se pudo guardar el paquete.");
-    } finally {
-      setSaving(false);
+    
+    // Verificar si todas las piezas están recibidas y no está ya completado
+    const totalPiezas = piezas.length;
+    const piezasRecibidas = piezas.filter(p => p.recibida).length;
+    const estaCompletado = form.estado === "Completado";
+    
+    if (piezasRecibidas === totalPiezas && totalPiezas > 0 && !estaCompletado && !confirmCompleteOpen) {
+      // Mostrar modal de confirmación
+      setConfirmCompleteOpen(true);
+      return;
     }
+
+    // Guardar normalmente
+    await executeSave();
   };
 
   const handleDelete = async (pkg) => {
@@ -1276,6 +1368,45 @@ export default function PaquetesPiezas() {
           event.target.value = "";
         }}
       />
+
+      {/* Modal de confirmación para completar paquete */}
+      {confirmCompleteOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border-dark bg-surface-dark shadow-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-3xl text-alert-amber">warning</span>
+              <h3 className="text-xl font-bold text-white">¿Confirmar recepción completa?</h3>
+            </div>
+            
+            <p className="text-slate-300 mb-2">
+              Todas las piezas ({form.piezas?.length || 0}) han sido marcadas como recibidas.
+            </p>
+            
+            <p className="text-slate-400 text-sm mb-6">
+              Una vez marcado como <strong className="text-alert-green">Completado</strong>, el paquete no podrá modificarse. 
+              Asegúrate de que todas las piezas han sido recepcionadas correctamente.
+            </p>
+            
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelComplete}
+                className="rounded-xl border border-border-dark px-5 py-2.5 text-sm font-semibold text-slate-300 hover:bg-background-dark transition-colors"
+              >
+                Guardar sin completar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmComplete}
+                disabled={saving}
+                className="rounded-xl bg-alert-green px-5 py-2.5 text-sm font-bold text-white hover:bg-alert-green/90 transition-colors disabled:opacity-60"
+              >
+                {saving ? "Completando..." : "Sí, completar recepción"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <PackageModal
         isOpen={modalOpen}

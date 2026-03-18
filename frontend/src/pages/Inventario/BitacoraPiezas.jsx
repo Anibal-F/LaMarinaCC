@@ -510,12 +510,34 @@ export default function BitacoraPiezas() {
     const sessionPrefs = parsePrefs(sessionStorage.getItem(sessionStorageKey));
     const localPrefs = parsePrefs(localStorage.getItem(storageKey));
     const prefs = sessionPrefs || localPrefs;
-    if (!prefs) return;
-    setColumnOrder(prefs.order);
-    setHiddenColumns(prefs.hidden);
-    if (prefs.widths) {
-      setColumnWidths(prefs.widths);
+    
+    // Si no hay preferencias guardadas, usar defaults
+    if (!prefs) {
+      setColumnOrder(DEFAULT_COLUMN_ORDER);
+      setHiddenColumns(DEFAULT_HIDDEN_COLUMNS);
+      setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+      return;
     }
+    
+    // Detectar columnas nuevas que no están en la config guardada
+    const savedOrder = prefs.order || [];
+    const currentKeys = DEFAULT_COLUMN_ORDER;
+    const newColumns = currentKeys.filter(key => !savedOrder.includes(key));
+    
+    // Combinar: orden guardado + columnas nuevas al final
+    const mergedOrder = [...savedOrder, ...newColumns];
+    
+    // Limpiar columnas que ya no existen de hiddenColumns
+    const savedHidden = prefs.hidden || [];
+    const cleanedHidden = savedHidden.filter(key => currentKeys.includes(key));
+    
+    setColumnOrder(mergedOrder);
+    setHiddenColumns(cleanedHidden);
+    
+    // Merge widths: mantener los guardados + defaults para nuevos
+    const savedWidths = prefs.widths || {};
+    const mergedWidths = { ...DEFAULT_COLUMN_WIDTHS, ...savedWidths };
+    setColumnWidths(mergedWidths);
   }, [sessionStorageKey, storageKey]);
   
   // Guardar preferencias de columnas

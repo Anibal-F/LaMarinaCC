@@ -613,8 +613,9 @@ export default function PaquetesPiezas() {
 
   const metrics = useMemo(() => {
     const generados = packages.filter((item) => item.estado === "Generado").length;
+    const parciales = packages.filter((item) => item.estado === "Parcial").length;
     const completados = packages.filter((item) => item.estado === "Completado").length;
-    return { generados, completados };
+    return { generados, parciales, completados };
   }, [packages]);
 
   const totalPages = Math.max(1, Math.ceil(packages.length / pageSize));
@@ -1177,6 +1178,15 @@ export default function PaquetesPiezas() {
                   <div>
                     <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Generados</div>
                     <div className="text-2xl font-bold text-white">{metrics.generados}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 rounded-2xl border border-border-dark bg-surface-dark px-5 py-4 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
+                  <div className="rounded-xl bg-amber-500/15 p-3 text-amber-500">
+                    <span className="material-symbols-outlined">hourglass_top</span>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Parciales</div>
+                    <div className="text-2xl font-bold text-white">{metrics.parciales}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 rounded-2xl border border-border-dark bg-surface-dark px-5 py-4 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">

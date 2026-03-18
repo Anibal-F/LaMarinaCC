@@ -62,7 +62,6 @@ function serializePieceRows(rows = []) {
 }
 
 const EMPTY_FORM = {
-  proveedor: "",
   reporte: "",
   piezas: [createPieceRow()],
   comentarios: "",
@@ -153,7 +152,6 @@ function buildPayload(form) {
 
   return {
     numero_reporte_siniestro: form.reporte.trim(),
-    proveedor_nombre: form.proveedor.trim(),
     estatus: form.estado,
     comentarios: form.comentarios.trim() || null,
     relaciones: piezas,
@@ -164,8 +162,6 @@ function PackageModal({
   isOpen,
   mode,
   form,
-  providerOptions,
-  onAddProvider,
   reportValidation,
   isValidatingReport,
   autofillInfo,
@@ -173,6 +169,7 @@ function PackageModal({
   onPieceChange,
   onAddPieceRow,
   onRemovePieceRow,
+  onToggleAllReceived,
   onClose,
   onSave,
   photos,
@@ -222,22 +219,8 @@ function PackageModal({
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               <div className="grid items-stretch gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
                 <section className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2 md:items-start">
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Proveedor
-                    </span>
-                    <SearchableSelect
-                      value={form.proveedor}
-                      onChange={(value) => onChange("proveedor", value)}
-                      options={providerOptions}
-                      placeholder="Selecciona un proveedor"
-                      emptyLabel="Sin proveedores disponibles"
-                      onAdd={onAddProvider}
-                      addLabel="Crear proveedor manual"
-                    />
-                  </div>
-                  <label className="space-y-2 md:row-span-2">
+                <div className="grid gap-4 md:grid-cols-1">
+                  <label className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Reporte / Siniestro
                     </span>
@@ -296,14 +279,31 @@ function PackageModal({
                       <table className="min-w-full text-left">
                         <thead className="border-b border-border-dark bg-surface-dark/70">
                           <tr>
-                            {["No.", "Descripción", "Cantidad", "Recibida", "Almacén", "Acciones"].map((label) => (
-                              <th
-                                key={label}
-                                className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400"
-                              >
-                                {label}
-                              </th>
-                            ))}
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">No.</th>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Descripción</th>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Cantidad</th>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                              <div className="flex items-center justify-center gap-2">
+                                <span>Recibida</span>
+                                {(form.piezas || []).length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const allReceived = (form.piezas || []).every(p => p.recibida);
+                                      onToggleAllReceived(!allReceived);
+                                    }}
+                                    className="group relative inline-flex items-center justify-center"
+                                    title={(form.piezas || []).every(p => p.recibida) ? "Desmarcar todas" : "Marcar todas como recibidas"}
+                                  >
+                                    <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:text-primary transition-colors">
+                                      {(form.piezas || []).every(p => p.recibida) ? "check_box" : "check_box_outline_blank"}
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
+                            </th>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Almacén</th>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Acciones</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border-dark">
@@ -539,7 +539,6 @@ function PackageModal({
 
 export default function PaquetesPiezas() {
   const [packages, setPackages] = useState([]);
-  const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -621,35 +620,6 @@ export default function PaquetesPiezas() {
   const totalPages = Math.max(1, Math.ceil(packages.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
   const pagedPackages = packages.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
-  const providerOptions = useMemo(() => {
-    const options = new Set(providers);
-    if (form.proveedor?.trim()) {
-      options.add(form.proveedor.trim());
-    }
-    return Array.from(options).sort((a, b) => a.localeCompare(b, "es"));
-  }, [providers, form.proveedor]);
-
-  const loadProviders = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/inventario/proveedores?activo=true`);
-      if (!response.ok) {
-        throw new Error("No se pudo cargar el catálogo de proveedores.");
-      }
-      const payload = await response.json();
-      const providerNames = Array.isArray(payload)
-        ? payload
-            .map((item) => String(item?.nombre || "").trim())
-            .filter(Boolean)
-        : [];
-      setProviders(Array.from(new Set(providerNames)));
-    } catch (err) {
-      setError((prev) => prev || err.message || "No se pudo cargar el catálogo de proveedores.");
-    }
-  };
-
-  useEffect(() => {
-    loadProviders();
-  }, []);
 
   const resetModal = () => {
     revokeDraftUrls(draftPhotos);
@@ -677,7 +647,6 @@ export default function PaquetesPiezas() {
     setModalMode(mode);
     setActiveId(detail?.id || null);
     setForm({
-      proveedor: detail?.proveedor_nombre || "",
       reporte: detail?.numero_reporte_siniestro || "",
       piezas: normalizePieceRows(detail?.relaciones || []),
       comentarios: detail?.comentarios || "",
@@ -970,37 +939,14 @@ export default function PaquetesPiezas() {
     });
   };
 
-  const handleAddProvider = async (providerName) => {
-    const trimmedName = String(providerName || "").trim();
-    if (!trimmedName) return;
-
-    try {
-      setError("");
-      const response = await fetch(`${API_BASE}/inventario/proveedores`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          nombre: trimmedName,
-          fuente: "Manual",
-          email: null,
-          celular: null,
-          activo: true,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.detail || "No se pudo crear el proveedor.");
-      }
-
-      await loadProviders();
-      setForm((prev) => ({ ...prev, proveedor: trimmedName }));
-    } catch (err) {
-      setError(err.message || "No se pudo crear el proveedor.");
-      throw err;
-    }
+  const handleToggleAllReceived = (checked) => {
+    setForm((prev) => ({
+      ...prev,
+      piezas: (prev.piezas || []).map((pieza) => ({
+        ...pieza,
+        recibida: checked,
+      })),
+    }));
   };
 
   const uploadFilesToPackage = async (packageId, files) => {
@@ -1058,8 +1004,8 @@ export default function PaquetesPiezas() {
   const handleSave = async () => {
     const piezas = (form.piezas || []).filter((pieza) => String(pieza.descripcion || "").trim());
 
-    if (!form.reporte.trim() || !form.proveedor.trim() || !piezas.length) {
-      window.alert("Completa proveedor, reporte y al menos una pieza.");
+    if (!form.reporte.trim() || !piezas.length) {
+      window.alert("Completa el reporte y al menos una pieza.");
       return;
     }
     if (validatingReport) {
@@ -1422,8 +1368,6 @@ export default function PaquetesPiezas() {
         isOpen={modalOpen}
         mode={modalMode}
         form={form}
-        providerOptions={providerOptions}
-        onAddProvider={handleAddProvider}
         reportValidation={reportValidation}
         isValidatingReport={validatingReport}
         autofillInfo={autofillInfo}
@@ -1432,6 +1376,7 @@ export default function PaquetesPiezas() {
         onPieceChange={handlePieceChange}
         onAddPieceRow={handleAddPieceRow}
         onRemovePieceRow={handleRemovePieceRow}
+        onToggleAllReceived={handleToggleAllReceived}
         onClose={closeModal}
         onSave={handleSave}
         onCameraClick={() => cameraInputRef.current?.click()}

@@ -908,7 +908,7 @@ def run_piezas_extraction(job_id: str, max_ordenes: Optional[int], headless: boo
         
         # Esperar proceso
         try:
-            process.wait(timeout=1800)  # 30 minutos timeout (muchas órdenes)
+            process.wait(timeout=3600)  # 60 minutos timeout (1 hora) - muchas órdenes
         except subprocess.TimeoutExpired:
             process.kill()
             rpa_jobs[job_id]["status"] = "failed"

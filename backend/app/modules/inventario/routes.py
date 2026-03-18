@@ -556,11 +556,20 @@ def _get_bitacora_piezas_by_reporte(
     conn,
     numero_reporte_siniestro: Optional[str],
 ) -> List[dict[str, Any]]:
+    """
+    Busca piezas en bitácora por número de reporte/siniestro.
+    Busca de forma flexible: primero intenta coincidencia exacta,
+    si no encuentra, busca por los últimos 6 dígitos del número.
+    """
+    import re
+    
     reporte = str(numero_reporte_siniestro or "").strip()
     if not reporte:
         return []
 
     conn.row_factory = dict_row
+    
+    # Primero intentar búsqueda exacta (formato antiguo o idéntico)
     rows = conn.execute(
         """
         SELECT
@@ -578,6 +587,35 @@ def _get_bitacora_piezas_by_reporte(
         """,
         (reporte,),
     ).fetchall()
+    
+    if rows:
+        return list(rows)
+    
+    # Si no encuentra, extraer los últimos 6 dígitos y buscar con ILIKE
+    # Ejemplo: "04260302920" -> extraer "0302920" -> buscar "%0302920%"
+    digits_only = re.sub(r'\D', '', reporte)  # Quitar todo excepto dígitos
+    if len(digits_only) >= 6:
+        # Tomar los últimos 6 dígitos (la parte única del número)
+        search_pattern = f"%{digits_only[-6:]}%"
+        
+        rows = conn.execute(
+            """
+            SELECT
+                MIN(bp.id)::int AS bitacora_pieza_id,
+                bp.nombre AS nombre_pieza,
+                bp.numero_parte,
+                COUNT(*)::int AS cantidad,
+                MAX(bp.estatus) AS estatus,
+                MAX(p.nombre) AS proveedor_nombre
+            FROM bitacora_piezas bp
+            LEFT JOIN proveedores p ON p.id = bp.proveedor_id
+            WHERE LOWER(TRIM(COALESCE(bp.numero_reporte, ''))) ILIKE LOWER(TRIM(%s))
+            GROUP BY bp.nombre, bp.numero_parte
+            ORDER BY bp.nombre ASC, bp.numero_parte ASC
+            """,
+            (search_pattern,),
+        ).fetchall()
+    
     return list(rows)
 
 
@@ -1791,7 +1829,7 @@ async def extract_qualitas_piezas(
             max_ordenes=max_ordenes,
             use_existing_session=True,
             use_db=True,
-            max_total_time=1800,  # 30 minutos por intento
+            max_total_time=3600,  # 60 minutos (1 hora) por intento
             reset_checkpoint=reset_checkpoint
         )
         

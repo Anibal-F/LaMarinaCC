@@ -55,7 +55,7 @@ class QualitasPiezasWorkflow:
         max_ordenes: Optional[int] = None,
         use_existing_session: bool = True,
         use_db: bool = True,
-        max_total_time: int = 1800  # Máximo 30 minutos por defecto
+        max_total_time: int = 3600  # Máximo 60 minutos (1 hora) por defecto
     ) -> dict:
         """
         Ejecuta el workflow completo con timeout global.
@@ -100,7 +100,7 @@ class QualitasPiezasWorkflow:
         max_ordenes: Optional[int] = None,
         use_existing_session: bool = True,
         use_db: bool = True,
-        max_total_time: int = 1800,
+        max_total_time: int = 3600,  # 60 minutos
         reset_checkpoint: bool = False
     ) -> dict:
         """
@@ -609,7 +609,7 @@ async def main():
             max_ordenes=args.max_ordenes,
             use_existing_session=True,
             use_db=args.use_db,
-            max_total_time=1800,  # 30 minutos
+            max_total_time=3600,  # 60 minutos (1 hora)
             reset_checkpoint=args.reset_checkpoint
         )
     

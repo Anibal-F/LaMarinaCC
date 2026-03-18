@@ -175,7 +175,7 @@ function PackageModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-7xl rounded-2xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden">
+      <div className="w-full max-w-7xl max-h-[90vh] rounded-2xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col">
         <div className="flex items-start justify-between gap-4 border-b border-border-dark px-6 py-5">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">
@@ -207,8 +207,9 @@ function PackageModal({
           </div>
         ) : (
           <>
-            <div className="grid items-stretch gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
-              <section className="space-y-5">
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="grid items-stretch gap-6 p-6 xl:grid-cols-[1.55fr_0.85fr]">
+                <section className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 md:items-start">
                   <div className="space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
@@ -462,9 +463,10 @@ function PackageModal({
                 </div>
 
               </aside>
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-border-dark px-6 py-4">
+            <div className="flex items-center justify-end gap-3 border-t border-border-dark px-6 py-4 bg-surface-dark">
               <button
                 type="button"
                 onClick={onClose}

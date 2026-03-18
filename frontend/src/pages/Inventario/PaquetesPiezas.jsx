@@ -150,9 +150,19 @@ function buildPayload(form) {
     }))
     .filter((pieza) => pieza.nombre_pieza);
 
+  // Calcular estatus automáticamente basado en piezas recibidas
+  const totalPiezas = piezas.length;
+  const piezasRecibidas = piezas.filter(p => p.recibida).length;
+  let estatusCalculado = "Generado";
+  if (piezasRecibidas === totalPiezas && totalPiezas > 0) {
+    estatusCalculado = "Completado";
+  } else if (piezasRecibidas > 0) {
+    estatusCalculado = "Parcial";
+  }
+
   return {
     numero_reporte_siniestro: form.reporte.trim(),
-    estatus: form.estado,
+    estatus: estatusCalculado,
     comentarios: form.comentarios.trim() || null,
     relaciones: piezas,
   };

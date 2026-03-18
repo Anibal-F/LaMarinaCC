@@ -1531,17 +1531,16 @@ def update_paquete(paquete_id: int, payload: PaquetePiezasUpdate):
             )
             
             # Calcular estatus automáticamente basado en piezas recibidas
-            # Solo si no se especificó manualmente el estatus 'Completado'
-            if "estatus" not in updates or updates.get("estatus") != "Completado":
-                estatus_auto = _calcular_estatus_paquete(conn, paquete_id)
-                conn.execute(
-                    """
-                    UPDATE paquetes_piezas
-                    SET estatus = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                    """,
-                    (estatus_auto, paquete_id),
-                )
+            # El estatus se determina siempre por el estado real de las piezas
+            estatus_auto = _calcular_estatus_paquete(conn, paquete_id)
+            conn.execute(
+                """
+                UPDATE paquetes_piezas
+                SET estatus = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (estatus_auto, paquete_id),
+            )
 
         return _build_paquete_detail(conn, paquete_id)
 

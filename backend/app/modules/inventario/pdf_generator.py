@@ -77,26 +77,26 @@ def _draw_header(canvas, doc, logo_path=None):
             # Logo más a la izquierda y centrado verticalmente con el banner
             # Banner: 70pts de alto, centrado en height-35
             # Logo: 100pts de alto, posicionado para centrarse con el banner
-            # Logo a la derecha del banner (sobre el azul oscuro, no sobre las formas azul claro)
-            canvas.drawImage(str(logo_to_use), width - 280, height - 95, width=500, height=120, preserveAspectRatio=True, mask='auto')
+            # Logo a la izquierda (sobre las formas azul claro y azul oscuro)
+            canvas.drawImage(str(logo_to_use), -150, height - 95, width=500, height=120, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     
-    # Forma azul claro (triángulo/polígono en esquina superior IZQUIERDA - invertido)
+    # Forma azul claro (triángulo/polígono en esquina superior IZQUIERDA - más pequeña para no tapar logo)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
     path.moveTo(0, height)
-    path.lineTo(220, height)
-    path.lineTo(170, height - 70)
+    path.lineTo(180, height)           # Reducido de 220
+    path.lineTo(130, height - 70)      # Reducido de 170
     path.lineTo(0, height - 70)
     path.close()
     canvas.drawPath(path, fill=1, stroke=0)
     
-    # Segunda forma azul más clara (también a la izquierda)
+    # Segunda forma azul más clara (más pequeña)
     canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
     path2.moveTo(0, height)
-    path2.lineTo(140, height)
+    path2.lineTo(100, height)          # Reducido de 140
     path2.lineTo(0, height - 45)
     path2.close()
     canvas.drawPath(path2, fill=1, stroke=0)

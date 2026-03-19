@@ -1969,18 +1969,31 @@ def asignar_foto_a_pieza(
         
         # Si se está asignando a una pieza, verificar que la pieza existe y pertenece al mismo paquete
         if pieza_id is not None:
-            pieza = conn.execute(
-                """
-                SELECT id FROM bitacora_piezas 
-                WHERE id = %s AND paquete_id = %s
-                """,
-                (pieza_id, media["paquete_id"])
+            # Verificar que la pieza existe en bitacora_piezas
+            pieza_existe = conn.execute(
+                "SELECT id FROM bitacora_piezas WHERE id = %s",
+                (pieza_id,)
             ).fetchone()
             
-            if not pieza:
+            if not pieza_existe:
                 raise HTTPException(
                     status_code=400, 
-                    detail="La pieza no existe o no pertenece a este paquete"
+                    detail="La pieza no existe en la bitácora"
+                )
+            
+            # Verificar que la pieza está relacionada con este paquete
+            relacion = conn.execute(
+                """
+                SELECT id FROM paquetes_piezas_relaciones 
+                WHERE paquete_id = %s AND bitacora_pieza_id = %s
+                """,
+                (media["paquete_id"], pieza_id)
+            ).fetchone()
+            
+            if not relacion:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="La pieza no pertenece a este paquete"
                 )
             
             # Verificar que no haya otra foto asignada a esta pieza

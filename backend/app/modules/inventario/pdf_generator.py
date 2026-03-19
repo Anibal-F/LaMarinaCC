@@ -77,7 +77,7 @@ def _draw_header(canvas, doc, logo_path=None):
             # Logo más a la izquierda y centrado verticalmente con el banner
             # Banner: 70pts de alto, centrado en height-35
             # Logo: 100pts de alto, posicionado para centrarse con el banner
-            canvas.drawImage(str(logo_to_use), -150, height - 90, width=500, height=100, preserveAspectRatio=True, mask='auto')
+            canvas.drawImage(str(logo_to_use), -150, height - 90, width=500, height=120, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     

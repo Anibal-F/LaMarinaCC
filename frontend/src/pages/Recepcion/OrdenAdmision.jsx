@@ -67,6 +67,7 @@ const COLUMN_DEFS = [
 ];
 
 const DEFAULT_COLUMN_ORDER = COLUMN_DEFS.map((column) => column.key);
+const DEFAULT_COLUMN_WIDTHS = Object.fromEntries(COLUMN_DEFS.map((c) => [c.key, "150px"]));
 
 function matchCatalogPartsFromDescription(description, catalogParts = []) {
   if (!description || !catalogParts.length) return [];
@@ -142,6 +143,10 @@ export default function OrdenAdmision() {
   const [draggingColumnKey, setDraggingColumnKey] = useState(null);
   const [columnOrder, setColumnOrder] = useState(DEFAULT_COLUMN_ORDER);
   const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [columnWidths, setColumnWidths] = useState(DEFAULT_COLUMN_WIDTHS);
+  const [resizingColumn, setResizingColumn] = useState(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
   const [filters, setFilters] = useState({
     fechaInicio: "",
     fechaFin: "",
@@ -263,6 +268,32 @@ export default function OrdenAdmision() {
   }, []);
 
   useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e) => {
+      const diff = e.clientX - resizeStartX;
+      const newWidth = Math.max(60, resizeStartWidth + diff);
+      setColumnWidths((prev) => ({ ...prev, [resizingColumn]: `${newWidth}px` }));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
+
+  useEffect(() => {
     const parsePrefs = (raw) => {
       if (!raw) return null;
       try {
@@ -271,7 +302,9 @@ export default function OrdenAdmision() {
         const orderCandidate = Array.isArray(parsed.order) ? parsed.order.filter((key) => DEFAULT_COLUMN_ORDER.includes(key)) : [];
         const hiddenCandidate = Array.isArray(parsed.hidden) ? parsed.hidden.filter((key) => DEFAULT_COLUMN_ORDER.includes(key)) : [];
         const fullOrder = [...orderCandidate, ...DEFAULT_COLUMN_ORDER.filter((key) => !orderCandidate.includes(key))];
-        return { order: fullOrder, hidden: hiddenCandidate };
+        const savedWidths = parsed.widths || {};
+        const mergedWidths = { ...DEFAULT_COLUMN_WIDTHS, ...savedWidths };
+        return { order: fullOrder, hidden: hiddenCandidate, widths: mergedWidths };
       } catch {
         return null;
       }
@@ -283,13 +316,14 @@ export default function OrdenAdmision() {
     if (!prefs) return;
     setColumnOrder(prefs.order);
     setHiddenColumns(prefs.hidden);
+    setColumnWidths(prefs.widths || DEFAULT_COLUMN_WIDTHS);
   }, [sessionStorageKey, storageKey]);
 
   useEffect(() => {
-    const payload = JSON.stringify({ order: columnOrder, hidden: hiddenColumns });
+    const payload = JSON.stringify({ order: columnOrder, hidden: hiddenColumns, widths: columnWidths });
     sessionStorage.setItem(sessionStorageKey, payload);
     localStorage.setItem(storageKey, payload);
-  }, [columnOrder, hiddenColumns, sessionStorageKey, storageKey]);
+  }, [columnOrder, hiddenColumns, columnWidths, sessionStorageKey, storageKey]);
 
   useEffect(() => {
     if (!form.descripcion_siniestro || danosSiniestroParts.length || !partesAuto.length) return;
@@ -817,6 +851,14 @@ export default function OrdenAdmision() {
       next.splice(toIndex, 0, moved);
       return next;
     });
+  };
+
+  const handleResizeStart = (e, columnKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingColumn(columnKey);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(parseInt(columnWidths[columnKey] || '150', 10));
   };
 
   const toggleColumnVisibility = (key) => {
@@ -1370,13 +1412,14 @@ export default function OrdenAdmision() {
                     onClick={() => {
                       setColumnOrder(DEFAULT_COLUMN_ORDER);
                       setHiddenColumns([]);
+                      setColumnWidths(DEFAULT_COLUMN_WIDTHS);
                     }}
                   >
                     Restaurar por defecto
                   </button>
                 </div>
                 <p className="text-xs text-slate-400 mb-3">
-                  Arrastra para cambiar orden. Marca/desmarca para ocultar o mostrar.
+                  Arrastra para cambiar orden. Arrastra el borde derecho de los headers para redimensionar. Marca/desmarca para ocultar o mostrar.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {columnOrder.map((columnKey) => {
@@ -1425,7 +1468,8 @@ export default function OrdenAdmision() {
                     {visibleColumns.map((column) => (
                       <th
                         key={`th-${column.key}`}
-                        className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark cursor-move select-none"
+                        className="relative px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark cursor-move select-none"
+                        style={{ width: columnWidths[column.key] || '150px', minWidth: columnWidths[column.key] || '150px' }}
                         draggable
                         onDragStart={() => setDraggingColumnKey(column.key)}
                         onDragOver={(event) => event.preventDefault()}
@@ -1434,12 +1478,19 @@ export default function OrdenAdmision() {
                           setDraggingColumnKey(null);
                         }}
                         onDragEnd={() => setDraggingColumnKey(null)}
-                        title="Arrastra para reordenar columna"
+                        title="Arrastra para reordenar. Arrastra el borde derecho para redimensionar."
                       >
                         <span className="inline-flex items-center gap-1">
                           <span className="material-symbols-outlined text-sm text-slate-600">drag_indicator</span>
                           {column.label}
                         </span>
+                        {/* Resize handle */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 active:bg-primary transition-colors"
+                          onMouseDown={(e) => handleResizeStart(e, column.key)}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Arrastra para redimensionar"
+                        />
                       </th>
                     ))}
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-right">
@@ -1459,8 +1510,9 @@ export default function OrdenAdmision() {
                       <tr key={record.id} className="border-b border-border-dark/50 hover:bg-white/5">
                         {visibleColumns.map((column) => {
                           const value = column.getValue(record);
+                          const cellStyle = { width: columnWidths[column.key] || '150px', minWidth: columnWidths[column.key] || '150px' };
                           return (
-                            <td key={`td-${record.id}-${column.key}`} className={`px-4 py-3 text-sm ${column.cellClass || "text-slate-300"}`}>
+                            <td key={`td-${record.id}-${column.key}`} className={`px-4 py-3 text-sm ${column.cellClass || "text-slate-300"}`} style={cellStyle}>
                               {column.key === "vehiculo" ? (
                                 <>
                                   {value || "-"}

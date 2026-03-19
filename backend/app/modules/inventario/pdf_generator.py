@@ -77,7 +77,8 @@ def _draw_header(canvas, doc, logo_path=None):
             # Logo más a la izquierda y centrado verticalmente con el banner
             # Banner: 70pts de alto, centrado en height-35
             # Logo: 100pts de alto, posicionado para centrarse con el banner
-            canvas.drawImage(str(logo_to_use), -150, height - 95, width=500, height=120, preserveAspectRatio=True, mask='auto')
+            # Logo a la derecha del banner (sobre el azul oscuro, no sobre las formas azul claro)
+            canvas.drawImage(str(logo_to_use), width - 280, height - 95, width=500, height=120, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     
@@ -268,29 +269,27 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     
     # ===== TABLA DE PIEZAS =====
     if piezas:
+        # Tabla con orden: Pieza → Proveedor → Cantidad (sin Fecha)
         table_data = [
             [
                 Paragraph("<b>Pieza</b>", table_header_style),
-                Paragraph("<b>Cantidad</b>", table_header_style),
                 Paragraph("<b>Proveedor</b>", table_header_style),
-                Paragraph("<b>Fecha</b>", table_header_style),
+                Paragraph("<b>Cantidad</b>", table_header_style),
             ]
         ]
         
         for pieza in piezas:
             nombre = pieza.get('nombre_pieza', '') or ''
-            cantidad = str(pieza.get('cantidad', 1) or 1)
             proveedor = pieza.get('proveedor_nombre', '') or ''
-            fecha_pieza = ""
+            cantidad = str(pieza.get('cantidad', 1) or 1)
             
             table_data.append([
                 Paragraph(nombre, cell_style),
-                Paragraph(cantidad, center_cell_style),
                 Paragraph(proveedor, cell_style),
-                Paragraph(fecha_pieza, center_cell_style),
+                Paragraph(cantidad, center_cell_style),
             ])
         
-        piezas_table = Table(table_data, colWidths=[250, 200, 70])
+        piezas_table = Table(table_data, colWidths=[280, 220, 70])
         piezas_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -301,9 +300,9 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             ('TOPPADDING', (0, 0), (-1, 0), 10),
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 1), (1, -1), 'LEFT'),
-            ('ALIGN', (2, 1), (2, -1), 'CENTER'),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),    # Pieza: izquierda
+            ('ALIGN', (1, 1), (1, -1), 'LEFT'),    # Proveedor: izquierda
+            ('ALIGN', (2, 1), (2, -1), 'CENTER'),  # Cantidad: centro
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e3a5f')),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1e3a5f')),

@@ -46,12 +46,12 @@ def _register_fonts():
 
 
 def _draw_header(canvas, doc, logo_path=None):
-    """Dibuja el header con formas geométricas azules y logo."""
+    """Dibuja el header con formas geométricas azules y logo SOBREPUESTO."""
     width, height = letter
     
-    # Fondo blanco
+    # Fondo blanco (más alto para dar espacio al logo sobrepuesto)
     canvas.setFillColorRGB(1, 1, 1)
-    canvas.rect(0, height - 140, width, 140, fill=1, stroke=0)
+    canvas.rect(0, height - 180, width, 180, fill=1, stroke=0)
     
     # Buscar logo en múltiples rutas posibles
     possible_logo_paths = [
@@ -66,17 +66,18 @@ def _draw_header(canvas, doc, logo_path=None):
             logo_to_use = path
             break
     
-    # Forma azul oscuro principal (parte superior) - DIBUJAR PRIMERO
-    canvas.setFillColorRGB(0.118, 0.227, 0.373)
-    canvas.rect(0, height - 70, width, 70, fill=1, stroke=0)
-    
-    # Logo DENTRO del banner azul oscuro (parte superior izquierda)
+    # 1. DIBUJAR LOGO PRIMERO (quedará detrás del banner)
     if logo_to_use:
         try:
-            # Logo más grande posicionado en el área azul oscuro del header
-            canvas.drawImage(str(logo_to_use), 25, height - 65, width=400, height=55, preserveAspectRatio=True, mask='auto')
+            # Logo GRANDE sobrepuesto, extendiéndose sobre el banner
+            canvas.drawImage(str(logo_to_use), 20, height - 130, width=550, height=120, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
+    
+    # 2. DIBUJAR BANNER AZUL DESPUÉS (quedará encima del logo)
+    # Forma azul oscuro principal (parte superior)
+    canvas.setFillColorRGB(0.118, 0.227, 0.373)
+    canvas.rect(0, height - 70, width, 70, fill=1, stroke=0)
     
     # Forma azul claro (triángulo/polígono en esquina superior derecha)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)
@@ -140,8 +141,6 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     # Registrar fuentes
     font_name, font_name_bold = _register_fonts()
     
-    # El logo se busca internamente en _draw_header
-    
     # Crear lista para todos los elementos
     all_elements = []
     
@@ -151,14 +150,13 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         pagesize=letter,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=50 * mm,  # Más espacio para el header con logo más grande
+        topMargin=55 * mm,  # Más espacio para el header con logo sobrepuesto
         bottomMargin=25 * mm,
     )
     
     # Función para header/footer
     def draw_header_footer(canvas, doc):
         _draw_header(canvas, doc)
-        _draw_footer(canvas, doc)
     
     frame1 = Frame(doc1.leftMargin, doc1.bottomMargin, doc1.width, doc1.height, id='normal')
     template1 = PageTemplate(id='page1', frames=frame1, onPage=draw_header_footer)
@@ -166,7 +164,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     
     styles = getSampleStyleSheet()
     
-    # Estilos - Todo alineado a la izquierda
+    # Estilos
     label_style = ParagraphStyle(
         'LabelStyle',
         fontName=font_name_bold,
@@ -215,11 +213,10 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     seguro = paquete_data.get('seguro', '') or ''
     fecha = datetime.now().strftime('%d.%m.%y')
     
-    # ===== SECCIÓN DE DATOS - TODO ALINEADO A LA IZQUIERDA =====
-    # Usar una sola tabla con todas las filas para mantener alineación
+    # ===== SECCIÓN DE DATOS =====
     datos_completos = [
         [
-            Paragraph("<b>No. Rep/Sin:</b>", label_style),
+            Paragraph("<b>No. Rep/sin:</b>", label_style),
             Paragraph(reporte, value_style),
             "",
             Paragraph("<b>Folio:</b>", label_style),
@@ -248,28 +245,21 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         ],
     ]
     
-    # Tabla maestra con todas las filas alineadas
-    # Anchos: Label1 (100), Valor1 (200), Espacio (20), Label2 (80), Valor2 (120)
     tabla_maestra = Table(datos_completos, colWidths=[100, 200, 20, 80, 120])
     tabla_maestra.setStyle(TableStyle([
-        # Alineación vertical
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        # Padding
         ('LEFTPADDING', (0, 0), (-1, -1), 5),
         ('RIGHTPADDING', (0, 0), (-1, -1), 5),
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        # Bordes para los campos de valores (columnas 1 y 4)
         ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (4, 0), (4, 0), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (1, 1), (1, 1), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (4, 1), (4, 1), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (1, 2), (1, 2), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (4, 2), (4, 2), 1, colors.HexColor('#1e3a5f')),
-        # Borde para Laminero (que abarca desde columna 1 hasta 4)
         ('BOX', (1, 3), (4, 3), 1, colors.HexColor('#1e3a5f')),
-        # Combinar celdas vacías para Laminero
-        ('SPAN', (2, 3), (4, 3)),
+        ('SPAN', (1, 3), (4, 3)),
     ]))
     all_elements.append(tabla_maestra)
     all_elements.append(Spacer(1, 25))
@@ -278,10 +268,10 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     if piezas:
         table_data = [
             [
-                Paragraph("<b>Pieza</b>", table_header_style),
-                Paragraph("<b>Cantidad</b>", table_header_style),
-                Paragraph("<b>Proveedor</b>", table_header_style),
-                Paragraph("<b>Fecha</b>", table_header_style),
+                Paragraph("<b>pieza</b>", table_header_style),
+                Paragraph("<b>cantidad</b>", table_header_style),
+                Paragraph("<b>proveedor</b>", table_header_style),
+                Paragraph("<b>fecha</b>", table_header_style),
             ]
         ]
         

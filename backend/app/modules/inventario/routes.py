@@ -7,6 +7,7 @@ from typing import Any, List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 

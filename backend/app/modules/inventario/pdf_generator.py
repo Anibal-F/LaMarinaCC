@@ -53,11 +53,24 @@ def _draw_header(canvas, doc, logo_path=None):
     canvas.setFillColorRGB(1, 1, 1)
     canvas.rect(0, height - 140, width, 140, fill=1, stroke=0)
     
-    # Logo SOBREPUESTO arriba del banner (más alto)
-    if logo_path and logo_path.exists():
+    # Buscar logo en múltiples rutas posibles
+    possible_logo_paths = [
+        Path(__file__).resolve().parent.parent.parent / "static" / "logo.png",
+        Path(__file__).resolve().parent.parent.parent.parent.parent / "static" / "static" / "LaMarinaCCLogoT.png",
+        Path("/app/static/logo.png"),
+    ]
+    
+    logo_to_use = None
+    for path in possible_logo_paths:
+        if path.exists():
+            logo_to_use = path
+            break
+    
+    # Logo SOBREPUESTO arriba del banner
+    if logo_to_use:
         try:
             # Logo más grande y más arriba, sobrepuesto sobre el banner
-            canvas.drawImage(str(logo_path), 30, height - 130, width=140, height=90, preserveAspectRatio=True, mask='auto')
+            canvas.drawImage(str(logo_to_use), 25, height - 125, width=150, height=85, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     
@@ -127,8 +140,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     # Registrar fuentes
     font_name, font_name_bold = _register_fonts()
     
-    # Buscar logo en la ruta especificada
-    logo_path = Path(__file__).resolve().parent.parent.parent.parent.parent / "static" / "static" / "LaMarinaCCLogoT.png"
+    # El logo se busca internamente en _draw_header
     
     # Crear lista para todos los elementos
     all_elements = []
@@ -145,7 +157,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     
     # Función para header/footer
     def draw_header_footer(canvas, doc):
-        _draw_header(canvas, doc, logo_path)
+        _draw_header(canvas, doc)
         _draw_footer(canvas, doc)
     
     frame1 = Frame(doc1.leftMargin, doc1.bottomMargin, doc1.width, doc1.height, id='normal')
@@ -338,7 +350,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             foto_canvas = canvas.Canvas(foto_buffer, pagesize=letter)
             width, height = letter
             
-            _draw_header(foto_canvas, None, logo_path)
+            _draw_header(foto_canvas, None)
             
             foto_canvas.setFillColorRGB(0.118, 0.227, 0.373)
             foto_canvas.rect(0, height - 110, width, 40, fill=1, stroke=0)

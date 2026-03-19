@@ -574,6 +574,8 @@ export default function PaquetesPiezas() {
   });
   const [validatingReport, setValidatingReport] = useState(false);
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
+  const [pdfModal, setPdfModal] = useState(null);
+  const [openingPdfId, setOpeningPdfId] = useState(null);
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
@@ -800,6 +802,15 @@ export default function PaquetesPiezas() {
     autofillInfo.fetched,
     autofillInfo.signature,
   ]);
+
+  // Cleanup del PDF modal
+  useEffect(() => {
+    return () => {
+      if (pdfModal?.objectUrl) {
+        URL.revokeObjectURL(pdfModal.objectUrl);
+      }
+    };
+  }, [pdfModal]);
 
   const reportHasBlockingIssue =
     reportValidation.reportProvided &&
@@ -1065,6 +1076,63 @@ export default function PaquetesPiezas() {
     }
   };
 
+  const closePdfModal = () => {
+    if (pdfModal?.objectUrl) {
+      URL.revokeObjectURL(pdfModal.objectUrl);
+    }
+    setPdfModal(null);
+  };
+
+  const openPdfPreview = async (pkg) => {
+    if (!pkg?.id) return;
+    setOpeningPdfId(pkg.id);
+    setPdfModal({
+      pkg,
+      loading: true,
+      error: "",
+      fileName: "",
+      objectUrl: ""
+    });
+    
+    try {
+      const response = await fetch(`${API_BASE}/inventario/paquetes/${pkg.id}/pdf-inventario`, {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "No se pudo generar el PDF.");
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("content-disposition");
+      const fileNameMatch = contentDisposition?.match(/filename="?([^"]+)"?/i);
+      const fileName = fileNameMatch?.[1] || `Inventario_${pkg.folio}.pdf`;
+      const objectUrl = URL.createObjectURL(blob);
+      
+      setPdfModal((prev) => {
+        if (prev?.objectUrl) {
+          URL.revokeObjectURL(prev.objectUrl);
+        }
+        return {
+          ...prev,
+          loading: false,
+          error: "",
+          fileName,
+          objectUrl
+        };
+      });
+    } catch (err) {
+      setPdfModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || "No se pudo generar el PDF"
+      }));
+    } finally {
+      setOpeningPdfId(null);
+    }
+  };
+
   const handleDownloadPDF = async (pkg) => {
     try {
       setError("");
@@ -1077,15 +1145,12 @@ export default function PaquetesPiezas() {
         throw new Error(errorData.detail || "No se pudo generar el PDF.");
       }
 
-      // Obtener el blob del PDF
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       
-      // Crear enlace de descarga
       const link = document.createElement("a");
       link.href = url;
       
-      // Obtener nombre del archivo del header Content-Disposition
       const contentDisposition = response.headers.get("content-disposition");
       let filename = `Inventario_${pkg.folio}.pdf`;
       if (contentDisposition) {
@@ -1100,7 +1165,6 @@ export default function PaquetesPiezas() {
       link.click();
       document.body.removeChild(link);
       
-      // Limpiar URL
       window.URL.revokeObjectURL(url);
     } catch (err) {
       setError(err.message || "Error al descargar el PDF.");
@@ -1279,11 +1343,12 @@ export default function PaquetesPiezas() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDownloadPDF(pkg)}
-                                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-blue-500/15 hover:text-blue-400"
-                                title="Descargar PDF de inventario"
+                                onClick={() => openPdfPreview(pkg)}
+                                disabled={openingPdfId === pkg.id}
+                                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-blue-500/15 hover:text-blue-400 disabled:opacity-50"
+                                title="Vista previa del PDF"
                               >
-                                <span className="material-symbols-outlined text-[20px]">description</span>
+                                <span className="material-symbols-outlined text-[20px]">{openingPdfId === pkg.id ? 'refresh' : 'visibility'}</span>
                               </button>
                               <button
                                 type="button"
@@ -1443,6 +1508,90 @@ export default function PaquetesPiezas() {
         isLoading={modalLoading}
         saveDisabled={validatingReport || reportHasBlockingIssue}
       />
+
+      {/* Modal de Vista Previa del PDF */}
+      {pdfModal ? (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
+          <div className="w-[95vw] max-w-6xl h-[90vh] bg-surface-dark border border-border-dark rounded-xl shadow-xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border-dark">
+              <div>
+                <h3 className="text-lg font-bold text-white">Vista previa de PDF</h3>
+                <p className="text-xs text-slate-400">{pdfModal.fileName || "Generando documento..."}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  title="Descargar"
+                  className="p-2 rounded-lg bg-surface-dark border border-border-dark text-slate-300 hover:text-white hover:border-primary"
+                  disabled={!pdfModal.objectUrl}
+                  onClick={() => {
+                    if (!pdfModal.objectUrl) return;
+                    const link = document.createElement("a");
+                    link.href = pdfModal.objectUrl;
+                    link.download = pdfModal.fileName || `Inventario_${pdfModal.pkg?.folio || pdfModal.pkg?.id}.pdf`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                  }}
+                >
+                  <span className="material-symbols-outlined text-lg">download</span>
+                </button>
+                <button
+                  type="button"
+                  title="Abrir en nueva ventana"
+                  className="p-2 rounded-lg bg-surface-dark border border-border-dark text-slate-300 hover:text-white hover:border-primary"
+                  disabled={!pdfModal.objectUrl}
+                  onClick={() => {
+                    if (!pdfModal.objectUrl) return;
+                    window.open(pdfModal.objectUrl, "_blank", "noopener,noreferrer");
+                  }}
+                >
+                  <span className="material-symbols-outlined text-lg">open_in_new</span>
+                </button>
+                <button
+                  type="button"
+                  title="Enviar por correo"
+                  className="p-2 rounded-lg bg-surface-dark border border-border-dark text-slate-300 hover:text-white hover:border-primary"
+                  onClick={() => {
+                    const folio = pdfModal.pkg?.folio || pdfModal.pkg?.id;
+                    const subject = encodeURIComponent(`Inventario de refacciones #${folio}`);
+                    const body = encodeURIComponent(`Te comparto el inventario de refacciones #${folio}.\n\nNota: adjunta el PDF descargado desde la vista previa.`);
+                    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                  }}
+                >
+                  <span className="material-symbols-outlined text-lg">mail</span>
+                </button>
+                <button
+                  className="text-slate-400 hover:text-white"
+                  type="button"
+                  onClick={closePdfModal}
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-black/30">
+              {pdfModal.loading ? (
+                <div className="h-full flex items-center justify-center text-slate-300">
+                  <span className="material-symbols-outlined animate-spin mr-2">refresh</span>
+                  Generando PDF...
+                </div>
+              ) : pdfModal.error ? (
+                <div className="h-full flex items-center justify-center text-alert-red">
+                  <span className="material-symbols-outlined mr-2">error</span>
+                  {pdfModal.error}
+                </div>
+              ) : (
+                <iframe
+                  src={pdfModal.objectUrl}
+                  title="Vista previa PDF inventario"
+                  className="w-full h-full"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

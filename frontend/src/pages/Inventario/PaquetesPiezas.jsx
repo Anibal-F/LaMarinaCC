@@ -652,7 +652,17 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-          {piece?.fotoAsignadaId && (
+          {/* Estado de procesamiento */}
+          {assigning && (
+            <div className="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-xl">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-primary animate-spin">refresh</span>
+                <p className="text-sm font-medium text-white">Procesando asignación...</p>
+              </div>
+            </div>
+          )}
+          
+          {piece?.fotoAsignadaId && !assigning && (
             <div className="mb-6 p-4 bg-alert-green/10 border border-alert-green/30 rounded-xl">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-alert-green">check_circle</span>
@@ -748,16 +758,25 @@ function PhotoGalleryItem({ photo, isAssigned, isOtherAssigned, onClick, disable
           ? "border-alert-green ring-2 ring-alert-green/50" 
           : isOtherAssigned
             ? "border-slate-600 opacity-50 cursor-not-allowed"
-            : "border-border-dark hover:border-primary hover:ring-2 hover:ring-primary/30"
+            : disabled
+              ? "border-border-dark opacity-70 cursor-wait"
+              : "border-border-dark hover:border-primary hover:ring-2 hover:ring-primary/30"
       }`}
     >
       <div className="aspect-square">
         <img 
           src={photo.url || ''} 
           alt={photo.name || 'Foto'}
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover ${disabled && !isAssigned ? 'opacity-50' : ''}`}
         />
       </div>
+      
+      {/* Spinner de carga */}
+      {disabled && !isAssigned && !isOtherAssigned && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+          <span className="material-symbols-outlined text-3xl text-white animate-spin">refresh</span>
+        </div>
+      )}
       
       {/* Badge de estado */}
       {isAssigned && (
@@ -1224,17 +1243,21 @@ export default function PaquetesPiezas() {
   };
 
   const assignPhotoToPiece = async (photoId, piezaRowId) => {
-    if (!activeId || !photoId) return;
+    if (!activeId || !photoId) {
+      setError("No se puede asignar: falta información del paquete o foto");
+      return;
+    }
     
     try {
       setAssigningPhoto(true);
+      setError("");
       
       // Encontrar el bitacora_pieza_id de la pieza seleccionada
       const pieza = form.piezas.find(p => p.rowId === piezaRowId);
       const bitacoraPiezaId = pieza?.bitacoraPiezaId;
       
       if (!bitacoraPiezaId) {
-        throw new Error("La pieza no está vinculada a la bitácora");
+        throw new Error("La pieza no está vinculada a la bitácora de piezas");
       }
       
       const response = await fetch(
@@ -1243,12 +1266,14 @@ export default function PaquetesPiezas() {
       );
       
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Error al asignar foto");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Error ${response.status}: No se pudo asignar la foto`);
       }
       
       // Actualizar el estado local de las fotos
       const updatedPhoto = await response.json();
+      const photoUrl = buildMediaUrl(updatedPhoto.file_path);
+      
       setDraftPhotos(prev => prev.map(p => 
         p.id === photoId 
           ? { ...p, piezaAsignadaId: bitacoraPiezaId, piezaRowId: piezaRowId }
@@ -1260,14 +1285,19 @@ export default function PaquetesPiezas() {
         ...prev,
         piezas: prev.piezas.map(p => 
           p.rowId === piezaRowId 
-            ? { ...p, fotoAsignadaId: photoId, fotoUrl: updatedPhoto.file_path }
+            ? { ...p, fotoAsignadaId: photoId, fotoUrl: photoUrl }
             : p
         )
       }));
       
+      // Cerrar modal y mostrar mensaje de éxito temporal
       closePhotoGallery();
+      
+      // Mostrar mensaje de éxito temporal (auto-hide después de 3 segundos)
+      setTimeout(() => setError(""), 3000);
     } catch (err) {
-      setError(err.message || "Error al asignar foto");
+      console.error("Error al asignar foto:", err);
+      setError(err.message || "Error al asignar foto. Intenta de nuevo.");
     } finally {
       setAssigningPhoto(false);
     }
@@ -1278,6 +1308,7 @@ export default function PaquetesPiezas() {
     
     try {
       setAssigningPhoto(true);
+      setError("");
       
       const response = await fetch(
         `${API_BASE}/inventario/paquetes/media/${photoId}/asignar-pieza`,
@@ -1285,8 +1316,8 @@ export default function PaquetesPiezas() {
       );
       
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Error al desasignar foto");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || "Error al quitar la asignación de la foto");
       }
       
       // Actualizar estado local
@@ -1305,7 +1336,8 @@ export default function PaquetesPiezas() {
         )
       }));
     } catch (err) {
-      setError(err.message || "Error al desasignar foto");
+      console.error("Error al desasignar foto:", err);
+      setError(err.message || "Error al quitar la asignación. Intenta de nuevo.");
     } finally {
       setAssigningPhoto(false);
     }

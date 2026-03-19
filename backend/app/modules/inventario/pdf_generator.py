@@ -81,22 +81,22 @@ def _draw_header(canvas, doc, logo_path=None):
         except Exception as e:
             print(f"Error drawing logo: {e}")
     
-    # Forma azul claro (triángulo/polígono en esquina superior derecha)
+    # Forma azul claro (triángulo/polígono en esquina superior IZQUIERDA - invertido)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
-    path.moveTo(width - 220, height)
-    path.lineTo(width, height)
-    path.lineTo(width, height - 70)
-    path.lineTo(width - 170, height - 70)
+    path.moveTo(0, height)
+    path.lineTo(220, height)
+    path.lineTo(170, height - 70)
+    path.lineTo(0, height - 70)
     path.close()
     canvas.drawPath(path, fill=1, stroke=0)
     
-    # Segunda forma azul más clara
+    # Segunda forma azul más clara (también a la izquierda)
     canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
-    path2.moveTo(width - 140, height)
-    path2.lineTo(width, height)
-    path2.lineTo(width, height - 45)
+    path2.moveTo(0, height)
+    path2.lineTo(140, height)
+    path2.lineTo(0, height - 45)
     path2.close()
     canvas.drawPath(path2, fill=1, stroke=0)
     

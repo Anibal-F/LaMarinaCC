@@ -66,11 +66,11 @@ def _draw_header(canvas, doc, logo_path=None):
             logo_to_use = path
             break
     
-    # Logo SOBREPUESTO arriba del banner
+    # Logo SOBREPUESTO arriba del banner - MÁS GRANDE Y MÁS ARRIBA
     if logo_to_use:
         try:
             # Logo más grande y más arriba, sobrepuesto sobre el banner
-            canvas.drawImage(str(logo_to_use), 25, height - 125, width=150, height=85, preserveAspectRatio=True, mask='auto')
+            canvas.drawImage(str(logo_to_use), 20, height - 140, width=180, height=110, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     
@@ -151,7 +151,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         pagesize=letter,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=45 * mm,  # Más espacio para el header con logo
+        topMargin=50 * mm,  # Más espacio para el header con logo más grande
         bottomMargin=25 * mm,
     )
     

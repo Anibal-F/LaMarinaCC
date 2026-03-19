@@ -73,8 +73,8 @@ def _draw_header(canvas, doc, logo_path=None):
     # Logo DENTRO del banner azul oscuro (parte superior izquierda)
     if logo_to_use:
         try:
-            # Logo posicionado en el área azul oscuro del header
-            canvas.drawImage(str(logo_to_use), 30, height - 65, width=200, height=60, preserveAspectRatio=True, mask='auto')
+            # Logo más grande posicionado en el área azul oscuro del header
+            canvas.drawImage(str(logo_to_use), 25, height - 68, width=260, height=75, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     
@@ -219,7 +219,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     # Usar una sola tabla con todas las filas para mantener alineación
     datos_completos = [
         [
-            Paragraph("<b>No. Rep/sin:</b>", label_style),
+            Paragraph("<b>No. Rep/Sin:</b>", label_style),
             Paragraph(reporte, value_style),
             "",
             Paragraph("<b>Folio:</b>", label_style),
@@ -278,10 +278,10 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     if piezas:
         table_data = [
             [
-                Paragraph("<b>pieza</b>", table_header_style),
-                Paragraph("<b>cantidad</b>", table_header_style),
-                Paragraph("<b>proveedor</b>", table_header_style),
-                Paragraph("<b>fecha</b>", table_header_style),
+                Paragraph("<b>Pieza</b>", table_header_style),
+                Paragraph("<b>Cantidad</b>", table_header_style),
+                Paragraph("<b>Proveedor</b>", table_header_style),
+                Paragraph("<b>Fecha</b>", table_header_style),
             ]
         ]
         

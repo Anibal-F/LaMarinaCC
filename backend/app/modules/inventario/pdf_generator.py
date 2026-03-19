@@ -152,7 +152,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         pagesize=letter,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=40 * mm,  # Menos espacio entre banner y contenido
+        topMargin=35 * mm,  # Menos espacio entre banner y contenido
         bottomMargin=25 * mm,
     )
     
@@ -218,7 +218,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     # ===== SECCIÓN DE DATOS =====
     datos_completos = [
         [
-            Paragraph("<b>No. Rep/sin:</b>", label_style),
+            Paragraph("<b>No. Rep/Sin:</b>", label_style),
             Paragraph(reporte, value_style),
             "",
             Paragraph("<b>Folio:</b>", label_style),
@@ -270,10 +270,10 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     if piezas:
         table_data = [
             [
-                Paragraph("<b>pieza</b>", table_header_style),
-                Paragraph("<b>cantidad</b>", table_header_style),
-                Paragraph("<b>proveedor</b>", table_header_style),
-                Paragraph("<b>fecha</b>", table_header_style),
+                Paragraph("<b>Pieza</b>", table_header_style),
+                Paragraph("<b>Cantidad</b>", table_header_style),
+                Paragraph("<b>Proveedor</b>", table_header_style),
+                Paragraph("<b>Fecha</b>", table_header_style),
             ]
         ]
         

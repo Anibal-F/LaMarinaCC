@@ -46,42 +46,43 @@ def _register_fonts():
 
 
 def _draw_header(canvas, doc, logo_path=None):
-    """Dibuja el header con formas geométricas azules."""
+    """Dibuja el header con formas geométricas azules y logo."""
     width, height = letter
     
     # Fondo blanco
     canvas.setFillColorRGB(1, 1, 1)
-    canvas.rect(0, height - 120, width, 120, fill=1, stroke=0)
+    canvas.rect(0, height - 140, width, 140, fill=1, stroke=0)
+    
+    # Logo SOBREPUESTO arriba del banner (más alto)
+    if logo_path and logo_path.exists():
+        try:
+            # Logo más grande y más arriba, sobrepuesto sobre el banner
+            canvas.drawImage(str(logo_path), 30, height - 130, width=140, height=90, preserveAspectRatio=True, mask='auto')
+        except Exception as e:
+            print(f"Error drawing logo: {e}")
     
     # Forma azul oscuro principal (parte superior)
     canvas.setFillColorRGB(0.118, 0.227, 0.373)
-    canvas.rect(0, height - 60, width, 60, fill=1, stroke=0)
+    canvas.rect(0, height - 70, width, 70, fill=1, stroke=0)
     
     # Forma azul claro (triángulo/polígono en esquina superior derecha)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
-    path.moveTo(width - 200, height)
+    path.moveTo(width - 220, height)
     path.lineTo(width, height)
-    path.lineTo(width, height - 60)
-    path.lineTo(width - 150, height - 60)
+    path.lineTo(width, height - 70)
+    path.lineTo(width - 170, height - 70)
     path.close()
     canvas.drawPath(path, fill=1, stroke=0)
     
     # Segunda forma azul más clara
     canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
-    path2.moveTo(width - 120, height)
+    path2.moveTo(width - 140, height)
     path2.lineTo(width, height)
-    path2.lineTo(width, height - 40)
+    path2.lineTo(width, height - 45)
     path2.close()
     canvas.drawPath(path2, fill=1, stroke=0)
-    
-    # Logo
-    if logo_path and logo_path.exists():
-        try:
-            canvas.drawImage(str(logo_path), 40, height - 110, width=120, height=70, preserveAspectRatio=True, mask='auto')
-        except Exception as e:
-            print(f"Error drawing logo: {e}")
     
     canvas.saveState()
 
@@ -92,14 +93,14 @@ def _draw_footer(canvas, doc):
     
     # Forma azul oscuro principal (parte inferior)
     canvas.setFillColorRGB(0.118, 0.227, 0.373)
-    canvas.rect(0, 0, width, 50, fill=1, stroke=0)
+    canvas.rect(0, 0, width, 55, fill=1, stroke=0)
     
     # Forma azul claro (triángulo/polígono en esquina inferior izquierda)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
-    path.moveTo(0, 50)
-    path.lineTo(150, 50)
-    path.lineTo(200, 0)
+    path.moveTo(0, 55)
+    path.lineTo(160, 55)
+    path.lineTo(210, 0)
     path.lineTo(0, 0)
     path.close()
     canvas.drawPath(path, fill=1, stroke=0)
@@ -107,9 +108,9 @@ def _draw_footer(canvas, doc):
     # Segunda forma azul más clara
     canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
-    path2.moveTo(0, 30)
-    path2.lineTo(100, 30)
-    path2.lineTo(130, 0)
+    path2.moveTo(0, 35)
+    path2.lineTo(110, 35)
+    path2.lineTo(140, 0)
     path2.lineTo(0, 0)
     path2.close()
     canvas.drawPath(path2, fill=1, stroke=0)
@@ -138,7 +139,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         pagesize=letter,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=35 * mm,
+        topMargin=45 * mm,  # Más espacio para el header con logo
         bottomMargin=25 * mm,
     )
     
@@ -153,7 +154,7 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     
     styles = getSampleStyleSheet()
     
-    # Estilos
+    # Estilos - Todo alineado a la izquierda
     label_style = ParagraphStyle(
         'LabelStyle',
         fontName=font_name_bold,
@@ -202,94 +203,64 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     seguro = paquete_data.get('seguro', '') or ''
     fecha = datetime.now().strftime('%d.%m.%y')
     
-    # ===== SECCIÓN DE DATOS =====
-    datos_row1 = [
+    # ===== SECCIÓN DE DATOS - TODO ALINEADO A LA IZQUIERDA =====
+    # Usar una sola tabla con todas las filas para mantener alineación
+    datos_completos = [
         [
             Paragraph("<b>No. Rep/sin:</b>", label_style),
             Paragraph(reporte, value_style),
+            "",
             Paragraph("<b>Folio:</b>", label_style),
             Paragraph(folio_ot or '', value_style),
-        ]
-    ]
-    
-    tabla_row1 = Table(datos_row1, colWidths=[80, 180, 50, 100])
-    tabla_row1.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
-        ('BOX', (3, 0), (3, 0), 1, colors.HexColor('#1e3a5f')),
-    ]))
-    all_elements.append(tabla_row1)
-    all_elements.append(Spacer(1, 8))
-    
-    datos_row2 = [
+        ],
         [
             Paragraph("<b>Vehículo:</b>", label_style),
             Paragraph(vehiculo, value_style),
+            "",
             Paragraph("<b>Inventario:</b>", label_style),
             Paragraph(folio, value_style),
-        ]
-    ]
-    
-    tabla_row2 = Table(datos_row2, colWidths=[80, 180, 80, 100])
-    tabla_row2.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
-        ('BOX', (3, 0), (3, 0), 1, colors.HexColor('#1e3a5f')),
-    ]))
-    all_elements.append(tabla_row2)
-    all_elements.append(Spacer(1, 8))
-    
-    datos_row3 = [
+        ],
         [
             Paragraph("<b>Seguro:</b>", label_style),
             Paragraph(seguro, value_style),
+            "",
             Paragraph("<b>Fecha:</b>", label_style),
             Paragraph(fecha, value_style),
-        ]
-    ]
-    
-    tabla_row3 = Table(datos_row3, colWidths=[80, 180, 50, 100])
-    tabla_row3.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
-        ('BOX', (3, 0), (3, 0), 1, colors.HexColor('#1e3a5f')),
-    ]))
-    all_elements.append(tabla_row3)
-    all_elements.append(Spacer(1, 8))
-    
-    datos_row4 = [
+        ],
         [
             Paragraph("<b>Laminero:</b>", label_style),
             Paragraph("", value_style),
             "",
             "",
-        ]
+            "",
+        ],
     ]
     
-    tabla_row4 = Table(datos_row4, colWidths=[80, 310, 50, 0])
-    tabla_row4.setStyle(TableStyle([
+    # Tabla maestra con todas las filas alineadas
+    # Anchos: Label1 (100), Valor1 (200), Espacio (20), Label2 (80), Valor2 (120)
+    tabla_maestra = Table(datos_completos, colWidths=[100, 200, 20, 80, 120])
+    tabla_maestra.setStyle(TableStyle([
+        # Alineación vertical
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        # Padding
         ('LEFTPADDING', (0, 0), (-1, -1), 5),
         ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        # Bordes para los campos de valores (columnas 1 y 4)
         ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
-        ('SPAN', (1, 0), (3, 0)),
+        ('BOX', (4, 0), (4, 0), 1, colors.HexColor('#1e3a5f')),
+        ('BOX', (1, 1), (1, 1), 1, colors.HexColor('#1e3a5f')),
+        ('BOX', (4, 1), (4, 1), 1, colors.HexColor('#1e3a5f')),
+        ('BOX', (1, 2), (1, 2), 1, colors.HexColor('#1e3a5f')),
+        ('BOX', (4, 2), (4, 2), 1, colors.HexColor('#1e3a5f')),
+        # Borde para Laminero (que abarca desde columna 1 hasta 4)
+        ('BOX', (1, 3), (4, 3), 1, colors.HexColor('#1e3a5f')),
+        # Combinar celdas vacías para Laminero
+        ('SPAN', (2, 3), (4, 3)),
     ]))
-    all_elements.append(tabla_row4)
-    all_elements.append(Spacer(1, 20))
+    all_elements.append(tabla_maestra)
+    all_elements.append(Spacer(1, 25))
     
     # ===== TABLA DE PIEZAS =====
     if piezas:
@@ -346,18 +317,15 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     
     # ===== PÁGINAS DE FOTOS =====
     if fotos and len(fotos) > 0:
-        # Crear un nuevo buffer para combinar
         from pypdf import PdfReader, PdfWriter
         
         buffer.seek(0)
         pdf_reader = PdfReader(buffer)
         pdf_writer = PdfWriter()
         
-        # Agregar primera página
         for page in pdf_reader.pages:
             pdf_writer.add_page(page)
         
-        # Generar páginas de fotos
         fotos_por_pagina = 6
         titulos = ["Almacén 2do piso", "Almacén 2do piso", "oficina", "Primer piso"]
         
@@ -366,22 +334,18 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             titulo_idx = min(i // fotos_por_pagina, len(titulos) - 1)
             titulo = titulos[titulo_idx]
             
-            # Crear página de fotos
             foto_buffer = io.BytesIO()
             foto_canvas = canvas.Canvas(foto_buffer, pagesize=letter)
             width, height = letter
             
-            # Header
             _draw_header(foto_canvas, None, logo_path)
             
-            # Título
             foto_canvas.setFillColorRGB(0.118, 0.227, 0.373)
-            foto_canvas.rect(0, height - 100, width, 40, fill=1, stroke=0)
+            foto_canvas.rect(0, height - 110, width, 40, fill=1, stroke=0)
             foto_canvas.setFillColorRGB(1, 1, 1)
             foto_canvas.setFont(font_name_bold, 16)
-            foto_canvas.drawCentredString(width / 2, height - 85, titulo)
+            foto_canvas.drawCentredString(width / 2, height - 95, titulo)
             
-            # Grid de fotos
             fotos_en_pagina = len(batch_fotos)
             cols = 3
             rows = 2
@@ -397,11 +361,10 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
                 col = idx % cols
                 
                 x = margin_x + col * (foto_width + spacing)
-                y = height - 140 - (row + 1) * (foto_height + spacing) + spacing
+                y = height - 150 - (row + 1) * (foto_height + spacing) + spacing
                 
                 foto_path_str = foto.get('file_path', '')
                 if foto_path_str:
-                    # Construir ruta
                     if foto_path_str.startswith('/'):
                         full_path = Path(__file__).resolve().parent.parent.parent / foto_path_str.lstrip('/')
                     else:
@@ -423,18 +386,15 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
                         foto_canvas.setFont(font_name, 10)
                         foto_canvas.drawCentredString(x + foto_width/2, y + foto_height/2, "[Foto no encontrada]")
             
-            # Footer
             _draw_footer(foto_canvas, None)
             
             foto_canvas.save()
             foto_buffer.seek(0)
             
-            # Leer página de fotos y agregarla
             foto_pdf = PdfReader(foto_buffer)
             for page in foto_pdf.pages:
                 pdf_writer.add_page(page)
         
-        # Escribir PDF final
         final_buffer = io.BytesIO()
         pdf_writer.write(final_buffer)
         final_buffer.seek(0)

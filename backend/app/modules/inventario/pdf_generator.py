@@ -74,8 +74,10 @@ def _draw_header(canvas, doc, logo_path=None):
     # 2. DIBUJAR LOGO DESPUÉS (quedará ENCIMA del banner)
     if logo_to_use:
         try:
-            # Logo GRANDE sobrepuesto sobre el banner
-            canvas.drawImage(str(logo_to_use), 20, height - 130, width=550, height=120, preserveAspectRatio=True, mask='auto')
+            # Logo más a la izquierda y centrado verticalmente con el banner
+            # Banner: 70pts de alto, centrado en height-35
+            # Logo: 100pts de alto, posicionado para centrarse con el banner
+            canvas.drawImage(str(logo_to_use), -10, height - 110, width=500, height=100, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     

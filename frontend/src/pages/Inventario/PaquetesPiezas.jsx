@@ -1065,6 +1065,48 @@ export default function PaquetesPiezas() {
     }
   };
 
+  const handleDownloadPDF = async (pkg) => {
+    try {
+      setError("");
+      const response = await fetch(`${API_BASE}/inventario/paquetes/${pkg.id}/pdf-inventario`, {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "No se pudo generar el PDF.");
+      }
+
+      // Obtener el blob del PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      // Crear enlace de descarga
+      const link = document.createElement("a");
+      link.href = url;
+      
+      // Obtener nombre del archivo del header Content-Disposition
+      const contentDisposition = response.headers.get("content-disposition");
+      let filename = `Inventario_${pkg.folio}.pdf`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Limpiar URL
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Error al descargar el PDF.");
+    }
+  };
+
   const removeDraftPhoto = async (photoId) => {
     const targetPhoto = draftPhotos.find((photo) => photo.id === photoId);
     if (!targetPhoto) return;
@@ -1234,6 +1276,14 @@ export default function PaquetesPiezas() {
                                 title="Ver detalle"
                               >
                                 <span className="material-symbols-outlined text-[20px]">list_alt</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadPDF(pkg)}
+                                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-blue-500/15 hover:text-blue-400"
+                                title="Descargar PDF de inventario"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">description</span>
                               </button>
                               <button
                                 type="button"

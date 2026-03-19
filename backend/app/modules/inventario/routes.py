@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from psycopg.rows import dict_row
 
 from app.core.db import get_connection
 from app.modules.expedientes.routes import copy_paquete_media_to_expediente
+from app.modules.inventario.pdf_generator import generar_pdf_inventario_paquete
 
 router = APIRouter(prefix="/inventario", tags=["inventario"])
 
@@ -2104,3 +2106,105 @@ def get_last_extraction_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 import os
+
+
+
+@router.get("/paquetes/{paquete_id}/pdf-inventario")
+def generar_pdf_inventario(paquete_id: int):
+    """
+    Genera un PDF de Inventario de Refacciones para un paquete.
+    Incluye datos del paquete, piezas y fotos.
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        ensure_paquetes_piezas_tables(conn)
+        _ensure_paquete_exists(conn, paquete_id)
+        
+        # Obtener datos del paquete
+        paquete = conn.execute(
+            """
+            SELECT 
+                p.id,
+                p.folio,
+                p.numero_reporte_siniestro,
+                p.folio_ot,
+                p.estatus,
+                p.comentarios,
+                p.created_at,
+                o.vehiculo_descripcion as vehiculo,
+                o.aseguradora as seguro
+            FROM paquetes_piezas p
+            LEFT JOIN orden_admision o ON o.id = p.orden_admision_id
+            WHERE p.id = %s
+            """,
+            (paquete_id,),
+        ).fetchone()
+        
+        # Obtener piezas del paquete
+        piezas = conn.execute(
+            """
+            SELECT 
+                pr.id,
+                pr.nombre_pieza,
+                pr.numero_parte,
+                pr.cantidad,
+                pr.cantidad_recibida,
+                pr.recibida,
+                pr.fecha_recepcion,
+                pr.almacen,
+                pr.estatus,
+                pr.observaciones,
+                bp.proveedor_id,
+                prov.nombre as proveedor_nombre
+            FROM paquetes_piezas_relaciones pr
+            LEFT JOIN bitacora_piezas bp ON bp.id = pr.bitacora_pieza_id
+            LEFT JOIN proveedores prov ON prov.id = bp.proveedor_id
+            WHERE pr.paquete_id = %s
+            ORDER BY pr.id ASC
+            """,
+            (paquete_id,),
+        ).fetchall()
+        
+        # Obtener fotos del paquete
+        fotos = conn.execute(
+            """
+            SELECT 
+                id,
+                media_type,
+                file_path,
+                original_name,
+                mime_type,
+                file_size,
+                created_at
+            FROM paquetes_piezas_media
+            WHERE paquete_id = %s AND media_type = 'photo'
+            ORDER BY id ASC
+            """,
+            (paquete_id,),
+        ).fetchall()
+        
+        # Generar PDF
+        try:
+            pdf_bytes = generar_pdf_inventario_paquete(
+                paquete_data=dict(paquete) if paquete else {},
+                piezas=[dict(p) for p in piezas],
+                fotos=[dict(f) for f in fotos]
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Error al generar PDF: {str(e)}"
+            )
+        
+        # Preparar nombre del archivo
+        folio = paquete["folio"] if paquete else f"PKG-{paquete_id}"
+        reporte = paquete.get("numero_reporte_siniestro") or "sin_reporte"
+        filename = f"Inventario_{folio}_{reporte}.pdf"
+        
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )

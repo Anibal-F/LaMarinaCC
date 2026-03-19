@@ -66,18 +66,18 @@ def _draw_header(canvas, doc, logo_path=None):
             logo_to_use = path
             break
     
-    # 1. DIBUJAR LOGO PRIMERO (quedará detrás del banner)
-    if logo_to_use:
-        try:
-            # Logo GRANDE sobrepuesto, extendiéndose sobre el banner
-            canvas.drawImage(str(logo_to_use), 20, height - 130, width=550, height=120, preserveAspectRatio=True, mask='auto')
-        except Exception as e:
-            print(f"Error drawing logo: {e}")
-    
-    # 2. DIBUJAR BANNER AZUL DESPUÉS (quedará encima del logo)
+    # 1. DIBUJAR BANNER AZUL PRIMERO (quedará detrás)
     # Forma azul oscuro principal (parte superior)
     canvas.setFillColorRGB(0.118, 0.227, 0.373)
     canvas.rect(0, height - 70, width, 70, fill=1, stroke=0)
+    
+    # 2. DIBUJAR LOGO DESPUÉS (quedará ENCIMA del banner)
+    if logo_to_use:
+        try:
+            # Logo GRANDE sobrepuesto sobre el banner
+            canvas.drawImage(str(logo_to_use), 20, height - 130, width=550, height=120, preserveAspectRatio=True, mask='auto')
+        except Exception as e:
+            print(f"Error drawing logo: {e}")
     
     # Forma azul claro (triángulo/polígono en esquina superior derecha)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)

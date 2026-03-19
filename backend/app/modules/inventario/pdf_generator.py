@@ -265,27 +265,52 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     
     # ===== TABLA DE PIEZAS =====
     if piezas:
-        # Tabla con orden: Pieza → Proveedor → Cantidad (sin Fecha)
+        # Tabla con: Pieza → Proveedor → Cantidad → Almacén → Foto
         table_data = [
             [
                 Paragraph("<b>Pieza</b>", table_header_style),
                 Paragraph("<b>Proveedor</b>", table_header_style),
-                Paragraph("<b>Cantidad</b>", table_header_style),
+                Paragraph("<b>Cant.</b>", table_header_style),
+                Paragraph("<b>Almacén</b>", table_header_style),
+                Paragraph("<b>Foto</b>", table_header_style),
             ]
         ]
+        
+        # Preparar info de fotos por pieza
+        fotos_por_pieza = {}
+        for foto in fotos:
+            pieza_id = foto.get('pieza_asignada_id')
+            if pieza_id:
+                fotos_por_pieza[pieza_id] = foto
         
         for pieza in piezas:
             nombre = pieza.get('nombre_pieza', '') or ''
             proveedor = pieza.get('proveedor_nombre', '') or ''
             cantidad = str(pieza.get('cantidad', 1) or 1)
+            almacen = pieza.get('almacen', '') or '-'
+            pieza_id = pieza.get('bitacora_pieza_id') or pieza.get('id')
+            
+            # Verificar si tiene foto asignada
+            foto_asignada = fotos_por_pieza.get(pieza_id)
+            foto_cell = Paragraph("—", center_cell_style)
+            if foto_asignada:
+                foto_cell = Paragraph("✓", ParagraphStyle(
+                    'FotoCheckStyle',
+                    fontName=font_name_bold,
+                    fontSize=12,
+                    textColor=colors.HexColor('#22c55e'),
+                    alignment=TA_CENTER,
+                ))
             
             table_data.append([
                 Paragraph(nombre, cell_style),
                 Paragraph(proveedor, cell_style),
                 Paragraph(cantidad, center_cell_style),
+                Paragraph(almacen, cell_style),
+                foto_cell,
             ])
         
-        piezas_table = Table(table_data, colWidths=[280, 220, 70])
+        piezas_table = Table(table_data, colWidths=[220, 160, 50, 80, 60])
         piezas_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -299,6 +324,8 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             ('ALIGN', (0, 1), (0, -1), 'LEFT'),    # Pieza: izquierda
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),    # Proveedor: izquierda
             ('ALIGN', (2, 1), (2, -1), 'CENTER'),  # Cantidad: centro
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # Almacén: centro
+            ('ALIGN', (4, 1), (4, -1), 'CENTER'),  # Foto: centro
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e3a5f')),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1e3a5f')),
@@ -313,83 +340,129 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     # Construir primera página
     doc1.build(all_elements)
     
-    # ===== PÁGINAS DE FOTOS =====
-    if fotos and len(fotos) > 0:
-        from pypdf import PdfReader, PdfWriter
+    # ===== PÁGINAS DE FOTOS POR ALMACÉN =====
+    from pypdf import PdfReader, PdfWriter
+    
+    buffer.seek(0)
+    pdf_reader = PdfReader(buffer)
+    pdf_writer = PdfWriter()
+    
+    for page in pdf_reader.pages:
+        pdf_writer.add_page(page)
+    
+    # Agrupar fotos asignadas por almacén
+    fotos_por_almacen = {}
+    fotos_globales = []
+    
+    for foto in fotos:
+        pieza_id = foto.get('pieza_asignada_id')
+        es_global = foto.get('es_global', False)
         
-        buffer.seek(0)
-        pdf_reader = PdfReader(buffer)
-        pdf_writer = PdfWriter()
+        if es_global:
+            fotos_globales.append(foto)
+            continue
+            
+        if pieza_id and piezas:
+            # Buscar el almacén de la pieza
+            for pieza in piezas:
+                if pieza.get('bitacora_pieza_id') == pieza_id or pieza.get('id') == pieza_id:
+                    almacen = pieza.get('almacen', 'Sin almacén') or 'Sin almacén'
+                    if almacen not in fotos_por_almacen:
+                        fotos_por_almacen[almacen] = []
+                    fotos_por_almacen[almacen].append({
+                        'foto': foto,
+                        'pieza': pieza
+                    })
+                    break
+    
+    # Ordenar almacenes (2do Piso primero, luego 1er Piso, luego Oficina)
+    orden_almacenes = ['2do Piso', '1er Piso', 'Oficina']
+    almacenes_ordenados = sorted(
+        fotos_por_almacen.keys(),
+        key=lambda x: (orden_almacenes.index(x) if x in orden_almacenes else 999, x)
+    )
+    
+    # Generar página por cada almacén con fotos
+    for almacen in almacenes_ordenados:
+        items = fotos_por_almacen[almacen]
+        if not items:
+            continue
+            
+        foto_buffer = io.BytesIO()
+        foto_canvas = canvas.Canvas(foto_buffer, pagesize=letter)
+        width, height = letter
         
-        for page in pdf_reader.pages:
-            pdf_writer.add_page(page)
+        _draw_header(foto_canvas, None)
         
-        fotos_por_pagina = 6
-        titulos = ["Almacén 2do piso", "Almacén 2do piso", "oficina", "Primer piso"]
+        # Título del almacén
+        foto_canvas.setFillColorRGB(0.118, 0.227, 0.373)
+        foto_canvas.rect(0, height - 110, width, 40, fill=1, stroke=0)
+        foto_canvas.setFillColorRGB(1, 1, 1)
+        foto_canvas.setFont(font_name_bold, 16)
+        foto_canvas.drawCentredString(width / 2, height - 95, f"ALMACÉN: {almacen.upper()}")
         
-        for i in range(0, len(fotos), fotos_por_pagina):
-            batch_fotos = fotos[i:i + fotos_por_pagina]
-            titulo_idx = min(i // fotos_por_pagina, len(titulos) - 1)
-            titulo = titulos[titulo_idx]
+        # Dibujar fotos con info de la pieza
+        fotos_en_pagina = len(items)
+        cols = 2
+        margin_x = 40
+        margin_y = 60
+        spacing = 25
+        
+        foto_width = (width - 2 * margin_x - (cols - 1) * spacing) / cols
+        foto_height = 180
+        
+        for idx, item in enumerate(items):
+            row = idx // cols
+            col = idx % cols
             
-            foto_buffer = io.BytesIO()
-            foto_canvas = canvas.Canvas(foto_buffer, pagesize=letter)
-            width, height = letter
+            x = margin_x + col * (foto_width + spacing)
+            y = height - 160 - (row + 1) * (foto_height + 40) + spacing
             
-            _draw_header(foto_canvas, None)
+            foto = item['foto']
+            pieza = item['pieza']
             
-            foto_canvas.setFillColorRGB(0.118, 0.227, 0.373)
-            foto_canvas.rect(0, height - 110, width, 40, fill=1, stroke=0)
-            foto_canvas.setFillColorRGB(1, 1, 1)
-            foto_canvas.setFont(font_name_bold, 16)
-            foto_canvas.drawCentredString(width / 2, height - 95, titulo)
+            # Dibujar borde de la card
+            foto_canvas.setStrokeColorRGB(0.8, 0.8, 0.8)
+            foto_canvas.setLineWidth(1)
+            foto_canvas.roundRect(x, y, foto_width, foto_height + 35, 5, fill=0, stroke=1)
             
-            fotos_en_pagina = len(batch_fotos)
-            cols = 3
-            rows = 2
-            margin_x = 40
-            margin_y = 80
-            spacing = 20
-            
-            foto_width = (width - 2 * margin_x - (cols - 1) * spacing) / cols
-            foto_height = (height - 180 - 2 * margin_y - (rows - 1) * spacing) / rows
-            
-            for idx, foto in enumerate(batch_fotos):
-                row = idx // cols
-                col = idx % cols
+            # Dibujar foto
+            foto_path_str = foto.get('file_path', '')
+            if foto_path_str:
+                if foto_path_str.startswith('/'):
+                    full_path = Path(__file__).resolve().parent.parent.parent / foto_path_str.lstrip('/')
+                else:
+                    full_path = Path(foto_path_str)
                 
-                x = margin_x + col * (foto_width + spacing)
-                y = height - 150 - (row + 1) * (foto_height + spacing) + spacing
-                
-                foto_path_str = foto.get('file_path', '')
-                if foto_path_str:
-                    if foto_path_str.startswith('/'):
-                        full_path = Path(__file__).resolve().parent.parent.parent / foto_path_str.lstrip('/')
-                    else:
-                        full_path = Path(foto_path_str)
-                    
-                    if full_path.exists():
-                        try:
-                            foto_canvas.drawImage(str(full_path), x, y, width=foto_width, height=foto_height, preserveAspectRatio=True)
-                        except:
-                            foto_canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
-                            foto_canvas.rect(x, y, foto_width, foto_height, fill=0, stroke=1)
-                            foto_canvas.setFillColorRGB(0.5, 0.5, 0.5)
-                            foto_canvas.setFont(font_name, 10)
-                            foto_canvas.drawCentredString(x + foto_width/2, y + foto_height/2, "[Foto no disponible]")
-                    else:
-                        foto_canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
-                        foto_canvas.rect(x, y, foto_width, foto_height, fill=0, stroke=1)
+                if full_path.exists():
+                    try:
+                        foto_canvas.drawImage(str(full_path), x + 5, y + 40, 
+                                            width=foto_width - 10, height=foto_height - 10, 
+                                            preserveAspectRatio=True)
+                    except:
+                        foto_canvas.setFillColorRGB(0.9, 0.9, 0.9)
+                        foto_canvas.rect(x + 5, y + 40, foto_width - 10, foto_height - 10, fill=1, stroke=0)
                         foto_canvas.setFillColorRGB(0.5, 0.5, 0.5)
-                        foto_canvas.setFont(font_name, 10)
-                        foto_canvas.drawCentredString(x + foto_width/2, y + foto_height/2, "[Foto no encontrada]")
+                        foto_canvas.setFont(font_name, 9)
+                        foto_canvas.drawCentredString(x + foto_width/2, y + foto_height/2 + 35, "[Foto no disponible]")
             
-            _draw_footer(foto_canvas, None)
+            # Info de la pieza debajo de la foto
+            foto_canvas.setFillColorRGB(0.118, 0.227, 0.373)
+            foto_canvas.rect(x, y, foto_width, 35, fill=1, stroke=0)
+            foto_canvas.setFillColorRGB(1, 1, 1)
+            foto_canvas.setFont(font_name_bold, 9)
             
-            foto_canvas.save()
-            foto_buffer.seek(0)
-            
-            foto_pdf = PdfReader(foto_buffer)
+            nombre_pieza = pieza.get('nombre_pieza', '')[:35]
+            cantidad = pieza.get('cantidad', 1)
+            foto_canvas.drawString(x + 8, y + 22, nombre_pieza)
+            foto_canvas.setFont(font_name, 8)
+            foto_canvas.drawString(x + 8, y + 10, f"Cantidad: {cantidad}")
+        
+        _draw_footer(foto_canvas, None)
+        foto_canvas.save()
+        foto_buffer.seek(0)
+        
+        foto_pdf = PdfReader(foto_buffer)
             for page in foto_pdf.pages:
                 pdf_writer.add_page(page)
         

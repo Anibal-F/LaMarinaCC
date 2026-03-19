@@ -184,6 +184,8 @@ class PaquetePiezaMedia(BaseModel):
     original_name: Optional[str] = None
     mime_type: Optional[str] = None
     file_size: Optional[int] = None
+    pieza_asignada_id: Optional[int] = None
+    es_global: bool = False
     created_at: datetime
 
 
@@ -434,6 +436,20 @@ def ensure_paquetes_piezas_tables(conn):
         """
         CREATE INDEX IF NOT EXISTS idx_paquetes_piezas_media_tipo
         ON paquetes_piezas_media(paquete_id, media_type)
+        """
+    )
+    # Migración: agregar campos para asignación de fotos a piezas
+    conn.execute(
+        """
+        ALTER TABLE paquetes_piezas_media 
+        ADD COLUMN IF NOT EXISTS pieza_asignada_id BIGINT REFERENCES bitacora_piezas(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS es_global BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_paquetes_piezas_media_pieza
+        ON paquetes_piezas_media(pieza_asignada_id)
         """
     )
     conn.execute(
@@ -750,6 +766,8 @@ def _list_paquete_media(conn, paquete_id: int) -> List[dict[str, Any]]:
             original_name,
             mime_type,
             file_size,
+            pieza_asignada_id,
+            es_global,
             created_at
         FROM paquetes_piezas_media
         WHERE paquete_id = %s
@@ -1926,6 +1944,127 @@ def delete_paquete_media(media_id: int):
     return None
 
 
+@router.patch("/paquetes/media/{media_id}/asignar-pieza", response_model=PaquetePiezaMedia)
+def asignar_foto_a_pieza(
+    media_id: int,
+    pieza_id: Optional[int] = Query(None, description="ID de la pieza en bitacora_piezas (null para desasignar)"),
+    es_global: Optional[bool] = Query(None, description="Marcar como foto global (no asignable a piezas)")
+):
+    """
+    Asigna una foto a una pieza específica del paquete, o la desasigna si pieza_id es null.
+    También permite marcar/desmarcar como foto global.
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        ensure_paquetes_piezas_tables(conn)
+        
+        # Verificar que el media existe
+        media = conn.execute(
+            "SELECT id, paquete_id FROM paquetes_piezas_media WHERE id = %s",
+            (media_id,)
+        ).fetchone()
+        
+        if not media:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        
+        # Si se está asignando a una pieza, verificar que la pieza existe y pertenece al mismo paquete
+        if pieza_id is not None:
+            pieza = conn.execute(
+                """
+                SELECT id FROM bitacora_piezas 
+                WHERE id = %s AND paquete_id = %s
+                """,
+                (pieza_id, media["paquete_id"])
+            ).fetchone()
+            
+            if not pieza:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="La pieza no existe o no pertenece a este paquete"
+                )
+            
+            # Verificar que no haya otra foto asignada a esta pieza
+            existing = conn.execute(
+                """
+                SELECT id FROM paquetes_piezas_media 
+                WHERE pieza_asignada_id = %s AND id != %s
+                """,
+                (pieza_id, media_id)
+            ).fetchone()
+            
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Esta pieza ya tiene una foto asignada"
+                )
+        
+        # Actualizar la asignación
+        updates = []
+        params = []
+        
+        if pieza_id is not None:
+            updates.append("pieza_asignada_id = %s")
+            params.append(pieza_id)
+        elif pieza_id is None and 'pieza_id' in str(locals()):
+            # Desasignar explícitamente
+            updates.append("pieza_asignada_id = NULL")
+        
+        if es_global is not None:
+            updates.append("es_global = %s")
+            params.append(es_global)
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No se proporcionaron cambios")
+        
+        params.append(media_id)
+        
+        updated = conn.execute(
+            f"""
+            UPDATE paquetes_piezas_media 
+            SET {', '.join(updates)}
+            WHERE id = %s
+            RETURNING id, paquete_id, media_type, file_path, original_name, mime_type, file_size, 
+                      pieza_asignada_id, es_global, created_at
+            """,
+            tuple(params)
+        ).fetchone()
+        
+        return dict(updated)
+
+
+@router.get("/paquetes/{paquete_id}/piezas-con-fotos")
+def get_piezas_con_fotos(paquete_id: int):
+    """
+    Obtiene todas las piezas del paquete con sus fotos asignadas.
+    """
+    with get_connection() as conn:
+        conn.row_factory = dict_row
+        ensure_paquetes_piezas_tables(conn)
+        _ensure_paquete_exists(conn, paquete_id)
+        
+        piezas = conn.execute(
+            """
+            SELECT 
+                r.id as relacion_id,
+                r.bitacora_pieza_id,
+                r.nombre_pieza,
+                r.cantidad,
+                r.recibida,
+                r.almacen,
+                pm.id as foto_id,
+                pm.file_path as foto_path,
+                pm.es_global
+            FROM paquetes_piezas_relaciones r
+            LEFT JOIN paquetes_piezas_media pm ON pm.pieza_asignada_id = r.bitacora_pieza_id
+            WHERE r.paquete_id = %s
+            ORDER BY r.id
+            """,
+            (paquete_id,)
+        ).fetchall()
+        
+        return [dict(p) for p in piezas]
+
+
 # =====================================================
 # ENDPOINTS DE ESTADÍSTICAS
 # =====================================================
@@ -2145,6 +2284,7 @@ def generar_pdf_inventario(paquete_id: int):
             """
             SELECT 
                 pr.id,
+                pr.bitacora_pieza_id,
                 pr.nombre_pieza,
                 pr.numero_parte,
                 pr.cantidad,
@@ -2165,7 +2305,7 @@ def generar_pdf_inventario(paquete_id: int):
             (paquete_id,),
         ).fetchall()
         
-        # Obtener fotos del paquete
+        # Obtener fotos del paquete (con asignaciones a piezas)
         fotos = conn.execute(
             """
             SELECT 
@@ -2175,6 +2315,8 @@ def generar_pdf_inventario(paquete_id: int):
                 original_name,
                 mime_type,
                 file_size,
+                pieza_asignada_id,
+                es_global,
                 created_at
             FROM paquetes_piezas_media
             WHERE paquete_id = %s AND media_type = 'photo'

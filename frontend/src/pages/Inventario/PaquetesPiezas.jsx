@@ -131,6 +131,8 @@ function mapMediaItem(item) {
     mediaType: item.media_type || "photo",
     mimeType: item.mime_type || "",
     persisted: true,
+    piezaAsignadaId: item.pieza_asignada_id || null,
+    esGlobal: item.es_global || false,
   };
 }
 
@@ -185,6 +187,14 @@ function PackageModal({
   onCameraClick,
   onUploadClick,
   onRemovePhoto,
+  onAssignPhoto,
+  onUnassignPhoto,
+  photoGalleryOpen,
+  selectedPieceForPhoto,
+  onOpenPhotoGallery,
+  onClosePhotoGallery,
+  assigningPhoto,
+  getSuggestedPhotos,
   isSaving,
   isLoading,
   saveDisabled,
@@ -363,14 +373,57 @@ function PackageModal({
                                 </select>
                               </td>
                               <td className="px-3 py-3">
-                                <button
-                                  type="button"
-                                  onClick={() => onRemovePieceRow(pieza.rowId)}
-                                  className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-alert-red/15 hover:text-alert-red"
-                                  title="Eliminar fila"
-                                >
-                                  <span className="material-symbols-outlined text-[18px]">delete</span>
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  {/* Botón de asignar/quitar foto */}
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenPhotoGallery(pieza)}
+                                    className={`rounded-lg p-2 transition-colors relative ${
+                                      pieza.fotoAsignadaId 
+                                        ? "text-primary bg-primary/10 hover:bg-primary/20" 
+                                        : "text-slate-400 hover:bg-surface-dark hover:text-white"
+                                    }`}
+                                    title={pieza.fotoAsignadaId ? "Cambiar foto asignada" : "Asignar foto"}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">
+                                      {pieza.fotoAsignadaId ? "photo_library" : "add_photo_alternate"}
+                                    </span>
+                                    {pieza.fotoAsignadaId && (
+                                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-alert-green rounded-full flex items-center justify-center">
+                                        <span className="material-symbols-outlined text-[10px] text-white">check</span>
+                                      </span>
+                                    )}
+                                  </button>
+                                  
+                                  {/* Miniatura de foto asignada */}
+                                  {pieza.fotoAsignadaId && pieza.fotoUrl && (
+                                    <div className="relative group">
+                                      <img 
+                                        src={pieza.fotoUrl} 
+                                        alt="Foto asignada"
+                                        className="w-8 h-8 rounded object-cover border border-border-dark cursor-pointer"
+                                        onClick={() => onOpenPhotoGallery(pieza)}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => onUnassignPhoto(pieza.fotoAsignadaId, pieza.rowId)}
+                                        className="absolute -top-1 -right-1 w-4 h-4 bg-alert-red rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Quitar foto"
+                                      >
+                                        <span className="material-symbols-outlined text-[10px] text-white">close</span>
+                                      </button>
+                                    </div>
+                                  )}
+                                  
+                                  <button
+                                    type="button"
+                                    onClick={() => onRemovePieceRow(pieza.rowId)}
+                                    className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-alert-red/15 hover:text-alert-red"
+                                    title="Eliminar fila"
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -544,7 +597,187 @@ function PackageModal({
           </>
         )}
       </div>
+      
+      {/* Modal de Galería para Asignar Fotos */}
+      {photoGalleryOpen && selectedPieceForPhoto && (
+        <PhotoGalleryModal
+          isOpen={photoGalleryOpen}
+          piece={selectedPieceForPhoto}
+          photos={photos}
+          onClose={onClosePhotoGallery}
+          onAssign={onAssignPhoto}
+          onUnassign={onUnassignPhoto}
+          assigning={assigningPhoto}
+          getSuggestedPhotos={getSuggestedPhotos}
+        />
+      )}
     </div>
+  );
+}
+
+function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassign, assigning, getSuggestedPhotos }) {
+  if (!isOpen) return null;
+  
+  const suggestedPhotos = getSuggestedPhotos ? getSuggestedPhotos(piece, photos) : [];
+  const availablePhotos = photos.filter(p => 
+    p.mediaType === 'photo' && (!p.piezaAsignadaId || p.piezaAsignadaId === piece.bitacoraPiezaId)
+  );
+  const otherPhotos = availablePhotos.filter(p => !suggestedPhotos.find(s => s.id === p.id));
+  
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="w-full max-w-3xl max-h-[85vh] rounded-2xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-border-dark px-6 py-4">
+          <div>
+            <h3 className="text-lg font-bold text-white">
+              Asignar foto a pieza
+            </h3>
+            <p className="text-sm text-slate-400 mt-1">
+              <span className="text-primary font-medium">{piece.descripcion || "Sin descripción"}</span>
+              {piece.almacen && <span className="ml-2 text-slate-500">({piece.almacen})</span>}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-400 hover:bg-background-dark hover:text-white transition-colors"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+          {piece.fotoAsignadaId && (
+            <div className="mb-6 p-4 bg-alert-green/10 border border-alert-green/30 rounded-xl">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-alert-green">check_circle</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-white">Foto asignada actualmente</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUnassign(piece.fotoAsignadaId, piece.rowId)}
+                  disabled={assigning}
+                  className="px-3 py-1.5 text-xs font-medium text-alert-red border border-alert-red/30 rounded-lg hover:bg-alert-red/10 transition-colors disabled:opacity-50"
+                >
+                  Quitar asignación
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Sugerencias IA */}
+          {suggestedPhotos.length > 0 && (
+            <div className="mb-6">
+              <h4 className="text-xs font-bold uppercase tracking-[0.16em] text-primary mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px]">smart_toy</span>
+                Sugerencias IA
+              </h4>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                {suggestedPhotos.map((photo) => (
+                  <PhotoGalleryItem
+                    key={photo.id}
+                    photo={photo}
+                    isAssigned={photo.piezaAsignadaId === piece.bitacoraPiezaId}
+                    isOtherAssigned={photo.piezaAsignadaId && photo.piezaAsignadaId !== piece.bitacoraPiezaId}
+                    onClick={() => onAssign(photo.id, piece.rowId)}
+                    disabled={assigning || photo.piezaAsignadaId}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Todas las fotos disponibles */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400 mb-3">
+              Todas las fotos {otherPhotos.length > 0 && `(${otherPhotos.length})`}
+            </h4>
+            {otherPhotos.length > 0 ? (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                {otherPhotos.map((photo) => (
+                  <PhotoGalleryItem
+                    key={photo.id}
+                    photo={photo}
+                    isAssigned={photo.piezaAsignadaId === piece.bitacoraPiezaId}
+                    isOtherAssigned={photo.piezaAsignadaId && photo.piezaAsignadaId !== piece.bitacoraPiezaId}
+                    onClick={() => onAssign(photo.id, piece.rowId)}
+                    disabled={assigning || photo.piezaAsignadaId}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-slate-500">
+                <span className="material-symbols-outlined text-4xl mb-2">photo_library</span>
+                <p className="text-sm">No hay más fotos disponibles</p>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-border-dark px-6 py-4 bg-surface-dark">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-border-dark px-5 py-2.5 text-sm font-semibold text-slate-300 hover:bg-background-dark transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhotoGalleryItem({ photo, isAssigned, isOtherAssigned, onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative group overflow-hidden rounded-xl border transition-all ${
+        isAssigned 
+          ? "border-alert-green ring-2 ring-alert-green/50" 
+          : isOtherAssigned
+            ? "border-slate-600 opacity-50 cursor-not-allowed"
+            : "border-border-dark hover:border-primary hover:ring-2 hover:ring-primary/30"
+      }`}
+    >
+      <div className="aspect-square">
+        <img 
+          src={photo.url} 
+          alt={photo.name}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      
+      {/* Badge de estado */}
+      {isAssigned && (
+        <div className="absolute top-2 right-2 w-6 h-6 bg-alert-green rounded-full flex items-center justify-center">
+          <span className="material-symbols-outlined text-[14px] text-white">check</span>
+        </div>
+      )}
+      {isOtherAssigned && (
+        <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-700 rounded text-[10px] text-slate-300">
+          Asignada
+        </div>
+      )}
+      
+      {/* Overlay al hover */}
+      {!isAssigned && !isOtherAssigned && (
+        <div className="absolute inset-0 bg-primary/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <span className="material-symbols-outlined text-3xl text-white">add_circle</span>
+        </div>
+      )}
+      
+      {/* Nombre truncado */}
+      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+        <p className="text-[10px] text-white truncate">{photo.name}</p>
+      </div>
+    </button>
   );
 }
 
@@ -578,6 +811,9 @@ export default function PaquetesPiezas() {
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
   const [pdfModal, setPdfModal] = useState(null);
   const [openingPdfId, setOpeningPdfId] = useState(null);
+  const [photoGalleryOpen, setPhotoGalleryOpen] = useState(false);
+  const [selectedPieceForPhoto, setSelectedPieceForPhoto] = useState(null);
+  const [assigningPhoto, setAssigningPhoto] = useState(false);
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
@@ -969,6 +1205,134 @@ export default function PaquetesPiezas() {
         recibida: checked,
       })),
     }));
+  };
+
+  // Funciones para asignación de fotos a piezas
+  const openPhotoGallery = (pieza) => {
+    setSelectedPieceForPhoto(pieza);
+    setPhotoGalleryOpen(true);
+  };
+
+  const closePhotoGallery = () => {
+    setPhotoGalleryOpen(false);
+    setSelectedPieceForPhoto(null);
+  };
+
+  const assignPhotoToPiece = async (photoId, piezaRowId) => {
+    if (!activeId || !photoId) return;
+    
+    try {
+      setAssigningPhoto(true);
+      
+      // Encontrar el bitacora_pieza_id de la pieza seleccionada
+      const pieza = form.piezas.find(p => p.rowId === piezaRowId);
+      const bitacoraPiezaId = pieza?.bitacoraPiezaId;
+      
+      if (!bitacoraPiezaId) {
+        throw new Error("La pieza no está vinculada a la bitácora");
+      }
+      
+      const response = await fetch(
+        `${API_BASE}/inventario/paquetes/media/${photoId}/asignar-pieza?pieza_id=${bitacoraPiezaId}`,
+        { method: "PATCH" }
+      );
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Error al asignar foto");
+      }
+      
+      // Actualizar el estado local de las fotos
+      const updatedPhoto = await response.json();
+      setDraftPhotos(prev => prev.map(p => 
+        p.id === photoId 
+          ? { ...p, piezaAsignadaId: bitacoraPiezaId, piezaRowId: piezaRowId }
+          : p
+      ));
+      
+      // Actualizar la pieza con la foto asignada
+      setForm(prev => ({
+        ...prev,
+        piezas: prev.piezas.map(p => 
+          p.rowId === piezaRowId 
+            ? { ...p, fotoAsignadaId: photoId, fotoUrl: updatedPhoto.file_path }
+            : p
+        )
+      }));
+      
+      closePhotoGallery();
+    } catch (err) {
+      setError(err.message || "Error al asignar foto");
+    } finally {
+      setAssigningPhoto(false);
+    }
+  };
+
+  const unassignPhotoFromPiece = async (photoId, piezaRowId) => {
+    if (!photoId) return;
+    
+    try {
+      setAssigningPhoto(true);
+      
+      const response = await fetch(
+        `${API_BASE}/inventario/paquetes/media/${photoId}/asignar-pieza`,
+        { method: "PATCH" }
+      );
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Error al desasignar foto");
+      }
+      
+      // Actualizar estado local
+      setDraftPhotos(prev => prev.map(p => 
+        p.id === photoId 
+          ? { ...p, piezaAsignadaId: null, piezaRowId: null }
+          : p
+      ));
+      
+      setForm(prev => ({
+        ...prev,
+        piezas: prev.piezas.map(p => 
+          p.rowId === piezaRowId 
+            ? { ...p, fotoAsignadaId: null, fotoUrl: null }
+            : p
+        )
+      }));
+    } catch (err) {
+      setError(err.message || "Error al desasignar foto");
+    } finally {
+      setAssigningPhoto(false);
+    }
+  };
+
+  // Función de IA simple para sugerir fotos basadas en keywords
+  const getSuggestedPhotosForPiece = (pieza, allPhotos) => {
+    if (!pieza?.descripcion) return [];
+    
+    const desc = pieza.descripcion.toLowerCase();
+    const keywords = desc.split(/\s+/).filter(w => w.length > 2);
+    
+    return allPhotos
+      .filter(photo => !photo.piezaAsignadaId || photo.piezaRowId === pieza.rowId)
+      .map(photo => {
+        const photoName = (photo.originalName || photo.name || "").toLowerCase();
+        let score = 0;
+        
+        // Puntaje por coincidencia de keywords
+        keywords.forEach(keyword => {
+          if (photoName.includes(keyword)) score += 2;
+        });
+        
+        // Bonus si la foto ya está asignada a esta pieza
+        if (photo.piezaRowId === pieza.rowId) score += 10;
+        
+        return { photo, score };
+      })
+      .filter(item => item.score > 0 || photo.piezaRowId === pieza.rowId)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map(item => item.photo);
   };
 
   const uploadFilesToPackage = async (packageId, files) => {
@@ -1506,6 +1870,14 @@ export default function PaquetesPiezas() {
         onCameraClick={() => cameraInputRef.current?.click()}
         onUploadClick={() => uploadInputRef.current?.click()}
         onRemovePhoto={removeDraftPhoto}
+        onAssignPhoto={assignPhotoToPiece}
+        onUnassignPhoto={unassignPhotoFromPiece}
+        photoGalleryOpen={photoGalleryOpen}
+        selectedPieceForPhoto={selectedPieceForPhoto}
+        onOpenPhotoGallery={openPhotoGallery}
+        onClosePhotoGallery={closePhotoGallery}
+        assigningPhoto={assigningPhoto}
+        getSuggestedPhotos={getSuggestedPhotosForPiece}
         isSaving={saving}
         isLoading={modalLoading}
         saveDisabled={validatingReport || reportHasBlockingIssue}

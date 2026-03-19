@@ -279,7 +279,7 @@ function PackageModal({
                   </label>
                 </div>
 
-                <label className="space-y-2 pt-5">
+                <div className="space-y-2 pt-5">
                   <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                     Piezas incluidas
                   </span>
@@ -291,18 +291,19 @@ function PackageModal({
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">No.</th>
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Descripción</th>
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Cantidad</th>
-                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                              <div className="flex items-center justify-center gap-2">
-                                <span className="select-none">Recibida</span>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 relative">
+                              <div className="inline-flex items-center gap-2">
+                                <span>Recibida</span>
                                 {(form.piezas || []).length > 0 && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
+                                      e.preventDefault();
                                       e.stopPropagation();
                                       const allReceived = (form.piezas || []).every(p => p.recibida);
                                       onToggleAllReceived(!allReceived);
                                     }}
-                                    className="group inline-flex items-center justify-center w-6 h-6 rounded hover:bg-surface-dark flex-shrink-0"
+                                    className="group inline-flex items-center justify-center w-5 h-5 rounded hover:bg-surface-dark"
                                     title={(form.piezas || []).every(p => p.recibida) ? "Desmarcar todas" : "Marcar todas como recibidas"}
                                   >
                                     <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:text-primary transition-colors">
@@ -424,7 +425,7 @@ function PackageModal({
                       </p>
                     )
                   ) : null}
-                </label>
+                </div>
 
                 <label className="space-y-2 pt-4">
                   <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">

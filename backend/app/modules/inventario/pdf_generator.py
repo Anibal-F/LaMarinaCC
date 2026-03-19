@@ -66,40 +66,36 @@ def _draw_header(canvas, doc, logo_path=None):
             logo_to_use = path
             break
     
-    # 1. DIBUJAR BANNER AZUL PRIMERO (quedará detrás)
+    # DIBUJAR TODAS LAS FORMAS AZULES PRIMERO (quedarán detrás)
     # Forma azul oscuro principal (parte superior)
     canvas.setFillColorRGB(0.118, 0.227, 0.373)
     canvas.rect(0, height - 70, width, 70, fill=1, stroke=0)
     
-    # 2. DIBUJAR LOGO DESPUÉS (quedará ENCIMA del banner)
-    if logo_to_use:
-        try:
-            # Logo más a la izquierda y centrado verticalmente con el banner
-            # Banner: 70pts de alto, centrado en height-35
-            # Logo: 100pts de alto, posicionado para centrarse con el banner
-            # Logo a la izquierda (sobre las formas azul claro y azul oscuro)
-            canvas.drawImage(str(logo_to_use), -150, height - 95, width=500, height=120, preserveAspectRatio=True, mask='auto')
-        except Exception as e:
-            print(f"Error drawing logo: {e}")
-    
-    # Forma azul claro (triángulo/polígono en esquina superior IZQUIERDA - más pequeña para no tapar logo)
+    # Forma azul claro (triángulo/polígono en esquina superior IZQUIERDA)
     canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
     path.moveTo(0, height)
-    path.lineTo(180, height)           # Reducido de 220
-    path.lineTo(130, height - 70)      # Reducido de 170
+    path.lineTo(180, height)
+    path.lineTo(130, height - 70)
     path.lineTo(0, height - 70)
     path.close()
     canvas.drawPath(path, fill=1, stroke=0)
     
-    # Segunda forma azul más clara (más pequeña)
+    # Segunda forma azul más clara
     canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
     path2.moveTo(0, height)
-    path2.lineTo(100, height)          # Reducido de 140
+    path2.lineTo(100, height)
     path2.lineTo(0, height - 45)
     path2.close()
     canvas.drawPath(path2, fill=1, stroke=0)
+    
+    # DIBUJAR LOGO AL FINAL (quedará ENCIMA de todo)
+    if logo_to_use:
+        try:
+            canvas.drawImage(str(logo_to_use), -150, height - 95, width=500, height=120, preserveAspectRatio=True, mask='auto')
+        except Exception as e:
+            print(f"Error drawing logo: {e}")
     
     canvas.saveState()
 

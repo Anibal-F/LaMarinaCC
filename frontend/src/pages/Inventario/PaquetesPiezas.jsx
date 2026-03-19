@@ -112,7 +112,6 @@ function mapPackageSummary(item) {
   return {
     id: item.id,
     folio: item.folio,
-    proveedor: item.proveedor_nombre || "",
     ot: item.folio_ot || "",
     reporte: item.numero_reporte_siniestro || "",
     estado: normalizeStatus(item.estatus),
@@ -1099,7 +1098,7 @@ export default function PaquetesPiezas() {
         <Sidebar />
         <main className="flex-1 flex flex-col overflow-hidden bg-background-dark">
           <AppHeader
-            searchPlaceholder="Buscar folio, OT, reporte o proveedor..."
+            searchPlaceholder="Buscar folio, OT o reporte..."
             searchValue={search}
             onSearchChange={setSearch}
             rightExtras={
@@ -1171,7 +1170,6 @@ export default function PaquetesPiezas() {
                       {[
                         "Folio",
                         "Arribo",
-                        "Proveedor",
                         "OT Relacionada",
                         "No. Reporte / Siniestro",
                         "Estatus",
@@ -1189,7 +1187,7 @@ export default function PaquetesPiezas() {
                   <tbody className="divide-y divide-border-dark">
                     {loading ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-14 text-center">
+                        <td colSpan={6} className="px-4 py-14 text-center">
                           <div className="flex flex-col items-center gap-3 text-slate-500">
                             <span className="material-symbols-outlined text-5xl">progress_activity</span>
                             <p className="text-base font-semibold text-slate-300">Cargando paquetes...</p>
@@ -1204,7 +1202,6 @@ export default function PaquetesPiezas() {
                             <div className="font-semibold">{formatArribo(pkg.arribo)}</div>
                             <div className="text-xs italic text-slate-500">{formatHour(pkg.arribo)}</div>
                           </td>
-                          <td className="px-4 py-4 text-sm font-medium text-slate-200">{pkg.proveedor || "-"}</td>
                           <td className="px-4 py-4">
                             <span className="inline-flex rounded-lg bg-background-dark px-3 py-1.5 text-xs font-bold text-white border border-border-dark">
                               {pkg.ot || "-"}
@@ -1252,7 +1249,7 @@ export default function PaquetesPiezas() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={7} className="px-4 py-14 text-center">
+                        <td colSpan={6} className="px-4 py-14 text-center">
                           <div className="flex flex-col items-center gap-3 text-slate-500">
                             <span className="material-symbols-outlined text-5xl">package_2</span>
                             <p className="text-base font-semibold text-slate-300">No hay paquetes registrados</p>

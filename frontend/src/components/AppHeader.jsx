@@ -59,7 +59,7 @@ export default function AppHeader({
           title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
         >
           <span className="material-symbols-outlined">
-            {theme === "dark" ? "dark_mode" : "light_mode"}
+            {theme === "dark" ? "light_mode" : "dark_mode"}
           </span>
         </button>
         {showNotifications ? (

@@ -603,7 +603,7 @@ function PackageModal({
         <PhotoGalleryModal
           isOpen={photoGalleryOpen}
           piece={selectedPieceForPhoto}
-          photos={photos}
+          photos={photos || []}
           onClose={onClosePhotoGallery}
           onAssign={onAssignPhoto}
           onUnassign={onUnassignPhoto}
@@ -618,11 +618,14 @@ function PackageModal({
 function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassign, assigning, getSuggestedPhotos }) {
   if (!isOpen) return null;
   
-  const suggestedPhotos = getSuggestedPhotos ? getSuggestedPhotos(piece, photos) : [];
-  const availablePhotos = photos.filter(p => 
-    p.mediaType === 'photo' && (!p.piezaAsignadaId || p.piezaAsignadaId === piece.bitacoraPiezaId)
+  // Asegurar que photos sea un array
+  const photosArray = Array.isArray(photos) ? photos : [];
+  
+  const suggestedPhotos = getSuggestedPhotos && piece ? getSuggestedPhotos(piece, photosArray) : [];
+  const availablePhotos = photosArray.filter(p => 
+    p?.mediaType === 'photo' && (!p?.piezaAsignadaId || p?.piezaAsignadaId === piece?.bitacoraPiezaId)
   );
-  const otherPhotos = availablePhotos.filter(p => !suggestedPhotos.find(s => s.id === p.id));
+  const otherPhotos = availablePhotos.filter(p => !suggestedPhotos.find(s => s?.id === p?.id));
   
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -634,8 +637,8 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
               Asignar foto a pieza
             </h3>
             <p className="text-sm text-slate-400 mt-1">
-              <span className="text-primary font-medium">{piece.descripcion || "Sin descripción"}</span>
-              {piece.almacen && <span className="ml-2 text-slate-500">({piece.almacen})</span>}
+              <span className="text-primary font-medium">{piece?.descripcion || "Sin descripción"}</span>
+              {piece?.almacen && <span className="ml-2 text-slate-500">({piece.almacen})</span>}
             </p>
           </div>
           <button
@@ -649,7 +652,7 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-          {piece.fotoAsignadaId && (
+          {piece?.fotoAsignadaId && (
             <div className="mb-6 p-4 bg-alert-green/10 border border-alert-green/30 rounded-xl">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-alert-green">check_circle</span>
@@ -658,7 +661,7 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
                 </div>
                 <button
                   type="button"
-                  onClick={() => onUnassign(piece.fotoAsignadaId, piece.rowId)}
+                  onClick={() => onUnassign(piece?.fotoAsignadaId, piece?.rowId)}
                   disabled={assigning}
                   className="px-3 py-1.5 text-xs font-medium text-alert-red border border-alert-red/30 rounded-lg hover:bg-alert-red/10 transition-colors disabled:opacity-50"
                 >
@@ -678,12 +681,12 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                 {suggestedPhotos.map((photo) => (
                   <PhotoGalleryItem
-                    key={photo.id}
+                    key={photo?.id || Math.random()}
                     photo={photo}
-                    isAssigned={photo.piezaAsignadaId === piece.bitacoraPiezaId}
-                    isOtherAssigned={photo.piezaAsignadaId && photo.piezaAsignadaId !== piece.bitacoraPiezaId}
-                    onClick={() => onAssign(photo.id, piece.rowId)}
-                    disabled={assigning || photo.piezaAsignadaId}
+                    isAssigned={photo?.piezaAsignadaId === piece?.bitacoraPiezaId}
+                    isOtherAssigned={photo?.piezaAsignadaId && photo?.piezaAsignadaId !== piece?.bitacoraPiezaId}
+                    onClick={() => onAssign(photo?.id, piece?.rowId)}
+                    disabled={assigning || photo?.piezaAsignadaId}
                   />
                 ))}
               </div>
@@ -699,12 +702,12 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                 {otherPhotos.map((photo) => (
                   <PhotoGalleryItem
-                    key={photo.id}
+                    key={photo?.id || Math.random()}
                     photo={photo}
-                    isAssigned={photo.piezaAsignadaId === piece.bitacoraPiezaId}
-                    isOtherAssigned={photo.piezaAsignadaId && photo.piezaAsignadaId !== piece.bitacoraPiezaId}
-                    onClick={() => onAssign(photo.id, piece.rowId)}
-                    disabled={assigning || photo.piezaAsignadaId}
+                    isAssigned={photo?.piezaAsignadaId === piece?.bitacoraPiezaId}
+                    isOtherAssigned={photo?.piezaAsignadaId && photo?.piezaAsignadaId !== piece?.bitacoraPiezaId}
+                    onClick={() => onAssign(photo?.id, piece?.rowId)}
+                    disabled={assigning || photo?.piezaAsignadaId}
                   />
                 ))}
               </div>
@@ -733,6 +736,8 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
 }
 
 function PhotoGalleryItem({ photo, isAssigned, isOtherAssigned, onClick, disabled }) {
+  if (!photo) return null;
+  
   return (
     <button
       type="button"
@@ -748,8 +753,8 @@ function PhotoGalleryItem({ photo, isAssigned, isOtherAssigned, onClick, disable
     >
       <div className="aspect-square">
         <img 
-          src={photo.url} 
-          alt={photo.name}
+          src={photo.url || ''} 
+          alt={photo.name || 'Foto'}
           className="w-full h-full object-cover"
         />
       </div>

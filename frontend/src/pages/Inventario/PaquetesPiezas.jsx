@@ -1313,15 +1313,15 @@ export default function PaquetesPiezas() {
 
   // Función de IA simple para sugerir fotos basadas en keywords
   const getSuggestedPhotosForPiece = (pieza, allPhotos) => {
-    if (!pieza?.descripcion) return [];
+    if (!pieza?.descripcion || !Array.isArray(allPhotos)) return [];
     
     const desc = pieza.descripcion.toLowerCase();
     const keywords = desc.split(/\s+/).filter(w => w.length > 2);
     
     return allPhotos
-      .filter(photo => !photo.piezaAsignadaId || photo.piezaRowId === pieza.rowId)
+      .filter(photo => photo && (!photo.piezaAsignadaId || photo.piezaRowId === pieza.rowId))
       .map(photo => {
-        const photoName = (photo.originalName || photo.name || "").toLowerCase();
+        const photoName = (photo?.originalName || photo?.name || "").toLowerCase();
         let score = 0;
         
         // Puntaje por coincidencia de keywords
@@ -1330,14 +1330,15 @@ export default function PaquetesPiezas() {
         });
         
         // Bonus si la foto ya está asignada a esta pieza
-        if (photo.piezaRowId === pieza.rowId) score += 10;
+        if (photo?.piezaRowId === pieza?.rowId) score += 10;
         
         return { photo, score };
       })
-      .filter(item => item.score > 0 || photo.piezaRowId === pieza.rowId)
-      .sort((a, b) => b.score - a.score)
+      .filter(item => item && (item.score > 0 || item.photo?.piezaRowId === pieza?.rowId))
+      .sort((a, b) => (b?.score || 0) - (a?.score || 0))
       .slice(0, 6)
-      .map(item => item.photo);
+      .map(item => item?.photo)
+      .filter(Boolean);
   };
 
   const uploadFilesToPackage = async (packageId, files) => {

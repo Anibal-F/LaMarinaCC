@@ -463,16 +463,14 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         foto_buffer.seek(0)
         
         foto_pdf = PdfReader(foto_buffer)
-            for page in foto_pdf.pages:
-                pdf_writer.add_page(page)
-        
-        final_buffer = io.BytesIO()
-        pdf_writer.write(final_buffer)
-        final_buffer.seek(0)
-        pdf_bytes = final_buffer.getvalue()
-    else:
-        buffer.seek(0)
-        pdf_bytes = buffer.getvalue()
+        for page in foto_pdf.pages:
+            pdf_writer.add_page(page)
+    
+    # Escribir PDF final
+    final_buffer = io.BytesIO()
+    pdf_writer.write(final_buffer)
+    final_buffer.seek(0)
+    pdf_bytes = final_buffer.getvalue()
     
     buffer.close()
     return pdf_bytes

@@ -74,7 +74,7 @@ def _draw_header(canvas, doc, logo_path=None):
     if logo_to_use:
         try:
             # Logo más grande posicionado en el área azul oscuro del header
-            canvas.drawImage(str(logo_to_use), 25, height - 68, width=600, height=180, preserveAspectRatio=True, mask='auto')
+            canvas.drawImage(str(logo_to_use), 25, height - 65, width=400, height=55, preserveAspectRatio=True, mask='auto')
         except Exception as e:
             print(f"Error drawing logo: {e}")
     

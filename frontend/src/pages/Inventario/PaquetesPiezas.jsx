@@ -297,14 +297,15 @@ function PackageModal({
                                 {(form.piezas || []).length > 0 && (
                                   <button
                                     type="button"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       const allReceived = (form.piezas || []).every(p => p.recibida);
                                       onToggleAllReceived(!allReceived);
                                     }}
-                                    className="group relative inline-flex items-center justify-center"
+                                    className="group inline-flex items-center justify-center p-1 rounded hover:bg-surface-dark"
                                     title={(form.piezas || []).every(p => p.recibida) ? "Desmarcar todas" : "Marcar todas como recibidas"}
                                   >
-                                    <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:text-primary transition-colors">
+                                    <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:text-primary transition-colors pointer-events-none">
                                       {(form.piezas || []).every(p => p.recibida) ? "check_box" : "check_box_outline_blank"}
                                     </span>
                                   </button>

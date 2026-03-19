@@ -938,17 +938,41 @@ export default function PaquetesPiezas() {
   const hydrateModalFromDetail = (detail, mode) => {
     setModalMode(mode);
     setActiveId(detail?.id || null);
+    
+    // Mapear fotos con sus asignaciones
+    const photosWithAssignments = (detail?.media || []).map(mapMediaItem);
+    
+    // Crear un mapa de pieza_id -> foto para lookup rápido
+    const fotoPorPieza = {};
+    photosWithAssignments.forEach(photo => {
+      if (photo.piezaAsignadaId) {
+        fotoPorPieza[photo.piezaAsignadaId] = photo;
+      }
+    });
+    
+    // Normalizar piezas y asignar fotos si existen
+    const piezasNormalizadas = normalizePieceRows(detail?.relaciones || []).map(pieza => {
+      const fotoAsignada = fotoPorPieza[pieza.bitacoraPiezaId];
+      if (fotoAsignada) {
+        return {
+          ...pieza,
+          fotoAsignadaId: fotoAsignada.id,
+          fotoUrl: fotoAsignada.url,
+        };
+      }
+      return pieza;
+    });
+    
     setForm({
       reporte: detail?.numero_reporte_siniestro || "",
-      piezas: normalizePieceRows(detail?.relaciones || []),
+      piezas: piezasNormalizadas,
       comentarios: detail?.comentarios || "",
       estado: normalizeStatus(detail?.estatus),
     });
-    setDraftPhotos((detail?.media || []).map(mapMediaItem));
-    const pieceRows = normalizePieceRows(detail?.relaciones || []);
+    setDraftPhotos(photosWithAssignments);
     setAutofillInfo({
       report: detail?.numero_reporte_siniestro || "",
-      signature: serializePieceRows(pieceRows),
+      signature: serializePieceRows(piezasNormalizadas),
       count: (detail?.relaciones || []).length,
       fetched: true,
     });

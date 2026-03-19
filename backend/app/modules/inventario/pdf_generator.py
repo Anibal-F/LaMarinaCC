@@ -33,7 +33,6 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 def _register_fonts():
     """Registra las fuentes necesarias."""
     try:
-        # Intentar Century Gothic
         pdfmetrics.registerFont(TTFont('CenturyGothic', 'GOTHIC.TTF'))
         pdfmetrics.registerFont(TTFont('CenturyGothic-Bold', 'GOTHICB.TTF'))
         return 'CenturyGothic', 'CenturyGothic-Bold'
@@ -55,11 +54,11 @@ def _draw_header(canvas, doc, logo_path=None):
     canvas.rect(0, height - 120, width, 120, fill=1, stroke=0)
     
     # Forma azul oscuro principal (parte superior)
-    canvas.setFillColorRGB(0.118, 0.227, 0.373)  # #1e3a5f
+    canvas.setFillColorRGB(0.118, 0.227, 0.373)
     canvas.rect(0, height - 60, width, 60, fill=1, stroke=0)
     
     # Forma azul claro (triángulo/polígono en esquina superior derecha)
-    canvas.setFillColorRGB(0.6, 0.75, 0.85)  # Azul claro
+    canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
     path.moveTo(width - 200, height)
     path.lineTo(width, height)
@@ -68,8 +67,8 @@ def _draw_header(canvas, doc, logo_path=None):
     path.close()
     canvas.drawPath(path, fill=1, stroke=0)
     
-    # Segunda forma azul más clara (capa adicional)
-    canvas.setFillColorRGB(0.75, 0.85, 0.92)  # Azul muy claro
+    # Segunda forma azul más clara
+    canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
     path2.moveTo(width - 120, height)
     path2.lineTo(width, height)
@@ -80,9 +79,9 @@ def _draw_header(canvas, doc, logo_path=None):
     # Logo
     if logo_path and logo_path.exists():
         try:
-            canvas.drawImage(str(logo_path), 40, height - 105, width=120, height=60, preserveAspectRatio=True)
-        except:
-            pass
+            canvas.drawImage(str(logo_path), 40, height - 110, width=120, height=70, preserveAspectRatio=True, mask='auto')
+        except Exception as e:
+            print(f"Error drawing logo: {e}")
     
     canvas.saveState()
 
@@ -92,11 +91,11 @@ def _draw_footer(canvas, doc):
     width, height = letter
     
     # Forma azul oscuro principal (parte inferior)
-    canvas.setFillColorRGB(0.118, 0.227, 0.373)  # #1e3a5f
+    canvas.setFillColorRGB(0.118, 0.227, 0.373)
     canvas.rect(0, 0, width, 50, fill=1, stroke=0)
     
     # Forma azul claro (triángulo/polígono en esquina inferior izquierda)
-    canvas.setFillColorRGB(0.6, 0.75, 0.85)  # Azul claro
+    canvas.setFillColorRGB(0.6, 0.75, 0.85)
     path = canvas.beginPath()
     path.moveTo(0, 50)
     path.lineTo(150, 50)
@@ -106,7 +105,7 @@ def _draw_footer(canvas, doc):
     canvas.drawPath(path, fill=1, stroke=0)
     
     # Segunda forma azul más clara
-    canvas.setFillColorRGB(0.75, 0.85, 0.92)  # Azul muy claro
+    canvas.setFillColorRGB(0.75, 0.85, 0.92)
     path2 = canvas.beginPath()
     path2.moveTo(0, 30)
     path2.lineTo(100, 30)
@@ -127,48 +126,31 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     # Registrar fuentes
     font_name, font_name_bold = _register_fonts()
     
-    # Crear documento
-    doc = SimpleDocTemplate(
+    # Buscar logo en la ruta especificada
+    logo_path = Path(__file__).resolve().parent.parent.parent.parent.parent / "static" / "static" / "LaMarinaCCLogoT.png"
+    
+    # Crear lista para todos los elementos
+    all_elements = []
+    
+    # ===== PÁGINA 1: DATOS Y TABLA DE PIEZAS =====
+    doc1 = SimpleDocTemplate(
         buffer,
         pagesize=letter,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=35 * mm,  # Espacio para el header
-        bottomMargin=25 * mm,  # Espacio para el footer
+        topMargin=35 * mm,
+        bottomMargin=25 * mm,
     )
     
-    # Buscar logo
-    possible_logo_paths = [
-        Path(__file__).resolve().parent.parent.parent / "static" / "logo_lamarina.png",
-        Path(__file__).resolve().parent.parent.parent.parent.parent / "static" / "LaMarinaCollisionCenter_Logo.jpg",
-    ]
-    logo_path = None
-    for path in possible_logo_paths:
-        if path.exists():
-            logo_path = path
-            break
-    
-    # Función para dibujar header/footer en cada página
+    # Función para header/footer
     def draw_header_footer(canvas, doc):
         _draw_header(canvas, doc, logo_path)
         _draw_footer(canvas, doc)
     
-    # Crear template de página
-    frame = Frame(
-        doc.leftMargin, 
-        doc.bottomMargin, 
-        doc.width, 
-        doc.height,
-        id='normal'
-    )
-    template = PageTemplate(
-        id='test',
-        frames=frame,
-        onPage=draw_header_footer
-    )
-    doc.addPageTemplates([template])
+    frame1 = Frame(doc1.leftMargin, doc1.bottomMargin, doc1.width, doc1.height, id='normal')
+    template1 = PageTemplate(id='page1', frames=frame1, onPage=draw_header_footer)
+    doc1.addPageTemplates([template1])
     
-    elements = []
     styles = getSampleStyleSheet()
     
     # Estilos
@@ -221,7 +203,6 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     fecha = datetime.now().strftime('%d.%m.%y')
     
     # ===== SECCIÓN DE DATOS =====
-    # Fila 1: Rep/sin y Folio
     datos_row1 = [
         [
             Paragraph("<b>No. Rep/sin:</b>", label_style),
@@ -241,10 +222,9 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (3, 0), (3, 0), 1, colors.HexColor('#1e3a5f')),
     ]))
-    elements.append(tabla_row1)
-    elements.append(Spacer(1, 8))
+    all_elements.append(tabla_row1)
+    all_elements.append(Spacer(1, 8))
     
-    # Fila 2: Vehículo e Inventario
     datos_row2 = [
         [
             Paragraph("<b>Vehículo:</b>", label_style),
@@ -264,10 +244,9 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (3, 0), (3, 0), 1, colors.HexColor('#1e3a5f')),
     ]))
-    elements.append(tabla_row2)
-    elements.append(Spacer(1, 8))
+    all_elements.append(tabla_row2)
+    all_elements.append(Spacer(1, 8))
     
-    # Fila 3: Seguro y Fecha
     datos_row3 = [
         [
             Paragraph("<b>Seguro:</b>", label_style),
@@ -287,10 +266,9 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
         ('BOX', (3, 0), (3, 0), 1, colors.HexColor('#1e3a5f')),
     ]))
-    elements.append(tabla_row3)
-    elements.append(Spacer(1, 8))
+    all_elements.append(tabla_row3)
+    all_elements.append(Spacer(1, 8))
     
-    # Fila 4: Laminero (campo más largo)
     datos_row4 = [
         [
             Paragraph("<b>Laminero:</b>", label_style),
@@ -310,12 +288,11 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         ('BOX', (1, 0), (1, 0), 1, colors.HexColor('#1e3a5f')),
         ('SPAN', (1, 0), (3, 0)),
     ]))
-    elements.append(tabla_row4)
-    elements.append(Spacer(1, 20))
+    all_elements.append(tabla_row4)
+    all_elements.append(Spacer(1, 20))
     
     # ===== TABLA DE PIEZAS =====
     if piezas:
-        # Encabezados
         table_data = [
             [
                 Paragraph("<b>pieza</b>", table_header_style),
@@ -325,7 +302,6 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             ]
         ]
         
-        # Datos
         for pieza in piezas:
             nombre = pieza.get('nombre_pieza', '') or ''
             cantidad = str(pieza.get('cantidad', 1) or 1)
@@ -339,10 +315,8 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
                 Paragraph(fecha_pieza, center_cell_style),
             ])
         
-        # Crear tabla
         piezas_table = Table(table_data, colWidths=[200, 70, 170, 60])
         piezas_table.setStyle(TableStyle([
-            # Encabezado
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -350,50 +324,124 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('TOPPADDING', (0, 0), (-1, 0), 10),
-            # Celdas
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
             ('ALIGN', (0, 1), (0, -1), 'LEFT'),
             ('ALIGN', (1, 1), (1, -1), 'CENTER'),
             ('ALIGN', (2, 1), (2, -1), 'LEFT'),
             ('ALIGN', (3, 1), (3, -1), 'CENTER'),
-            # Bordes
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e3a5f')),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1e3a5f')),
-            # Espaciado
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
             ('RIGHTPADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
-        elements.append(piezas_table)
+        all_elements.append(piezas_table)
     
-    # ===== LÍNEA DE FIRMA =====
-    elements.append(Spacer(1, 40))
+    # Construir primera página
+    doc1.build(all_elements)
     
-    firma_data = [["", ""]]
-    firma_table = Table(firma_data, colWidths=[200, 200], rowHeights=[1])
-    firma_table.setStyle(TableStyle([
-        ('LINEBELOW', (0, 0), (0, 0), 1, colors.black),
-        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-    ]))
-    elements.append(firma_table)
+    # ===== PÁGINAS DE FOTOS =====
+    if fotos and len(fotos) > 0:
+        # Crear un nuevo buffer para combinar
+        from pypdf import PdfReader, PdfWriter
+        
+        buffer.seek(0)
+        pdf_reader = PdfReader(buffer)
+        pdf_writer = PdfWriter()
+        
+        # Agregar primera página
+        for page in pdf_reader.pages:
+            pdf_writer.add_page(page)
+        
+        # Generar páginas de fotos
+        fotos_por_pagina = 6
+        titulos = ["Almacén 2do piso", "Almacén 2do piso", "oficina", "Primer piso"]
+        
+        for i in range(0, len(fotos), fotos_por_pagina):
+            batch_fotos = fotos[i:i + fotos_por_pagina]
+            titulo_idx = min(i // fotos_por_pagina, len(titulos) - 1)
+            titulo = titulos[titulo_idx]
+            
+            # Crear página de fotos
+            foto_buffer = io.BytesIO()
+            foto_canvas = canvas.Canvas(foto_buffer, pagesize=letter)
+            width, height = letter
+            
+            # Header
+            _draw_header(foto_canvas, None, logo_path)
+            
+            # Título
+            foto_canvas.setFillColorRGB(0.118, 0.227, 0.373)
+            foto_canvas.rect(0, height - 100, width, 40, fill=1, stroke=0)
+            foto_canvas.setFillColorRGB(1, 1, 1)
+            foto_canvas.setFont(font_name_bold, 16)
+            foto_canvas.drawCentredString(width / 2, height - 85, titulo)
+            
+            # Grid de fotos
+            fotos_en_pagina = len(batch_fotos)
+            cols = 3
+            rows = 2
+            margin_x = 40
+            margin_y = 80
+            spacing = 20
+            
+            foto_width = (width - 2 * margin_x - (cols - 1) * spacing) / cols
+            foto_height = (height - 180 - 2 * margin_y - (rows - 1) * spacing) / rows
+            
+            for idx, foto in enumerate(batch_fotos):
+                row = idx // cols
+                col = idx % cols
+                
+                x = margin_x + col * (foto_width + spacing)
+                y = height - 140 - (row + 1) * (foto_height + spacing) + spacing
+                
+                foto_path_str = foto.get('file_path', '')
+                if foto_path_str:
+                    # Construir ruta
+                    if foto_path_str.startswith('/'):
+                        full_path = Path(__file__).resolve().parent.parent.parent / foto_path_str.lstrip('/')
+                    else:
+                        full_path = Path(foto_path_str)
+                    
+                    if full_path.exists():
+                        try:
+                            foto_canvas.drawImage(str(full_path), x, y, width=foto_width, height=foto_height, preserveAspectRatio=True)
+                        except:
+                            foto_canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
+                            foto_canvas.rect(x, y, foto_width, foto_height, fill=0, stroke=1)
+                            foto_canvas.setFillColorRGB(0.5, 0.5, 0.5)
+                            foto_canvas.setFont(font_name, 10)
+                            foto_canvas.drawCentredString(x + foto_width/2, y + foto_height/2, "[Foto no disponible]")
+                    else:
+                        foto_canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
+                        foto_canvas.rect(x, y, foto_width, foto_height, fill=0, stroke=1)
+                        foto_canvas.setFillColorRGB(0.5, 0.5, 0.5)
+                        foto_canvas.setFont(font_name, 10)
+                        foto_canvas.drawCentredString(x + foto_width/2, y + foto_height/2, "[Foto no encontrada]")
+            
+            # Footer
+            _draw_footer(foto_canvas, None)
+            
+            foto_canvas.save()
+            foto_buffer.seek(0)
+            
+            # Leer página de fotos y agregarla
+            foto_pdf = PdfReader(foto_buffer)
+            for page in foto_pdf.pages:
+                pdf_writer.add_page(page)
+        
+        # Escribir PDF final
+        final_buffer = io.BytesIO()
+        pdf_writer.write(final_buffer)
+        final_buffer.seek(0)
+        pdf_bytes = final_buffer.getvalue()
+    else:
+        buffer.seek(0)
+        pdf_bytes = buffer.getvalue()
     
-    firma_label = Paragraph("<b>firma</b>", ParagraphStyle(
-        'FirmaStyle',
-        fontName=font_name_bold,
-        fontSize=10,
-        textColor=colors.HexColor('#1e3a5f'),
-        alignment=TA_CENTER,
-    ))
-    elements.append(firma_label)
-    
-    # Construir PDF
-    doc.build(elements)
-    
-    pdf_bytes = buffer.getvalue()
     buffer.close()
-    
     return pdf_bytes

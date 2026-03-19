@@ -12,6 +12,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Image,
     PageBreak,
@@ -21,6 +23,24 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+
+
+def _register_century_gothic():
+    """Registra la fuente Century Gothic si está disponible."""
+    try:
+        # Intentar registrar Century Gothic desde el sistema
+        pdfmetrics.registerFont(TTFont('CenturyGothic', 'GOTHIC.TTF'))
+        pdfmetrics.registerFont(TTFont('CenturyGothic-Bold', 'GOTHICB.TTF'))
+        return 'CenturyGothic'
+    except:
+        try:
+            # En Linux, buscar en rutas comunes
+            pdfmetrics.registerFont(TTFont('CenturyGothic', '/usr/share/fonts/truetype/msttcorefonts/Century_Gothic.ttf'))
+            pdfmetrics.registerFont(TTFont('CenturyGothic-Bold', '/usr/share/fonts/truetype/msttcorefonts/Century_Gothic_Bold.ttf'))
+            return 'CenturyGothic'
+        except:
+            # Fallback a fuentes estándar
+            return 'Helvetica'
 
 
 def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list) -> bytes:
@@ -39,35 +59,55 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        rightMargin=20 * mm,
-        leftMargin=20 * mm,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm,
+        rightMargin=15 * mm,
+        leftMargin=15 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
     )
     
     elements = []
     styles = getSampleStyleSheet()
     
-    # Estilos personalizados
+    # Registrar fuente Century Gothic
+    font_name = _register_century_gothic()
+    font_name_bold = f"{font_name}-Bold" if font_name == 'CenturyGothic' else f"{font_name}-Bold"
+    
+    # Estilos personalizados con Century Gothic
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=16,
+        fontName=font_name_bold,
+        fontSize=18,
         textColor=colors.white,
         alignment=1,  # Center
         spaceAfter=12,
+        spaceBefore=12,
     )
     
     header_style = ParagraphStyle(
         'HeaderStyle',
         parent=styles['Normal'],
-        fontSize=10,
+        fontName=font_name_bold,
+        fontSize=11,
         textColor=colors.HexColor('#1e3a5f'),
-        fontName='Helvetica-Bold',
     )
     
-    normal_style = styles['Normal']
-    normal_style.fontSize = 9
+    normal_style = ParagraphStyle(
+        'NormalStyle',
+        parent=styles['Normal'],
+        fontName=font_name,
+        fontSize=10,
+        textColor=colors.black,
+    )
+    
+    table_header_style = ParagraphStyle(
+        'TableHeaderStyle',
+        parent=styles['Normal'],
+        fontName=font_name_bold,
+        fontSize=10,
+        textColor=colors.white,
+        alignment=1,  # Center
+    )
     
     # Logo y título (buscar en múltiples ubicaciones)
     possible_logo_paths = [
@@ -80,23 +120,32 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             logo_path = path
             break
     
-    # Encabezado con fondo azul
+    # ===== BANNER SUPERIOR =====
+    banner_top = Table([['']], colWidths=[500], rowHeights=[30])
+    banner_top.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a5f')),
+    ]))
+    elements.append(banner_top)
+    
+    # Encabezado con logo y título
     header_data = [[
-        Image(str(logo_path), width=80, height=40) if logo_path else '',
+        Image(str(logo_path), width=100, height=50) if logo_path else '',
         Paragraph("Inventario de Refacciones", title_style)
     ]]
     
-    header_table = Table(header_data, colWidths=[100, 400])
+    header_table = Table(header_data, colWidths=[120, 380])
     header_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a5f')),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2c5282')),
         ('ALIGN', (0, 0), (0, 0), 'CENTER'),
         ('ALIGN', (1, 0), (1, 0), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (0, 0), 10),
-        ('RIGHTPADDING', (1, 0), (1, 0), 10),
+        ('LEFTPADDING', (0, 0), (0, 0), 15),
+        ('RIGHTPADDING', (1, 0), (1, 0), 15),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
     ]))
     elements.append(header_table)
-    elements.append(Spacer(1, 20))
+    elements.append(Spacer(1, 25))
     
     # Datos del formulario
     reporte = paquete_data.get('numero_reporte_siniestro', '') or ''
@@ -111,13 +160,13 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             Paragraph(f"<b>Rep/sin:</b>", header_style),
             Paragraph(reporte, normal_style),
             Paragraph(f"<b>Folio:</b>", header_style),
-            Paragraph(folio, normal_style),
+            Paragraph(folio_ot or '', normal_style),
         ],
         [
             Paragraph(f"<b>Vehículo:</b>", header_style),
             Paragraph(vehiculo, normal_style),
             Paragraph(f"<b>Inventario:</b>", header_style),
-            Paragraph(folio_ot or '', normal_style),
+            Paragraph(folio, normal_style),
         ],
         [
             Paragraph(f"<b>Seguro:</b>", header_style),
@@ -133,30 +182,42 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
         ],
     ]
     
-    form_table = Table(form_data, colWidths=[70, 200, 70, 160])
+    form_table = Table(form_data, colWidths=[80, 200, 80, 140])
     form_table.setStyle(TableStyle([
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (2, 0), (2, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('BOX', (1, 0), (1, -1), 1, colors.HexColor('#1e3a5f')),
-        ('BOX', (3, 0), (3, -1), 1, colors.HexColor('#1e3a5f')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('BOX', (1, 0), (1, -1), 1.5, colors.HexColor('#1e3a5f')),
+        ('BOX', (3, 0), (3, -1), 1.5, colors.HexColor('#1e3a5f')),
+        ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#f7fafc')),
+        ('BACKGROUND', (3, 0), (3, -1), colors.HexColor('#f7fafc')),
     ]))
     elements.append(form_table)
-    elements.append(Spacer(1, 15))
+    elements.append(Spacer(1, 25))
     
-    # Tabla de piezas
+    # Tabla de piezas con encabezados mejorados
     if piezas:
-        # Encabezados de tabla
+        # Título de sección
+        section_title = Paragraph("<b>Listado de Piezas</b>", ParagraphStyle(
+            'SectionTitle',
+            fontName=font_name_bold,
+            fontSize=14,
+            textColor=colors.HexColor('#1e3a5f'),
+            spaceAfter=10,
+        ))
+        elements.append(section_title)
+        
+        # Encabezados de tabla con títulos claros
         table_data = [
             [
-                Paragraph("<b>Pieza</b>", header_style),
-                Paragraph("<b>Cantidad</b>", header_style),
-                Paragraph("<b>Proveedor</b>", header_style),
-                Paragraph("<b>Fecha</b>", header_style),
+                Paragraph("<b>PIEZA</b>", table_header_style),
+                Paragraph("<b>CANT.</b>", table_header_style),
+                Paragraph("<b>PROVEEDOR</b>", table_header_style),
+                Paragraph("<b>FECHA</b>", table_header_style),
             ]
         ]
         
@@ -169,30 +230,51 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             
             table_data.append([
                 Paragraph(nombre, normal_style),
-                Paragraph(cantidad, normal_style),
+                Paragraph(cantidad, ParagraphStyle('Center', parent=normal_style, alignment=1)),
                 Paragraph(proveedor, normal_style),
-                Paragraph(fecha_pieza, normal_style),
+                Paragraph(fecha_pieza, ParagraphStyle('Center', parent=normal_style, alignment=1)),
             ])
         
-        # Crear tabla de piezas
-        piezas_table = Table(table_data, colWidths=[200, 60, 180, 60])
+        # Crear tabla de piezas con estilo mejorado
+        piezas_table = Table(table_data, colWidths=[220, 60, 200, 70])
         piezas_table.setStyle(TableStyle([
+            # Encabezado
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), font_name_bold),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            # Celdas de datos
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+            ('ALIGN', (2, 1), (2, -1), 'LEFT'),
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),
+            # Bordes
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e0')),
+            ('BOX', (0, 0), (-1, 0), 2, colors.HexColor('#1e3a5f')),
+            ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1e3a5f')),
+            # Espaciado
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            # Alternar colores de fondo
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
         ]))
         elements.append(piezas_table)
+    
+    # ===== BANNER INFERIOR (primera página) =====
+    elements.append(Spacer(1, 30))
+    banner_bottom = Table([['']], colWidths=[500], rowHeights=[20])
+    banner_bottom.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a5f')),
+    ]))
+    elements.append(banner_bottom)
     
     # Páginas de fotos
     if fotos:
@@ -206,27 +288,35 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
             
             elements.append(PageBreak())
             
+            # Banner superior en páginas de fotos
+            banner_top_foto = Table([['']], colWidths=[500], rowHeights=[20])
+            banner_top_foto.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a5f')),
+            ]))
+            elements.append(banner_top_foto)
+            elements.append(Spacer(1, 10))
+            
             # Título de página de fotos
             foto_title_style = ParagraphStyle(
                 'FotoTitle',
-                parent=styles['Heading2'],
-                fontSize=14,
+                fontName=font_name_bold,
+                fontSize=16,
                 textColor=colors.white,
                 alignment=1,
-                spaceAfter=20,
+                spaceAfter=15,
             )
             
             titulo_data = [[Paragraph(titulo, foto_title_style)]]
             titulo_table = Table(titulo_data, colWidths=[500])
             titulo_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a5f')),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2c5282')),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
             ]))
             elements.append(titulo_table)
-            elements.append(Spacer(1, 20))
+            elements.append(Spacer(1, 25))
             
             # Grid de fotos
             foto_table_data = []
@@ -278,10 +368,20 @@ def generar_pdf_inventario_paquete(paquete_data: dict, piezas: list, fotos: list
                 foto_table.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('TOPPADDING', (0, 0), (-1, -1), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                    ('TOPPADDING', (0, 0), (-1, -1), 15),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 10),
                 ]))
                 elements.append(foto_table)
+            
+            # Banner inferior en páginas de fotos
+            elements.append(Spacer(1, 20))
+            banner_bottom_foto = Table([['']], colWidths=[500], rowHeights=[20])
+            banner_bottom_foto.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a5f')),
+            ]))
+            elements.append(banner_bottom_foto)
     
     # Construir PDF
     doc.build(elements)

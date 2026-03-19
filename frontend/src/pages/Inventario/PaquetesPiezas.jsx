@@ -324,6 +324,7 @@ function PackageModal({
                               </div>
                             </th>
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Almacén</th>
+                            <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Evidencia</th>
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Acciones</th>
                           </tr>
                         </thead>
@@ -372,58 +373,76 @@ function PackageModal({
                                   ))}
                                 </select>
                               </td>
+                              {/* Columna Evidencia */}
                               <td className="px-3 py-3">
-                                <div className="flex items-center gap-1">
-                                  {/* Botón de asignar/quitar foto */}
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenPhotoGallery(pieza)}
-                                    className={`rounded-lg p-2 transition-colors relative ${
-                                      pieza.fotoAsignadaId 
-                                        ? "text-primary bg-primary/10 hover:bg-primary/20" 
-                                        : "text-slate-400 hover:bg-surface-dark hover:text-white"
-                                    }`}
-                                    title={pieza.fotoAsignadaId ? "Cambiar foto asignada" : "Asignar foto"}
-                                  >
-                                    <span className="material-symbols-outlined text-[18px]">
-                                      {pieza.fotoAsignadaId ? "photo_library" : "add_photo_alternate"}
-                                    </span>
-                                    {pieza.fotoAsignadaId && (
-                                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-alert-green rounded-full flex items-center justify-center">
-                                        <span className="material-symbols-outlined text-[10px] text-white">check</span>
-                                      </span>
-                                    )}
-                                  </button>
-                                  
-                                  {/* Miniatura de foto asignada */}
-                                  {pieza.fotoAsignadaId && pieza.fotoUrl && (
-                                    <div className="relative group">
-                                      <img 
-                                        src={pieza.fotoUrl} 
-                                        alt="Foto asignada"
-                                        className="w-8 h-8 rounded object-cover border border-border-dark cursor-pointer"
-                                        onClick={() => onOpenPhotoGallery(pieza)}
-                                      />
+                                <div className="flex items-center justify-center gap-2">
+                                  {pieza.fotoAsignadaId ? (
+                                    // Tiene foto asignada - mostrar miniatura
+                                    pieza.fotoUrl ? (
+                                      <div className="relative group">
+                                        <img 
+                                          src={pieza.fotoUrl} 
+                                          alt="Foto asignada"
+                                          className="w-12 h-12 rounded-lg object-cover border-2 border-alert-green cursor-pointer shadow-sm hover:shadow-md transition-shadow"
+                                          onClick={() => onOpenPhotoGallery(pieza)}
+                                          onError={(e) => {
+                                            console.error("[Table] Error cargando imagen:", pieza.fotoUrl);
+                                            e.target.style.display = 'none';
+                                            e.target.nextSibling.style.display = 'flex';
+                                          }}
+                                        />
+                                        <div className="hidden items-center gap-1 px-2 py-1 bg-alert-green/20 rounded text-alert-green text-xs">
+                                          <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                                          <span>Asignada</span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUnassignPhoto(pieza.fotoAsignadaId, pieza.rowId);
+                                          }}
+                                          className="absolute -top-2 -right-2 w-6 h-6 bg-alert-red rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                                          title="Quitar foto"
+                                        >
+                                          <span className="material-symbols-outlined text-[14px] text-white">close</span>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      // Sin URL pero marcada como asignada
                                       <button
                                         type="button"
-                                        onClick={() => onUnassignPhoto(pieza.fotoAsignadaId, pieza.rowId)}
-                                        className="absolute -top-1 -right-1 w-4 h-4 bg-alert-red rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                        title="Quitar foto"
+                                        onClick={() => onOpenPhotoGallery(pieza)}
+                                        className="flex items-center gap-1 px-3 py-2 bg-alert-green/20 rounded-lg text-alert-green text-xs hover:bg-alert-green/30 transition-colors"
                                       >
-                                        <span className="material-symbols-outlined text-[10px] text-white">close</span>
+                                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                        <span>Asignada</span>
                                       </button>
-                                    </div>
+                                    )
+                                  ) : (
+                                    // No tiene foto - botón para asignar
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenPhotoGallery(pieza)}
+                                      className="flex items-center gap-1 px-3 py-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors text-xs"
+                                      title="Asignar foto"
+                                    >
+                                      <span className="material-symbols-outlined text-[20px]">add_photo_alternate</span>
+                                      <span>Sin foto</span>
+                                    </button>
                                   )}
-                                  
-                                  <button
-                                    type="button"
-                                    onClick={() => onRemovePieceRow(pieza.rowId)}
-                                    className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-alert-red/15 hover:text-alert-red"
-                                    title="Eliminar fila"
-                                  >
-                                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                                  </button>
                                 </div>
+                              </td>
+                              
+                              {/* Columna Acciones */}
+                              <td className="px-3 py-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => onRemovePieceRow(pieza.rowId)}
+                                  className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-alert-red/15 hover:text-alert-red"
+                                  title="Eliminar fila"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1243,6 +1262,8 @@ export default function PaquetesPiezas() {
   };
 
   const assignPhotoToPiece = async (photoId, piezaRowId) => {
+    console.log("[assignPhotoToPiece] Iniciando asignación:", { photoId, piezaRowId, activeId });
+    
     if (!activeId || !photoId) {
       setError("No se puede asignar: falta información del paquete o foto");
       return;
@@ -1254,49 +1275,63 @@ export default function PaquetesPiezas() {
       
       // Encontrar el bitacora_pieza_id de la pieza seleccionada
       const pieza = form.piezas.find(p => p.rowId === piezaRowId);
+      console.log("[assignPhotoToPiece] Pieza encontrada:", pieza);
+      
       const bitacoraPiezaId = pieza?.bitacoraPiezaId;
       
       if (!bitacoraPiezaId) {
-        throw new Error("La pieza no está vinculada a la bitácora de piezas");
+        console.error("[assignPhotoToPiece] No hay bitacoraPiezaId para la pieza:", pieza);
+        throw new Error("La pieza no está vinculada a la bitácora de piezas. Guarda el paquete primero.");
       }
+      
+      console.log("[assignPhotoToPiece] Enviando request:", { photoId, bitacoraPiezaId });
       
       const response = await fetch(
         `${API_BASE}/inventario/paquetes/media/${photoId}/asignar-pieza?pieza_id=${bitacoraPiezaId}`,
         { method: "PATCH" }
       );
       
+      console.log("[assignPhotoToPiece] Response status:", response.status);
+      
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
+        console.error("[assignPhotoToPiece] Error response:", errData);
         throw new Error(errData.detail || `Error ${response.status}: No se pudo asignar la foto`);
       }
       
       // Actualizar el estado local de las fotos
       const updatedPhoto = await response.json();
-      const photoUrl = buildMediaUrl(updatedPhoto.file_path);
+      console.log("[assignPhotoToPiece] Foto actualizada:", updatedPhoto);
       
-      setDraftPhotos(prev => prev.map(p => 
-        p.id === photoId 
-          ? { ...p, piezaAsignadaId: bitacoraPiezaId, piezaRowId: piezaRowId }
-          : p
-      ));
+      const photoUrl = buildMediaUrl(updatedPhoto.file_path);
+      console.log("[assignPhotoToPiece] URL construida:", photoUrl);
+      
+      setDraftPhotos(prev => {
+        const newPhotos = prev.map(p => 
+          p.id === photoId 
+            ? { ...p, piezaAsignadaId: bitacoraPiezaId, piezaRowId: piezaRowId }
+            : p
+        );
+        console.log("[assignPhotoToPiece] Fotos actualizadas:", newPhotos);
+        return newPhotos;
+      });
       
       // Actualizar la pieza con la foto asignada
-      setForm(prev => ({
-        ...prev,
-        piezas: prev.piezas.map(p => 
+      setForm(prev => {
+        const newPiezas = prev.piezas.map(p => 
           p.rowId === piezaRowId 
             ? { ...p, fotoAsignadaId: photoId, fotoUrl: photoUrl }
             : p
-        )
-      }));
+        );
+        console.log("[assignPhotoToPiece] Piezas actualizadas:", newPiezas);
+        return { ...prev, piezas: newPiezas };
+      });
       
-      // Cerrar modal y mostrar mensaje de éxito temporal
+      // Cerrar modal
       closePhotoGallery();
       
-      // Mostrar mensaje de éxito temporal (auto-hide después de 3 segundos)
-      setTimeout(() => setError(""), 3000);
     } catch (err) {
-      console.error("Error al asignar foto:", err);
+      console.error("[assignPhotoToPiece] Error:", err);
       setError(err.message || "Error al asignar foto. Intenta de nuevo.");
     } finally {
       setAssigningPhoto(false);

@@ -2105,9 +2105,6 @@ def get_last_extraction_status():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-import os
-
-
 
 @router.get("/paquetes/{paquete_id}/pdf-inventario")
 def generar_pdf_inventario(paquete_id: int):
@@ -2131,8 +2128,10 @@ def generar_pdf_inventario(paquete_id: int):
                 p.estatus,
                 p.comentarios,
                 p.created_at,
-                o.vehiculo_descripcion as vehiculo,
-                o.aseguradora as seguro
+                COALESCE(o.marca_vehiculo, '') || ' ' || 
+                COALESCE(o.tipo_vehiculo, '') || ' ' || 
+                COALESCE(o.modelo_anio::text, '') as vehiculo,
+                o.seguro_comp as seguro
             FROM paquetes_piezas p
             LEFT JOIN orden_admision o ON o.id = p.orden_admision_id
             WHERE p.id = %s

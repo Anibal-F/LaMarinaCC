@@ -21,6 +21,7 @@ ALLOWED_TYPES = {
     "archivorecepcion_vehiculo",
     "recepcion_foto",
     "recepcion_video",
+    "paquete_pieza_foto",
 }
 
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"}
@@ -120,6 +121,100 @@ def _sanitize_annotations(value):
         )
 
     return clean
+
+
+def copy_paquete_media_to_expediente(conn, reporte_siniestro: str, paquete_id: int) -> list:
+    """
+    Copia las fotos de un paquete al expediente del reporte/siniestro.
+    Se utiliza cuando un paquete se marca como 'Completado'.
+    
+    Returns:
+        Lista de rutas de archivos copiados
+    """
+    from pathlib import Path
+    from uuid import uuid4
+    import shutil
+    
+    conn.row_factory = dict_row
+    
+    # Obtener las fotos del paquete
+    media_rows = conn.execute(
+        """
+        SELECT id, media_type, file_path, original_name, mime_type, file_size
+        FROM paquetes_piezas_media
+        WHERE paquete_id = %s AND media_type = 'photo'
+        """,
+        (paquete_id,),
+    ).fetchall()
+    
+    if not media_rows:
+        return []
+    
+    # Asegurar que existe el expediente
+    expediente_id = _ensure_expediente(conn, reporte_siniestro)
+    
+    # Directorio destino en expedientes
+    media_root = Path(__file__).resolve().parent.parent.parent / "media" / "expedientes" / reporte_siniestro / "paquete_pieza_foto"
+    media_root.mkdir(parents=True, exist_ok=True)
+    
+    # Directorio origen de paquetes
+    paquetes_root = Path(__file__).resolve().parent.parent.parent / "media" / "paquetes_piezas" / str(paquete_id)
+    
+    copied_files = []
+    
+    for media in media_rows:
+        source_path = paquetes_root / Path(media["file_path"]).name
+        
+        if not source_path.exists():
+            # Intentar con la ruta completa
+            source_path = Path(__file__).resolve().parent.parent.parent / str(media["file_path"]).lstrip("/")
+        
+        if not source_path.exists():
+            continue
+        
+        # Generar nombre único para el archivo
+        extension = Path(media["file_path"]).suffix.lower()
+        filename = f"paquete_pieza_foto_{uuid4().hex}{extension}"
+        dest_path = media_root / filename
+        
+        # Copiar archivo
+        try:
+            shutil.copy2(source_path, dest_path)
+        except Exception:
+            continue
+        
+        file_size = dest_path.stat().st_size
+        relative_path = f"/media/expedientes/{reporte_siniestro}/paquete_pieza_foto/{filename}"
+        
+        # Crear registro en expediente_archivos
+        conn.execute(
+            """
+            INSERT INTO expediente_archivos (
+                expediente_id,
+                tipo,
+                categoria,
+                archivo_path,
+                archivo_nombre,
+                archivo_size,
+                mime_type,
+                anotaciones
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
+            """,
+            (
+                expediente_id,
+                "paquete_pieza_foto",
+                "otros",
+                relative_path,
+                media["original_name"] or f"foto_paquete_{media['id']}",
+                file_size,
+                media["mime_type"] or "image/jpeg",
+            ),
+        )
+        
+        copied_files.append(relative_path)
+    
+    return copied_files
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 from app.core.db import get_connection
+from app.modules.expedientes.routes import copy_paquete_media_to_expediente
 
 router = APIRouter(prefix="/inventario", tags=["inventario"])
 
@@ -1550,11 +1551,22 @@ def completar_paquete(paquete_id: int):
     """
     Marca un paquete como 'Completado'.
     Verifica que todas las piezas estén recibidas antes de permitir completar.
+    Copia las fotos del paquete al expediente del reporte/siniestro.
     """
     with get_connection() as conn:
         conn.row_factory = dict_row
         ensure_paquetes_piezas_tables(conn)
         _ensure_paquete_exists(conn, paquete_id)
+        
+        # Obtener información del paquete
+        paquete = conn.execute(
+            """
+            SELECT id, numero_reporte_siniestro, estatus
+            FROM paquetes_piezas
+            WHERE id = %s
+            """,
+            (paquete_id,),
+        ).fetchone()
         
         # Verificar que todas las piezas estén recibidas
         result = conn.execute(
@@ -1592,6 +1604,15 @@ def completar_paquete(paquete_id: int):
             """,
             (paquete_id,),
         )
+        
+        # Copiar fotos al expediente si hay reporte/siniestro
+        reporte_siniestro = paquete["numero_reporte_siniestro"] if paquete else None
+        if reporte_siniestro:
+            try:
+                copy_paquete_media_to_expediente(conn, reporte_siniestro, paquete_id)
+            except Exception:
+                # No bloquear el completado si falla la copia de fotos
+                pass
         
         return _build_paquete_detail(conn, paquete_id)
 

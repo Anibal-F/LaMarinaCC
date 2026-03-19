@@ -293,7 +293,7 @@ function PackageModal({
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Cantidad</th>
                             <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
                               <div className="flex items-center justify-center gap-2">
-                                <span>Recibida</span>
+                                <span className="select-none">Recibida</span>
                                 {(form.piezas || []).length > 0 && (
                                   <button
                                     type="button"
@@ -302,10 +302,10 @@ function PackageModal({
                                       const allReceived = (form.piezas || []).every(p => p.recibida);
                                       onToggleAllReceived(!allReceived);
                                     }}
-                                    className="group inline-flex items-center justify-center p-1 rounded hover:bg-surface-dark"
+                                    className="group inline-flex items-center justify-center w-6 h-6 rounded hover:bg-surface-dark flex-shrink-0"
                                     title={(form.piezas || []).every(p => p.recibida) ? "Desmarcar todas" : "Marcar todas como recibidas"}
                                   >
-                                    <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:text-primary transition-colors pointer-events-none">
+                                    <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:text-primary transition-colors">
                                       {(form.piezas || []).every(p => p.recibida) ? "check_box" : "check_box_outline_blank"}
                                     </span>
                                   </button>

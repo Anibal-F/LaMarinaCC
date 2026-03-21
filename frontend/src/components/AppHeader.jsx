@@ -1,4 +1,22 @@
 import { useEffect, useState } from "react";
+import { useNotifications } from "../contexts/NotificationContext.jsx";
+
+// Componente de la campanita de notificaciones
+function NotificationBell({ active }) {
+  const { openNotifications } = useNotifications();
+  
+  return (
+    <button 
+      onClick={openNotifications}
+      className="relative p-2 text-slate-400 hover:text-white hover:bg-surface-dark rounded-lg transition-all"
+    >
+      <span className="material-symbols-outlined">notifications</span>
+      {active ? (
+        <span className="absolute top-2 right-2 size-2 bg-alert-red rounded-full border border-background-dark"></span>
+      ) : null}
+    </button>
+  );
+}
 
 export default function AppHeader({
   title,
@@ -10,8 +28,7 @@ export default function AppHeader({
   actions,
   rightExtras,
   showNotifications = true,
-  notificationsActive = true,
-  onNotificationsClick
+  notificationsActive = true
 }) {
   const [theme, setTheme] = useState("dark");
 
@@ -63,17 +80,7 @@ export default function AppHeader({
             {theme === "dark" ? "light_mode" : "dark_mode"}
           </span>
         </button>
-        {showNotifications ? (
-          <button 
-            onClick={onNotificationsClick}
-            className="relative p-2 text-slate-400 hover:text-white hover:bg-surface-dark rounded-lg transition-all"
-          >
-            <span className="material-symbols-outlined">notifications</span>
-            {notificationsActive ? (
-              <span className="absolute top-2 right-2 size-2 bg-alert-red rounded-full border border-background-dark"></span>
-            ) : null}
-          </button>
-        ) : null}
+        {showNotifications ? <NotificationBell active={notificationsActive} /> : null}
         {rightExtras}
       </div>
     </header>

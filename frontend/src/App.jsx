@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { AUTH_EVENT, isAuthenticated } from "./utils/auth.js";
+import { NotificationProvider, useNotifications } from "./contexts/NotificationContext.jsx";
+import NotificationsSidebar from "./components/NotificationsSidebar.jsx";
 
 import Home from "./pages/Home/Home.jsx";
 import Login from "./pages/Login/Login.jsx";
@@ -38,7 +40,8 @@ import BitacoraPiezas from "./pages/Inventario/BitacoraPiezas.jsx";
 import PaquetesPiezas from "./pages/Inventario/PaquetesPiezas.jsx";
 import WhatsAppChatWidget from "./components/WhatsAppChatWidget.jsx";
 
-export default function App() {
+function AppContent() {
+  const { isOpen, closeNotifications } = useNotifications();
   const [, setAuthPulse] = useState(0);
 
   useEffect(() => {
@@ -63,7 +66,7 @@ export default function App() {
   }, []);
 
   const authenticated = isAuthenticated();
-
+  
   return (
     <>
       <Routes>
@@ -209,7 +212,19 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
       </Routes>
+      
+      {/* Sidebar de notificaciones global */}
+      <NotificationsSidebar isOpen={isOpen} onClose={closeNotifications} />
+      
       {authenticated ? <WhatsAppChatWidget /> : null}
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <NotificationProvider>
+      <AppContent />
+    </NotificationProvider>
   );
 }

@@ -1,18 +1,18 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNotifications } from "../../contexts/NotificationContext.jsx";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import QualitasIndicators from "../../components/QualitasIndicators.jsx";
 import ChubbIndicators from "../../components/ChubbIndicators.jsx";
-import NotificationsSidebar from "../../components/NotificationsSidebar.jsx";
 
 export default function Home() {
   const [activeView, setActiveView] = useState("local");
   const [isUpdating, setIsUpdating] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [piezasVencidasCount, setPiezasVencidasCount] = useState(0);
   const [piezasVencidasPreview, setPiezasVencidasPreview] = useState([]);
   const navigate = useNavigate();
+  const { openNotifications } = useNotifications();
 
   // Cargar conteo de piezas vencidas al montar
   useEffect(() => {
@@ -73,12 +73,6 @@ export default function Home() {
                 <span className="material-symbols-outlined">grid_view</span>
               </button>
             }
-            onNotificationsClick={() => setNotificationsOpen(true)}
-          />
-
-          <NotificationsSidebar 
-            isOpen={notificationsOpen} 
-            onClose={() => setNotificationsOpen(false)} 
           />
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
             {/* Switch de vistas */}
@@ -428,7 +422,7 @@ export default function Home() {
                               Ver Piezas
                             </button>
                             <button 
-                              onClick={() => setNotificationsOpen(true)}
+                              onClick={openNotifications}
                               className="px-3 py-1.5 bg-surface-dark border border-border-dark text-slate-400 hover:text-white text-[10px] font-bold rounded uppercase tracking-wider transition-all"
                             >
                               Ver Notificaciones

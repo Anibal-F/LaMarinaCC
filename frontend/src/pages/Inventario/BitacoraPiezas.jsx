@@ -219,8 +219,8 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays < 0) {
-          // Fecha promesa ya pasó, pero solo contar si NO está cancelada Y NO está recibida Y NO está entregada
-          if (!pieza.estatus?.toLowerCase().includes('cancelada') && !pieza.recibido && !pieza.entregado) {
+          // Fecha promesa ya pasó, pero solo contar si NO está cancelada Y NO está recibida Y NO está entregada Y NO es Reasignada/Cancelada
+          if (!pieza.estatus?.toLowerCase().includes('cancelada') && !pieza.recibido && !pieza.entregado && pieza.tipo_registro !== 'Reasignada/Cancelada') {
             vencidas++;
           }
         } else if (diffDays >= 0 && diffDays <= 3) {
@@ -243,7 +243,7 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
       value: indicadores.vencidas,
       icon: 'warning',
       color: 'red',
-      desc: 'Fecha promesa vencida (no canceladas, recibidas ni entregadas)',
+      desc: 'Fecha promesa vencida (no canceladas, recibidas, entregadas ni reasignadas/canceladas)',
       filter: 'vencidas'
     },
     {
@@ -637,8 +637,8 @@ export default function BitacoraPiezas() {
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           
           if (filtroIndicador === 'vencidas') {
-            // Fecha vencida Y no cancelada Y no recibida Y no entregada
-            if (diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada') || pieza.recibido || pieza.entregado) {
+            // Fecha vencida Y no cancelada Y no recibida Y no entregada Y no es Reasignada/Cancelada
+            if (diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada') || pieza.recibido || pieza.entregado || pieza.tipo_registro === 'Reasignada/Cancelada') {
               return false;
             }
           } else if (filtroIndicador === 'porRecibir' && (diffDays < 0 || diffDays > 3)) {
@@ -1031,7 +1031,7 @@ export default function BitacoraPiezas() {
                   <span className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-2">
                     {filtroIndicador.startsWith('estatus:') 
                       ? `Estatus: ${filtroIndicador.replace('estatus:', '')}`
-                      : filtroIndicador === 'vencidas' ? 'Piezas Vencidas (no canceladas ni entregadas)'
+                      : filtroIndicador === 'vencidas' ? 'Piezas Vencidas (no canceladas, entregadas ni reasignadas)'
                       : filtroIndicador === 'porRecibir' ? 'Por Recibir (0-3 días)'
                       : filtroIndicador === 'enProceso' ? 'En Proceso (>3 días)'
                       : 'Todas las piezas'

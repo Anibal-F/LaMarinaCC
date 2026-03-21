@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -17,7 +17,7 @@ class EtapaPayload(BaseModel):
 
 
 class EtapaReorderPayload(BaseModel):
-    ordered_ids: list = Field(min_length=1)
+    ordered_ids: List[Any] = Field(min_length=1)
 
 
 class ChecklistItemPayload(BaseModel):

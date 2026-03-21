@@ -17,7 +17,7 @@ class EtapaPayload(BaseModel):
 
 
 class EtapaReorderPayload(BaseModel):
-    ordered_ids: list[int] = Field(min_length=1)
+    ordered_ids: list = Field(min_length=1)
 
 
 class ChecklistItemPayload(BaseModel):
@@ -633,7 +633,16 @@ def update_etapa(etapa_id: int, payload: EtapaPayload):
 @router.put("/catalogos/etapas/reordenar")
 def reorder_etapas(payload: EtapaReorderPayload):
     _ensure_taller_schema()
-    ordered_ids = [int(item_id) for item_id in payload.ordered_ids]
+    
+    # Convertir IDs a enteros con manejo de errores
+    try:
+        ordered_ids = [int(item_id) for item_id in payload.ordered_ids if item_id is not None and str(item_id).strip() != '']
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"IDs inválidos en la lista: {e}")
+    
+    if len(ordered_ids) == 0:
+        raise HTTPException(status_code=400, detail="La lista de etapas está vacía")
+    
     if len(set(ordered_ids)) != len(ordered_ids):
         raise HTTPException(status_code=400, detail="La lista de etapas contiene duplicados")
 

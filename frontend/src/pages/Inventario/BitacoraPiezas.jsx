@@ -219,8 +219,8 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays < 0) {
-          // Fecha promesa ya pasó, pero solo contar si NO está cancelada
-          if (!pieza.estatus?.toLowerCase().includes('cancelada')) {
+          // Fecha promesa ya pasó, pero solo contar si NO está cancelada Y NO está recibida
+          if (!pieza.estatus?.toLowerCase().includes('cancelada') && !pieza.recibido) {
             vencidas++;
           }
         } else if (diffDays >= 0 && diffDays <= 3) {
@@ -243,7 +243,7 @@ function IndicadoresPiezas({ piezas, activeFilter, onFilter }) {
       value: indicadores.vencidas,
       icon: 'warning',
       color: 'red',
-      desc: 'Fecha promesa vencida (no canceladas)',
+      desc: 'Fecha promesa vencida (no canceladas ni recibidas)',
       filter: 'vencidas'
     },
     {
@@ -637,8 +637,8 @@ export default function BitacoraPiezas() {
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           
           if (filtroIndicador === 'vencidas') {
-            // Fecha vencida Y no cancelada
-            if (diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada')) {
+            // Fecha vencida Y no cancelada Y no recibida
+            if (diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada') || pieza.recibido) {
               return false;
             }
           } else if (filtroIndicador === 'porRecibir' && (diffDays < 0 || diffDays > 3)) {

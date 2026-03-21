@@ -16,6 +16,16 @@ const getApiUrl = () => {
 
 const API_BASE = getApiUrl();
 
+// Función para normalizar número de reporte (extraer últimos 6 dígitos)
+// Ejemplo: "04 0111577 26 A" → "115726" o "04251889452" → "889452"
+const normalizeReporte = (reporte) => {
+  if (!reporte) return '';
+  // Eliminar todo excepto dígitos
+  const digitsOnly = String(reporte).replace(/\D/g, '');
+  // Retornar los últimos 6 dígitos
+  return digitsOnly.slice(-6);
+};
+
 // Opciones de ubicación
 const UBICACIONES = ['ND', 'ALMACEN', 'PENDIENTE', 'TALLER', 'ENTREGADO'];
 
@@ -572,10 +582,20 @@ export default function BitacoraPiezas() {
         }
       }
       
-      // Filtro por número de reporte
+      // Filtro por número de reporte (normalizado - compara últimos 6 dígitos)
       if (filtroReporte && pieza.numero_reporte) {
-        if (!pieza.numero_reporte.toLowerCase().includes(filtroReporte.toLowerCase())) {
-          return false;
+        const searchNormalized = normalizeReporte(filtroReporte);
+        const reporteNormalized = normalizeReporte(pieza.numero_reporte);
+        // Si el search tiene al menos 4 dígitos, usar coincidencia por últimos dígitos
+        if (searchNormalized.length >= 4) {
+          if (!reporteNormalized.includes(searchNormalized)) {
+            return false;
+          }
+        } else {
+          // Fallback a búsqueda parcial normal
+          if (!pieza.numero_reporte.toLowerCase().includes(filtroReporte.toLowerCase())) {
+            return false;
+          }
         }
       }
       
@@ -617,14 +637,24 @@ export default function BitacoraPiezas() {
         }
       }
       
-      // Filtro por búsqueda general
+      // Filtro por búsqueda general (incluye número de reporte normalizado)
       if (filtroBusqueda) {
         const searchLower = filtroBusqueda.toLowerCase();
-        return (
+        const searchNormalized = normalizeReporte(filtroBusqueda);
+        const reporteNormalized = normalizeReporte(pieza.numero_reporte);
+        
+        // Coincidencia por nombre, parte o proveedor
+        const matchesBasic = (
           pieza.nombre.toLowerCase().includes(searchLower) ||
           pieza.numero_parte.toLowerCase().includes(searchLower) ||
           pieza.proveedor.nombre.toLowerCase().includes(searchLower)
         );
+        
+        // Coincidencia por número de reporte (normalizado - últimos 6 dígitos)
+        // Solo aplica si la búsqueda tiene al menos 4 dígitos
+        const matchesReporte = searchNormalized.length >= 4 && reporteNormalized.includes(searchNormalized);
+        
+        return matchesBasic || matchesReporte;
       }
       
       return true;

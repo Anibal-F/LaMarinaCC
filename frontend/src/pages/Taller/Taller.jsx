@@ -116,37 +116,40 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
         }
       }
       
-      // 2. Asignar personal y estaciones por etapa
-      const asignacionesValidas = asignaciones.filter(a => a.personal_id || a.estacion_id);
+      // 2. Asignar personal y estaciones por etapa (ignorando recepcion y entrega)
+      const etapasSinAsignacion = ['recepcionado', 'recepcion', 'entrega'];
+      const asignacionesValidas = asignaciones.filter(a => {
+        const claveEtapa = etapas.find(e => e.id === a.etapa_id)?.clave || '';
+        const sinAsignacion = etapasSinAsignacion.includes(claveEtapa.toLowerCase());
+        return !sinAsignacion && (a.personal_id || a.estacion_id);
+      });
       
       for (const asig of asignacionesValidas) {
-        if (asig.personal_id || asig.estacion_id) {
-          // Obtener la etapa operativa de la OT
-          const otStageResponse = await fetch(
-            `${import.meta.env.VITE_API_URL}/taller/ordenes/${record.id}/etapas`
-          );
-          if (!otStageResponse.ok) continue;
-          
-          const otStages = await otStageResponse.json();
-          const targetStage = otStages.find(s => s.etapa_id === asig.etapa_id);
-          if (!targetStage) continue;
-          
-          const updatePayload = {};
-          if (asig.personal_id) updatePayload.personal_id_responsable = parseInt(asig.personal_id);
-          if (asig.estacion_id) updatePayload.estacion_id = parseInt(asig.estacion_id);
-          
-          if (Object.keys(updatePayload).length > 0) {
-            const updateResponse = await fetch(
-              `${import.meta.env.VITE_API_URL}/taller/ordenes/${record.id}/etapas/${targetStage.etapa_id}`,
-              {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatePayload)
-              }
-            );
-            if (!updateResponse.ok) {
-              console.error("Error actualizando etapa", asig.etapa_id);
+        // Obtener la etapa operativa de la OT
+        const otStageResponse = await fetch(
+          `${import.meta.env.VITE_API_URL}/taller/ordenes/${record.id}/etapas`
+        );
+        if (!otStageResponse.ok) continue;
+        
+        const otStages = await otStageResponse.json();
+        const targetStage = otStages.find(s => s.etapa_id === asig.etapa_id);
+        if (!targetStage) continue;
+        
+        const updatePayload = {};
+        if (asig.personal_id) updatePayload.personal_id_responsable = parseInt(asig.personal_id);
+        if (asig.estacion_id) updatePayload.estacion_id = parseInt(asig.estacion_id);
+        
+        if (Object.keys(updatePayload).length > 0) {
+          const updateResponse = await fetch(
+            `${import.meta.env.VITE_API_URL}/taller/ordenes/${record.id}/etapas/${targetStage.etapa_id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updatePayload)
             }
+          );
+          if (!updateResponse.ok) {
+            console.error("Error actualizando etapa", asig.etapa_id);
           }
         }
       }
@@ -246,44 +249,58 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                 </h3>
                 
                 <div className="space-y-3">
-                  {asignaciones.map((asig) => (
-                    <div 
-                      key={asig.etapa_id}
-                      className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 rounded-lg border border-border-dark bg-surface-dark"
-                    >
-                      <div className="flex items-center gap-2 text-white font-medium">
-                        <span className="material-symbols-outlined text-slate-500">flag</span>
-                        {asig.etapa_nombre}
+                  {asignaciones.map((asig) => {
+                    // Etapas que no requieren tecnico ni estacion
+                    const etapasSinAsignacion = ['recepcionado', 'recepcion', 'entrega'];
+                    const claveEtapa = etapas.find(e => e.id === asig.etapa_id)?.clave || '';
+                    const sinAsignacion = etapasSinAsignacion.includes(claveEtapa.toLowerCase());
+                    
+                    return (
+                      <div 
+                        key={asig.etapa_id}
+                        className={`grid grid-cols-1 gap-3 p-3 rounded-lg border border-border-dark bg-surface-dark ${sinAsignacion ? 'md:grid-cols-1' : 'md:grid-cols-3'}`}
+                      >
+                        <div className="flex items-center gap-2 text-white font-medium">
+                          <span className="material-symbols-outlined text-slate-500">flag</span>
+                          {asig.etapa_nombre}
+                          {sinAsignacion && (
+                            <span className="ml-2 text-[10px] text-slate-500 italic">(Sin asignacion requerida)</span>
+                          )}
+                        </div>
+                        {!sinAsignacion && (
+                          <>
+                            <select
+                              value={asig.personal_id}
+                              onChange={(e) => handleAsignacionChange(asig.etapa_id, 'personal_id', e.target.value)}
+                              className="rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
+                            >
+                              <option value="">Sin tecnico</option>
+                              {personal
+                                .filter(p => p.etapa_id === asig.etapa_id)
+                                .map(p => (
+                                  <option key={p.id} value={p.id}>{p.nb_personal}</option>
+                                ))}
+                            </select>
+                            <select
+                              value={asig.estacion_id}
+                              onChange={(e) => handleAsignacionChange(asig.etapa_id, 'estacion_id', e.target.value)}
+                              className="rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
+                            >
+                              <option value="">Sin estacion</option>
+                              {estaciones
+                                .filter(e => {
+                                  const area = etapas.find(et => et.id === asig.etapa_id)?.areas?.find(a => a.id === e.area_id);
+                                  return area || e.area_etapa_id === asig.etapa_id;
+                                })
+                                .map(e => (
+                                  <option key={e.id} value={e.id}>{e.nb_estacion}</option>
+                                ))}
+                            </select>
+                          </>
+                        )}
                       </div>
-                      <select
-                        value={asig.personal_id}
-                        onChange={(e) => handleAsignacionChange(asig.etapa_id, 'personal_id', e.target.value)}
-                        className="rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                      >
-                        <option value="">Sin tecnico</option>
-                        {personal
-                          .filter(p => p.etapa_id === asig.etapa_id)
-                          .map(p => (
-                            <option key={p.id} value={p.id}>{p.nb_personal}</option>
-                          ))}
-                      </select>
-                      <select
-                        value={asig.estacion_id}
-                        onChange={(e) => handleAsignacionChange(asig.etapa_id, 'estacion_id', e.target.value)}
-                        className="rounded-lg border border-border-dark bg-background-dark px-3 py-2 text-sm text-white"
-                      >
-                        <option value="">Sin estacion</option>
-                        {estaciones
-                          .filter(e => {
-                            const area = etapas.find(et => et.id === asig.etapa_id)?.areas?.find(a => a.id === e.area_id);
-                            return area || e.area_etapa_id === asig.etapa_id;
-                          })
-                          .map(e => (
-                            <option key={e.id} value={e.id}>{e.nb_estacion}</option>
-                          ))}
-                      </select>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
 

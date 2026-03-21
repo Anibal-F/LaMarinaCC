@@ -1,12 +1,55 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import QualitasIndicators from "../../components/QualitasIndicators.jsx";
 import ChubbIndicators from "../../components/ChubbIndicators.jsx";
+import NotificationsSidebar from "../../components/NotificationsSidebar.jsx";
 
 export default function Home() {
   const [activeView, setActiveView] = useState("local");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [piezasVencidasCount, setPiezasVencidasCount] = useState(0);
+  const [piezasVencidasPreview, setPiezasVencidasPreview] = useState([]);
+  const navigate = useNavigate();
+
+  // Cargar conteo de piezas vencidas al montar
+  useEffect(() => {
+    fetchPiezasVencidasCount();
+  }, []);
+
+  const fetchPiezasVencidasCount = async () => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+      const response = await fetch(`${API_BASE}/inventario/piezas?limit=1000`);
+      if (!response.ok) return;
+      
+      const data = await response.json();
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+
+      const vencidas = data.filter(pieza => {
+        if (!pieza.fecha_promesa) return false;
+        
+        const fechaPromesa = new Date(pieza.fecha_promesa);
+        fechaPromesa.setHours(0, 0, 0, 0);
+        const diffTime = fechaPromesa - hoy;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        return diffDays < 0 && 
+               !pieza.estatus?.toLowerCase().includes('cancelada') && 
+               !pieza.recibido && 
+               !pieza.entregado &&
+               pieza.tipo_registro !== 'Reasignada/Cancelada';
+      });
+
+      setPiezasVencidasCount(vencidas.length);
+      setPiezasVencidasPreview(vencidas.slice(0, 3));
+    } catch (error) {
+      console.error('Error fetching piezas vencidas:', error);
+    }
+  };
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display">
@@ -30,6 +73,12 @@ export default function Home() {
                 <span className="material-symbols-outlined">grid_view</span>
               </button>
             }
+            onNotificationsClick={() => setNotificationsOpen(true)}
+          />
+
+          <NotificationsSidebar 
+            isOpen={notificationsOpen} 
+            onClose={() => setNotificationsOpen(false)} 
           />
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
             {/* Switch de vistas */}
@@ -346,6 +395,47 @@ export default function Home() {
                       Centro de Acción y Tareas Pendientes
                     </h2>
                     <div className="bg-surface-dark border border-border-dark rounded-xl divide-y divide-border-dark overflow-hidden">
+                      {/* Alerta de Piezas Vencidas */}
+                      {piezasVencidasCount > 0 && (
+                        <div className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors bg-alert-red/5">
+                          <div className="flex items-center gap-4">
+                            <div className="size-8 rounded-full bg-alert-red/20 flex items-center justify-center text-alert-red animate-pulse">
+                              <span className="material-symbols-outlined text-xl">inventory_2</span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-white">
+                                {piezasVencidasCount} pieza{piezasVencidasCount !== 1 ? 's' : ''} con fecha de entrega vencida
+                              </p>
+                              <p className="text-xs text-slate-400">
+                                {piezasVencidasPreview.length > 0 && (
+                                  <>
+                                    {piezasVencidasPreview.map((p, i) => (
+                                      <span key={i}>
+                                        {p.nombre}{i < piezasVencidasPreview.length - 1 ? ', ' : ''}
+                                      </span>
+                                    ))}
+                                    {piezasVencidasCount > 3 && ` y ${piezasVencidasCount - 3} más...`}
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => navigate('/inventario/bitacora-piezas?vencidas=true')}
+                              className="px-3 py-1.5 bg-alert-red hover:bg-alert-red/90 text-white text-[10px] font-bold rounded uppercase tracking-wider transition-all"
+                            >
+                              Ver Piezas
+                            </button>
+                            <button 
+                              onClick={() => setNotificationsOpen(true)}
+                              className="px-3 py-1.5 bg-surface-dark border border-border-dark text-slate-400 hover:text-white text-[10px] font-bold rounded uppercase tracking-wider transition-all"
+                            >
+                              Ver Notificaciones
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
                         <div className="flex items-center gap-4">
                           <div className="size-8 rounded-full bg-alert-red/20 flex items-center justify-center text-alert-red">

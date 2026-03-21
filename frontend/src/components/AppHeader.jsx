@@ -10,7 +10,8 @@ export default function AppHeader({
   actions,
   rightExtras,
   showNotifications = true,
-  notificationsActive = true
+  notificationsActive = true,
+  onNotificationsClick
 }) {
   const [theme, setTheme] = useState("dark");
 
@@ -63,7 +64,10 @@ export default function AppHeader({
           </span>
         </button>
         {showNotifications ? (
-          <button className="relative p-2 text-slate-400 hover:text-white hover:bg-surface-dark rounded-lg transition-all">
+          <button 
+            onClick={onNotificationsClick}
+            className="relative p-2 text-slate-400 hover:text-white hover:bg-surface-dark rounded-lg transition-all"
+          >
             <span className="material-symbols-outlined">notifications</span>
             {notificationsActive ? (
               <span className="absolute top-2 right-2 size-2 bg-alert-red rounded-full border border-background-dark"></span>

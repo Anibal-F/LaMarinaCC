@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import Sidebar from '../../components/Sidebar.jsx';
 import AppHeader from '../../components/AppHeader.jsx';
 import QualitasPiezasExtractor from '../../components/QualitasPiezasExtractor.jsx';
@@ -421,6 +422,24 @@ export default function BitacoraPiezas() {
   const [resizingColumn, setResizingColumn] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
+
+  // Leer parámetros de URL
+  const location = useLocation();
+  
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    
+    // Si viene ?vencidas=true, activar el filtro de vencidas
+    if (params.get('vencidas') === 'true') {
+      setFiltroIndicador('vencidas');
+    }
+    
+    // Si viene ?search=xxx, aplicar búsqueda
+    const searchParam = params.get('search');
+    if (searchParam) {
+      setFiltroBusqueda(searchParam);
+    }
+  }, [location.search]);
 
   // Cargar piezas desde la API
   useEffect(() => {

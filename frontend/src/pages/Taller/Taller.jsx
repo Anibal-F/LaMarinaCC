@@ -92,7 +92,7 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
             setSuggestedPaquete(sugerido);
             setSelectedPaquete(String(sugerido.id));
             setSelectedPaqueteObj(sugerido);
-            setPaqueteSearch(`${sugerido.folio_paquete} - ${sugerido.numero_reporte_siniestro}`);
+            setPaqueteSearch(`${sugerido.folio} - ${sugerido.numero_reporte_siniestro}`);
           }
         }
         
@@ -324,7 +324,7 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                         const search = paqueteSearch.toLowerCase();
                         return (
                           !search ||
-                          p.folio_paquete?.toLowerCase().includes(search) ||
+                          p.folio?.toLowerCase().includes(search) ||
                           p.numero_reporte_siniestro?.toLowerCase().includes(search)
                         );
                       }).length === 0 ? (
@@ -337,7 +337,7 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                             const search = paqueteSearch.toLowerCase();
                             return (
                               !search ||
-                              p.folio_paquete?.toLowerCase().includes(search) ||
+                              p.folio?.toLowerCase().includes(search) ||
                               p.numero_reporte_siniestro?.toLowerCase().includes(search)
                             );
                           })
@@ -349,7 +349,7 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                               onClick={() => {
                                 setSelectedPaquete(String(p.id));
                                 setSelectedPaqueteObj(p);
-                                setPaqueteSearch(`${p.folio_paquete} - ${p.numero_reporte_siniestro}`);
+                                setPaqueteSearch(`${p.folio} - ${p.numero_reporte_siniestro}`);
                                 setPaqueteDropdownOpen(false);
                                 // Si no es el sugerido, quitar la marca
                                 if (suggestedPaquete?.id !== p.id) {
@@ -362,10 +362,10 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                             >
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <span className="font-bold text-white">{p.folio_paquete}</span>
+                                  <span className="font-bold text-white">{p.folio}</span>
                                   <span className="text-slate-400 ml-2">-</span>
                                   <span className="text-slate-300 ml-2">{p.numero_reporte_siniestro}</span>
-                                  <span className="text-slate-500 ml-2">({p.total_piezas} piezas)</span>
+                                  <span className="text-slate-500 ml-2">({p.piezas_count || p.total_piezas || 0} piezas)</span>
                                 </div>
                                 {suggestedPaquete?.id === p.id && (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-alert-green/20 px-2 py-0.5 text-[10px] font-bold text-alert-green">
@@ -388,9 +388,9 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                       <div>
                         <p className="text-xs text-primary font-bold">Paquete seleccionado:</p>
                         <p className="text-sm text-white">
-                          {selectedPaqueteObj.folio_paquete} - {selectedPaqueteObj.numero_reporte_siniestro}
+                          {selectedPaqueteObj.folio} - {selectedPaqueteObj.numero_reporte_siniestro}
                         </p>
-                        <p className="text-xs text-slate-400">{selectedPaqueteObj.total_piezas} piezas</p>
+                        <p className="text-xs text-slate-400">{selectedPaqueteObj.piezas_count || selectedPaqueteObj.total_piezas || 0} piezas</p>
                       </div>
                       <button
                         type="button"

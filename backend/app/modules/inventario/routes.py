@@ -1326,10 +1326,11 @@ def get_paquetes(
             query += " AND p.orden_admision_id = %s"
             params.append(orden_admision_id)
         
-        # Filtrar paquetes sin asignar (sin orden_admision_id)
+        # Filtrar paquetes sin asignar a OT (sin folio_ot)
+        # Un paquete puede tener orden_admision_id (recepción) pero no folio_ot (sin asignar a taller)
         sin_asignar_bool = sin_asignar is True or (isinstance(sin_asignar, str) and sin_asignar.lower() in ('true', '1', 'yes'))
         if sin_asignar_bool:
-            query += " AND p.orden_admision_id IS NULL"
+            query += " AND (p.folio_ot IS NULL OR p.folio_ot = '')"
 
         if numero_reporte_siniestro:
             query += " AND p.numero_reporte_siniestro ILIKE %s"

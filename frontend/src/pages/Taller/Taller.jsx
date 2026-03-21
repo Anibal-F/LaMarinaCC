@@ -74,7 +74,8 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
           console.error('[AsignarModal] Error cargando paquetes:', paquetesRes.statusText);
         }
         // Filtrar solo paquetes sin orden_admision_id (sin asignar)
-        const paquetesSinAsignar = paquetesList.filter(p => !p.orden_admision_id && !p.folio_ot);
+        // Filtrar solo paquetes sin folio_ot (sin asignar a taller)
+        const paquetesSinAsignar = paquetesList.filter(p => !p.folio_ot);
         setPaquetes(paquetesSinAsignar);
         setPersonal(Array.isArray(personalData) ? personalData : []);
         setEstaciones(Array.isArray(estacionesData) ? estacionesData : []);

@@ -139,14 +139,25 @@ export default function CatalogoEtapasTaller() {
   const persistOrder = async (nextItems) => {
     try {
       setReordering(true);
+      // Asegurar que los IDs sean números
+      const orderedIds = nextItems.map((item) => Number(item.id));
       const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas/reordenar`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ordered_ids: nextItems.map((item) => item.id) })
+        body: JSON.stringify({ ordered_ids: orderedIds })
       });
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        throw new Error(data?.detail || "No se pudo reordenar las etapas.");
+        // Manejar errores de validación de FastAPI (pueden venir como lista)
+        let errorMessage = "No se pudo reordenar las etapas.";
+        if (data?.detail) {
+          if (Array.isArray(data.detail)) {
+            errorMessage = data.detail.map(e => e.msg || String(e)).join(", ");
+          } else {
+            errorMessage = String(data.detail);
+          }
+        }
+        throw new Error(errorMessage);
       }
       const payload = await response.json();
       setItems(Array.isArray(payload) ? payload : nextItems);

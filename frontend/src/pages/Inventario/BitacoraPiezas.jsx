@@ -670,7 +670,24 @@ export default function BitacoraPiezas() {
           
           if (filtroIndicador === 'vencidas') {
             // Fecha vencida Y no cancelada Y no recibida Y no entregada Y no es Reasignada/Cancelada
-            if (diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada') || pieza.recibido || pieza.entregado || pieza.tipo_registro === 'Reasignada/Cancelada') {
+            const isFiltered = diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada') || pieza.recibido || pieza.entregado || pieza.tipo_registro === 'Reasignada/Cancelada';
+            
+            // Debug para pieza específica
+            if (pieza.numero_orden?.includes('8553803')) {
+              console.log('Debug vencidas filter:', {
+                nombre: pieza.nombre,
+                numero_orden: pieza.numero_orden,
+                diffDays,
+                fecha_promesa: pieza.fecha_promesa,
+                estatus: pieza.estatus,
+                recibido: pieza.recibido,
+                entregado: pieza.entregado,
+                tipo_registro: pieza.tipo_registro,
+                isFiltered
+              });
+            }
+            
+            if (isFiltered) {
               return false;
             }
           } else if (filtroIndicador === 'porRecibir' && (diffDays < 0 || diffDays > 3)) {

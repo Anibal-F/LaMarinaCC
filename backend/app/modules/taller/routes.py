@@ -803,11 +803,10 @@ async def reorder_checklist_items(request: Request):
     print(f"[reorder_checklist] Etapa: {etapa_id}, IDs: {parsed_ids}", flush=True)
     
     conn = get_connection()
+    conn.row_factory = dict_row
+    
     try:
-        conn.row_factory = dict_row
-        conn.autocommit = False
-        
-        try:
+        with conn.transaction():
             # Verificar que todos los items pertenecen a esta etapa
             current_rows = conn.execute(
                 "SELECT id FROM taller_checklist_items WHERE etapa_id = %s ORDER BY orden ASC",
@@ -816,7 +815,6 @@ async def reorder_checklist_items(request: Request):
             current_ids = [int(row["id"]) for row in current_rows]
             
             if set(current_ids) != set(parsed_ids):
-                conn.rollback()
                 raise HTTPException(status_code=400, detail="Los IDs no coinciden con los items de esta etapa")
             
             # Reordenar usando offset para evitar constraint unique
@@ -832,33 +830,28 @@ async def reorder_checklist_items(request: Request):
                     "UPDATE taller_checklist_items SET orden = %s WHERE id = %s AND etapa_id = %s",
                     (index, item_id, etapa_id),
                 )
+        
+        # Retornar los items actualizados de esta etapa (fuera de la transacción)
+        rows = conn.execute(
+            """
+            SELECT tci.id, tci.etapa_id, te.nb_etapa, te.clave, tci.descripcion, tci.orden,
+                   tci.obligatorio, tci.activo, tci.created_at
+            FROM taller_checklist_items tci
+            JOIN taller_etapas te ON te.id = tci.etapa_id
+            WHERE tci.etapa_id = %s
+            ORDER BY tci.orden ASC
+            """,
+            (etapa_id,)
+        ).fetchall()
+        return rows
             
-            conn.commit()
-            
-            # Retornar los items actualizados de esta etapa
-            rows = conn.execute(
-                """
-                SELECT tci.id, tci.etapa_id, te.nb_etapa, te.clave, tci.descripcion, tci.orden,
-                       tci.obligatorio, tci.activo, tci.created_at
-                FROM taller_checklist_items tci
-                JOIN taller_etapas te ON te.id = tci.etapa_id
-                WHERE tci.etapa_id = %s
-                ORDER BY tci.orden ASC
-                """,
-                (etapa_id,)
-            ).fetchall()
-            return rows
-            
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.autocommit = True
-            conn.close()
-    except Exception as e:
-        if hasattr(conn, 'close'):
-            conn.close()
+    except HTTPException:
         raise
+    except Exception as e:
+        print(f"[reorder_checklist] Error: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Error al reordenar: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.post("/catalogos/checklist-items", status_code=status.HTTP_201_CREATED)

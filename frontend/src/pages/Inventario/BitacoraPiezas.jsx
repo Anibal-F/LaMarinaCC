@@ -427,6 +427,21 @@ export default function BitacoraPiezas() {
     fetchPiezas();
   }, [filtroEstatus, filtroTipo, fuenteActiva, filtroFechaInicio, filtroFechaFin]);
 
+  // Cerrar modales con tecla ESC
+  useEffect(() => {
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        if (modalOpen) {
+          setModalOpen(false);
+        } else if (proveedorSeleccionado) {
+          setProveedorSeleccionado(null);
+        }
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [modalOpen, proveedorSeleccionado]);
+
   const fetchPiezas = async () => {
     try {
       setLoading(true);

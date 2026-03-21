@@ -911,6 +911,27 @@ export default function PaquetesPiezas() {
     return () => window.clearTimeout(timeoutId);
   }, [search]);
 
+  // Cerrar modales con tecla ESC
+  useEffect(() => {
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        if (confirmCompleteOpen) {
+          setConfirmCompleteOpen(false);
+        } else if (pdfModal) {
+          closePdfModal();
+        } else if (photoGalleryOpen) {
+          setPhotoGalleryOpen(false);
+        } else if (selectedPieceForPhoto) {
+          setSelectedPieceForPhoto(null);
+        } else if (modalOpen) {
+          closeModal();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [confirmCompleteOpen, pdfModal, photoGalleryOpen, selectedPieceForPhoto, modalOpen]);
+
   const metrics = useMemo(() => {
     const generados = packages.filter((item) => item.estado === "Generado").length;
     const parciales = packages.filter((item) => item.estado === "Parcial").length;

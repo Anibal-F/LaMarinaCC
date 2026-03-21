@@ -117,6 +117,18 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Cerrar modal con tecla ESC
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   const handleAsignacionChange = (etapaId, field, value) => {
     setAsignaciones(prev => prev.map(a => 
       a.etapa_id === etapaId ? { ...a, [field]: value } : a

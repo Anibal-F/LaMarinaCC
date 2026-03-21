@@ -1326,7 +1326,9 @@ def get_paquetes(
             query += " AND p.orden_admision_id = %s"
             params.append(orden_admision_id)
         
-        if sin_asignar:
+        # Filtrar paquetes sin asignar (sin orden_admision_id)
+        sin_asignar_bool = sin_asignar is True or (isinstance(sin_asignar, str) and sin_asignar.lower() in ('true', '1', 'yes'))
+        if sin_asignar_bool:
             query += " AND p.orden_admision_id IS NULL"
 
         if numero_reporte_siniestro:

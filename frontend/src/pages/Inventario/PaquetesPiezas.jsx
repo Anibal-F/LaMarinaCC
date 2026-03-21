@@ -1170,22 +1170,41 @@ export default function PaquetesPiezas() {
   
   const handleConfirmComplete = async () => {
     setConfirmCompleteOpen(false);
-    setForm(prev => ({ ...prev, estado: "Completado" }));
-    // Llamar al endpoint especial para completar
+    
     try {
       setSaving(true);
+      setError("");
+      
+      // Paso 1: Primero guardar las piezas actualizadas
+      const payload = buildPayload({ ...form, estado: "Completado" });
+      const saveResponse = await fetch(`${API_BASE}/inventario/paquetes/${activeId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      
+      if (!saveResponse.ok) {
+        const error = await saveResponse.json().catch(() => null);
+        throw new Error(error?.detail || "No se pudieron guardar las piezas.");
+      }
+      
+      // Paso 2: Luego llamar al endpoint para completar
       const response = await fetch(`${API_BASE}/inventario/paquetes/${activeId}/completar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
+      
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "No se pudo completar el paquete.");
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.detail || "No se pudo completar el paquete.");
       }
+      
       await loadPackages(search);
       closeModal();
     } catch (err) {
       setError(err.message || "Error al completar el paquete.");
+      // Reabrir el modal de confirmación para que el usuario vea el error y pueda reintentar
+      setConfirmCompleteOpen(true);
     } finally {
       setSaving(false);
     }

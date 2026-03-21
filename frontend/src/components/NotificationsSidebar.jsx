@@ -61,7 +61,13 @@ export default function NotificationsSidebar({ isOpen, onClose }) {
 
   const handleVerPieza = (pieza) => {
     onClose();
-    navigate(`/inventario/bitacora-piezas?vencidas=true&search=${pieza.numero_orden || pieza.numero_reporte}`);
+    // Usar numero_orden o numero_reporte para la búsqueda, codificado para URL
+    const searchValue = pieza.numero_orden || pieza.numero_reporte || pieza.nombre;
+    if (searchValue) {
+      navigate(`/inventario/bitacora-piezas?vencidas=true&search=${encodeURIComponent(searchValue)}`);
+    } else {
+      navigate('/inventario/bitacora-piezas?vencidas=true');
+    }
   };
 
   const formatDiasVencidos = (fechaPromesa) => {

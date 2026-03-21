@@ -136,6 +136,13 @@ function cleanProveedorNombre(nombre) {
 
 // Componente de celda de proveedor con ícono
 function ProveedorCell({ proveedor, onClickInfo }) {
+  // Manejar caso donde proveedor es null/undefined
+  if (!proveedor) {
+    return (
+      <span className="text-xs text-slate-500 italic">Sin proveedor</span>
+    );
+  }
+  
   const nombreOriginal = proveedor.nombre || '';
   const nombreLimpio = cleanProveedorNombre(nombreOriginal);
   const proveedorId = proveedor.id_externo || proveedor.id;
@@ -427,17 +434,21 @@ export default function BitacoraPiezas() {
   const location = useLocation();
   
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    
-    // Si viene ?vencidas=true, activar el filtro de vencidas
-    if (params.get('vencidas') === 'true') {
-      setFiltroIndicador('vencidas');
-    }
-    
-    // Si viene ?search=xxx, aplicar búsqueda
-    const searchParam = params.get('search');
-    if (searchParam) {
-      setFiltroBusqueda(searchParam);
+    try {
+      const params = new URLSearchParams(location.search);
+      
+      // Si viene ?vencidas=true, activar el filtro de vencidas
+      if (params.get('vencidas') === 'true') {
+        setFiltroIndicador('vencidas');
+      }
+      
+      // Si viene ?search=xxx, aplicar búsqueda (decodificar el valor)
+      const searchParam = params.get('search');
+      if (searchParam) {
+        setFiltroBusqueda(decodeURIComponent(searchParam));
+      }
+    } catch (error) {
+      console.error('Error parsing URL params:', error);
     }
   }, [location.search]);
 
@@ -670,22 +681,27 @@ export default function BitacoraPiezas() {
         }
       }
       
-      // Filtro por búsqueda general (incluye número de reporte normalizado)
+      // Filtro por búsqueda general (incluye número de reporte y orden normalizados)
       if (filtroBusqueda) {
         const searchLower = filtroBusqueda.toLowerCase();
         const searchDigits = extractDigits(filtroBusqueda);
         const reporteDigits = extractDigits(pieza.numero_reporte);
+        const ordenDigits = extractDigits(pieza.numero_orden);
         
-        // Coincidencia por nombre, parte o proveedor
+        // Coincidencia por nombre, parte, proveedor o número de orden
         const matchesBasic = (
-          pieza.nombre.toLowerCase().includes(searchLower) ||
-          pieza.numero_parte.toLowerCase().includes(searchLower) ||
-          pieza.proveedor.nombre.toLowerCase().includes(searchLower)
+          pieza.nombre?.toLowerCase().includes(searchLower) ||
+          pieza.numero_parte?.toLowerCase().includes(searchLower) ||
+          pieza.proveedor?.nombre?.toLowerCase().includes(searchLower) ||
+          (pieza.numero_orden && pieza.numero_orden.toLowerCase().includes(searchLower))
         );
         
-        // Coincidencia por número de reporte (todos los dígitos)
+        // Coincidencia por número de reporte u orden (todos los dígitos)
         // Solo aplica si la búsqueda tiene al menos 4 dígitos
-        const matchesReporte = searchDigits.length >= 4 && reporteDigits.includes(searchDigits);
+        const matchesReporte = searchDigits.length >= 4 && (
+          reporteDigits.includes(searchDigits) || 
+          ordenDigits.includes(searchDigits)
+        );
         
         return matchesBasic || matchesReporte;
       }

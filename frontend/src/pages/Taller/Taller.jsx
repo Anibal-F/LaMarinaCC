@@ -49,8 +49,9 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
         setError("");
         
         // Cargar paquetes SIN ASIGNAR (sin orden_admision_id) - disponibles para asignar
+        // Incluir tanto RECIBIDO como COMPLETADO
         const [paquetesRes, personalRes, estacionesRes, etapasRes] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_URL}/inventario/paquetes?estatus=RECIBIDO&sin_asignar=true&limit=500`),
+          fetch(`${import.meta.env.VITE_API_URL}/inventario/paquetes?sin_asignar=true&limit=500`),
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/personal`),
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/estaciones`),
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas`)

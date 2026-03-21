@@ -1,6 +1,6 @@
 from typing import Any, List
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Body, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
@@ -631,19 +631,30 @@ def update_etapa(etapa_id: int, payload: EtapaPayload):
 
 
 @router.put("/catalogos/etapas/reordenar")
-def reorder_etapas(payload: EtapaReorderPayload):
+def reorder_etapas(ordered_ids: List[Any] = Body(...)):
     _ensure_taller_schema()
+    
+    # Debug: imprimir lo que recibimos
+    print(f"[reorder_etapas] Recibido: {ordered_ids}", flush=True)
     
     # Convertir IDs a enteros con manejo de errores
     try:
-        ordered_ids = [int(item_id) for item_id in payload.ordered_ids if item_id is not None and str(item_id).strip() != '']
+        parsed_ids = []
+        for item_id in ordered_ids:
+            if item_id is None:
+                continue
+            if isinstance(item_id, dict):
+                # Si viene como objeto, extraer el id
+                item_id = item_id.get('id', item_id.get('ID'))
+            if item_id is not None and str(item_id).strip() != '':
+                parsed_ids.append(int(item_id))
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=f"IDs inválidos en la lista: {e}")
     
-    if len(ordered_ids) == 0:
+    if len(parsed_ids) == 0:
         raise HTTPException(status_code=400, detail="La lista de etapas está vacía")
     
-    if len(set(ordered_ids)) != len(ordered_ids):
+    if len(set(parsed_ids)) != len(parsed_ids):
         raise HTTPException(status_code=400, detail="La lista de etapas contiene duplicados")
 
     with get_connection() as conn:
@@ -652,16 +663,16 @@ def reorder_etapas(payload: EtapaReorderPayload):
             "SELECT id FROM taller_etapas ORDER BY orden ASC"
         ).fetchall()
         current_ids = [int(row["id"]) for row in current_rows]
-        if set(current_ids) != set(ordered_ids):
+        if set(current_ids) != set(parsed_ids):
             raise HTTPException(status_code=400, detail="Debes enviar todas las etapas para reordenar")
 
-        offset = len(ordered_ids) + 100
-        for index, etapa_id in enumerate(ordered_ids, start=1):
+        offset = len(parsed_ids) + 100
+        for index, etapa_id in enumerate(parsed_ids, start=1):
             conn.execute(
                 "UPDATE taller_etapas SET orden = %s WHERE id = %s",
                 (offset + index, etapa_id),
             )
-        for index, etapa_id in enumerate(ordered_ids, start=1):
+        for index, etapa_id in enumerate(parsed_ids, start=1):
             conn.execute(
                 "UPDATE taller_etapas SET orden = %s WHERE id = %s",
                 (index, etapa_id),

@@ -16,14 +16,11 @@ const getApiUrl = () => {
 
 const API_BASE = getApiUrl();
 
-// Función para normalizar número de reporte (extraer últimos 6 dígitos)
-// Ejemplo: "04 0111577 26 A" → "115726" o "04251889452" → "889452"
-const normalizeReporte = (reporte) => {
-  if (!reporte) return '';
-  // Eliminar todo excepto dígitos
-  const digitsOnly = String(reporte).replace(/\D/g, '');
-  // Retornar los últimos 6 dígitos
-  return digitsOnly.slice(-6);
+// Función para extraer todos los dígitos de un string
+// Ejemplo: "04 0111577 26 A" → "0401157726"
+const extractDigits = (str) => {
+  if (!str) return '';
+  return String(str).replace(/\D/g, '');
 };
 
 // Opciones de ubicación
@@ -582,17 +579,19 @@ export default function BitacoraPiezas() {
         }
       }
       
-      // Filtro por número de reporte (normalizado - compara últimos 6 dígitos)
+      // Filtro por número de reporte (normalizado - compara todos los dígitos)
       if (filtroReporte && pieza.numero_reporte) {
-        const searchNormalized = normalizeReporte(filtroReporte);
-        const reporteNormalized = normalizeReporte(pieza.numero_reporte);
-        // Si el search tiene al menos 4 dígitos, usar coincidencia por últimos dígitos
-        if (searchNormalized.length >= 4) {
-          if (!reporteNormalized.includes(searchNormalized)) {
+        const searchDigits = extractDigits(filtroReporte);
+        const reporteDigits = extractDigits(pieza.numero_reporte);
+        
+        // Si la búsqueda tiene 4+ dígitos, buscar coincidencia en los dígitos del reporte
+        if (searchDigits.length >= 4) {
+          // Buscar que los dígitos de búsqueda estén contenidos en los dígitos del reporte
+          if (!reporteDigits.includes(searchDigits)) {
             return false;
           }
         } else {
-          // Fallback a búsqueda parcial normal
+          // Búsqueda corta: usar includes normal en el texto original
           if (!pieza.numero_reporte.toLowerCase().includes(filtroReporte.toLowerCase())) {
             return false;
           }
@@ -640,8 +639,8 @@ export default function BitacoraPiezas() {
       // Filtro por búsqueda general (incluye número de reporte normalizado)
       if (filtroBusqueda) {
         const searchLower = filtroBusqueda.toLowerCase();
-        const searchNormalized = normalizeReporte(filtroBusqueda);
-        const reporteNormalized = normalizeReporte(pieza.numero_reporte);
+        const searchDigits = extractDigits(filtroBusqueda);
+        const reporteDigits = extractDigits(pieza.numero_reporte);
         
         // Coincidencia por nombre, parte o proveedor
         const matchesBasic = (
@@ -650,9 +649,9 @@ export default function BitacoraPiezas() {
           pieza.proveedor.nombre.toLowerCase().includes(searchLower)
         );
         
-        // Coincidencia por número de reporte (normalizado - últimos 6 dígitos)
+        // Coincidencia por número de reporte (todos los dígitos)
         // Solo aplica si la búsqueda tiene al menos 4 dígitos
-        const matchesReporte = searchNormalized.length >= 4 && reporteNormalized.includes(searchNormalized);
+        const matchesReporte = searchDigits.length >= 4 && reporteDigits.includes(searchDigits);
         
         return matchesBasic || matchesReporte;
       }

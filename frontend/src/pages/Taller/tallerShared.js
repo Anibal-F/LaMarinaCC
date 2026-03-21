@@ -4,6 +4,7 @@ export const WORKSHOP_STAGES = [
   { id: "recepcionado", label: "Recepcionado", icon: "assignment_turned_in", targetTime: "00:30:00" },
   { id: "carroceria", label: "Carroceria", icon: "directions_car", targetTime: "04:00:00" },
   { id: "pintura", label: "Pintura", icon: "format_paint", targetTime: "05:00:00" },
+  { id: "pulido", label: "Pulido", icon: "auto_fix_high", targetTime: "02:00:00" },
   { id: "armado", label: "Armado", icon: "build", targetTime: "03:00:00" },
   { id: "lavado", label: "Lavado", icon: "local_car_wash", targetTime: "01:00:00" },
   { id: "entrega", label: "Entrega", icon: "key", targetTime: "00:30:00" }

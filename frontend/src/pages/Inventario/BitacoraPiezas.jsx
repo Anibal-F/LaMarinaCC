@@ -690,6 +690,27 @@ export default function BitacoraPiezas() {
         const reporteDigits = extractDigits(pieza.numero_reporte);
         const ordenDigits = extractDigits(pieza.numero_orden);
         
+        // Debug: mostrar comparación para ciertos valores
+        if (searchLower === '8553803' || pieza.numero_orden?.includes('8553803')) {
+          console.log('Debug pieza:', {
+            nombre: pieza.nombre,
+            numero_orden: pieza.numero_orden,
+            searchLower,
+            ordenDigits,
+            searchDigits,
+            matchesBasic: (
+              pieza.nombre?.toLowerCase().includes(searchLower) ||
+              pieza.numero_parte?.toLowerCase().includes(searchLower) ||
+              pieza.proveedor?.nombre?.toLowerCase().includes(searchLower) ||
+              (pieza.numero_orden && pieza.numero_orden.toLowerCase().includes(searchLower))
+            ),
+            matchesReporte: searchDigits.length >= 4 && (
+              reporteDigits.includes(searchDigits) || 
+              ordenDigits.includes(searchDigits)
+            )
+          });
+        }
+        
         // Coincidencia por nombre, parte, proveedor o número de orden
         const matchesBasic = (
           pieza.nombre?.toLowerCase().includes(searchLower) ||

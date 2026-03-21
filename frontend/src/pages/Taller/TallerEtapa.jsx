@@ -5,14 +5,23 @@ import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import { resolveMediaUrl } from "../../utils/media.js";
 import {
-  WORKSHOP_STAGES,
   formatDateTime,
-  getStageMeta,
   getVehicleTitle,
   insurerTagClasses,
   parseDate,
   relativeTime
 } from "./tallerShared.js";
+
+// Metadatos para etapas dinámicas
+const STAGE_METADATA = {
+  recepcionado: { icon: "assignment_turned_in", targetTime: "00:30:00", label: "Recepcionado" },
+  carroceria: { icon: "directions_car", targetTime: "04:00:00", label: "Carroceria" },
+  pintura: { icon: "format_paint", targetTime: "05:00:00", label: "Pintura" },
+  pulido: { icon: "auto_fix_high", targetTime: "02:00:00", label: "Pulido" },
+  armado: { icon: "build", targetTime: "03:00:00", label: "Armado" },
+  lavado: { icon: "local_car_wash", targetTime: "01:00:00", label: "Lavado" },
+  entrega: { icon: "key", targetTime: "00:30:00", label: "Entrega" }
+};
 
 function getCurrentUserLabel() {
   try {
@@ -43,6 +52,7 @@ export default function TallerEtapa() {
   const [stageChecklist, setStageChecklist] = useState([]);
   const [stageNotes, setStageNotes] = useState([]);
   const [allOtStages, setAllOtStages] = useState([]);
+  const [catalogEtapas, setCatalogEtapas] = useState([]);
   const [mediaItems, setMediaItems] = useState([]);
   const [expedienteFiles, setExpedienteFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,18 +62,44 @@ export default function TallerEtapa() {
   const [notice, setNotice] = useState("");
   const [noteInput, setNoteInput] = useState("");
 
-  const currentStage = getStageMeta(stageId);
-  const currentStageIndex = WORKSHOP_STAGES.findIndex((stage) => stage.id === currentStage.id);
-  const nextStage = WORKSHOP_STAGES[currentStageIndex + 1] || null;
+  // Etapas dinámicas desde el catálogo
+  const workshopStages = useMemo(() => {
+    return catalogEtapas
+      .filter(e => e.activo !== false)
+      .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+      .map(etapa => {
+        const meta = STAGE_METADATA[etapa.clave] || { icon: "pending", targetTime: "01:00:00", label: etapa.nb_etapa };
+        return {
+          id: etapa.clave,
+          label: meta.label || etapa.nb_etapa,
+          icon: meta.icon,
+          targetTime: meta.targetTime,
+          etapa_id: etapa.id
+        };
+      });
+  }, [catalogEtapas]);
+
+  const currentStage = useMemo(() => {
+    return workshopStages.find((stage) => stage.id === stageId) || workshopStages[0] || { id: stageId, label: stageId, icon: "pending", targetTime: "01:00:00" };
+  }, [workshopStages, stageId]);
+
+  const currentStageIndex = useMemo(() => {
+    return workshopStages.findIndex((stage) => stage.id === currentStage.id);
+  }, [workshopStages, currentStage.id]);
+
+  const nextStage = useMemo(() => {
+    return workshopStages[currentStageIndex + 1] || null;
+  }, [workshopStages, currentStageIndex]);
 
   const loadRecord = async () => {
     try {
       setLoading(true);
       setError("");
-      const [recordResponse, mediaResponse, stagesResponse] = await Promise.all([
+      const [recordResponse, mediaResponse, stagesResponse, etapasResponse] = await Promise.all([
         fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}`),
         fetch(`${import.meta.env.VITE_API_URL}/recepcion/registros/${id}/media`),
-        fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas`)
+        fetch(`${import.meta.env.VITE_API_URL}/taller/ordenes/${id}/etapas`),
+        fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas`)
       ]);
 
       if (!recordResponse.ok) {
@@ -76,6 +112,8 @@ export default function TallerEtapa() {
       const recordPayload = await recordResponse.json();
       const mediaPayload = mediaResponse.ok ? await mediaResponse.json() : [];
       const stagesPayload = await stagesResponse.json();
+      const etapasPayload = etapasResponse.ok ? await etapasResponse.json() : [];
+      setCatalogEtapas(Array.isArray(etapasPayload) ? etapasPayload : []);
       const stageItems = Array.isArray(stagesPayload) ? stagesPayload : [];
       const currentStageRecord = stageItems.find((item) => item.clave === stageId);
       if (!currentStageRecord) {
@@ -106,6 +144,7 @@ export default function TallerEtapa() {
       setRecord(recordPayload);
       setStageRecord(currentStageRecord);
       setAllOtStages(stageItems);
+      if (!etapasResponse.ok) setCatalogEtapas([]);
       setStageChecklist(Array.isArray(checklistPayload) ? checklistPayload : []);
       setStageNotes(Array.isArray(notesPayload) ? notesPayload : []);
       setMediaItems(Array.isArray(mediaPayload) ? mediaPayload : []);

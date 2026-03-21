@@ -5,10 +5,10 @@ import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import { resolveMediaUrl } from "../../utils/media.js";
 import {
-  WORKSHOP_STAGES,
   buildDraft,
   formatAbsoluteDate,
   formatDateTime,
+  getStageMeta,
   getVehicleTitle,
   insurerTagClasses,
   isRecepcionCompleted,
@@ -17,6 +17,17 @@ import {
   saveDraft,
   statusPill
 } from "./tallerShared.js";
+
+// Metadatos para etapas dinámicas (fallback para etapas personalizadas)
+const STAGE_METADATA = {
+  recepcionado: { icon: "assignment_turned_in", targetTime: "00:30:00" },
+  carroceria: { icon: "directions_car", targetTime: "04:00:00" },
+  pintura: { icon: "format_paint", targetTime: "05:00:00" },
+  pulido: { icon: "auto_fix_high", targetTime: "02:00:00" },
+  armado: { icon: "build", targetTime: "03:00:00" },
+  lavado: { icon: "local_car_wash", targetTime: "01:00:00" },
+  entrega: { icon: "key", targetTime: "00:30:00" }
+};
 
 function StageActionIcon(props) {
   return (
@@ -160,13 +171,37 @@ export default function TallerGestion() {
       : "";
   const evidenceCount = photoItems.length || expedientePhotoItems.length;
 
+  // Etapas dinámicas desde el catálogo
+  const workshopStages = useMemo(() => {
+    const etapas = Array.isArray(catalogs?.etapas) ? catalogs.etapas : [];
+    return etapas
+      .filter(e => e.activo !== false)
+      .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+      .map(etapa => {
+        const meta = STAGE_METADATA[etapa.clave] || { icon: "pending", targetTime: "01:00:00" };
+        return {
+          id: etapa.clave,
+          label: etapa.nb_etapa,
+          icon: meta.icon,
+          targetTime: meta.targetTime,
+          etapa_id: etapa.id
+        };
+      });
+  }, [catalogs?.etapas]);
+
+  const stageById = useMemo(() => {
+    return new Map(workshopStages.map(s => [s.id, s]));
+  }, [workshopStages]);
+
   const currentStageIndex = useMemo(() => {
     const recepcionCompleted = isRecepcionCompleted(record);
     const effectiveStageId =
-      recepcionCompleted && draft?.currentStage === "recepcionado" ? "carroceria" : draft?.currentStage;
-    const index = WORKSHOP_STAGES.findIndex((stage) => stage.id === effectiveStageId);
+      recepcionCompleted && draft?.currentStage === "recepcionado" 
+        ? (workshopStages[1]?.id || "carroceria") 
+        : draft?.currentStage;
+    const index = workshopStages.findIndex((stage) => stage.id === effectiveStageId);
     return index >= 0 ? index : 0;
-  }, [draft?.currentStage, record]);
+  }, [draft?.currentStage, record, workshopStages]);
 
   const currentOtStage = useMemo(() => {
     return stageMap.get(draft?.currentStage) || otStages.find((item) => item.clave === draft?.currentStage) || null;
@@ -207,9 +242,12 @@ export default function TallerGestion() {
 
   const progressValue = useMemo(() => {
     const manualProgress = Number(currentOtStage?.progreso || 0);
-    const stageProgress = Math.round((currentStageIndex / (WORKSHOP_STAGES.length - 1)) * 100);
+    const totalStages = workshopStages.length;
+    const stageProgress = totalStages > 1 
+      ? Math.round((currentStageIndex / (totalStages - 1)) * 100) 
+      : 0;
     return Math.max(manualProgress, stageProgress);
-  }, [currentOtStage?.progreso, currentStageIndex]);
+  }, [currentOtStage?.progreso, currentStageIndex, workshopStages.length]);
 
   const vehicleTitle = getVehicleTitle(record);
 
@@ -245,9 +283,9 @@ export default function TallerGestion() {
     setNotice("");
     setError("");
     try {
-      const selectedStageIndex = WORKSHOP_STAGES.findIndex((stage) => stage.id === draft.currentStage);
+      const selectedStageIndex = workshopStages.findIndex((stage) => stage.id === draft.currentStage);
       const updates = otStages.map((stage) => {
-        const stageIndex = WORKSHOP_STAGES.findIndex((item) => item.id === stage.clave);
+        const stageIndex = workshopStages.findIndex((item) => item.id === stage.clave);
         let nextStatus = stage.estatus;
         let nextProgress = Number(stage.progreso || 0);
 
@@ -458,7 +496,7 @@ export default function TallerGestion() {
                     </article>
                     <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4 lg:min-h-[112px]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Etapa actual</p>
-                      <p className="mt-2 text-lg font-bold text-white">{WORKSHOP_STAGES[currentStageIndex]?.label}</p>
+                      <p className="mt-2 text-lg font-bold text-white">{workshopStages[currentStageIndex]?.label || "-"}</p>
                     </article>
                     <article className="rounded-xl border border-border-dark bg-surface-dark/70 p-4 lg:min-h-[112px]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Pendientes</p>
@@ -659,7 +697,10 @@ export default function TallerGestion() {
                     </div>
 
                     <div className="relative">
-                      {WORKSHOP_STAGES.map((stage, index) => {
+                      {workshopStages.length === 0 ? (
+                        <p className="text-sm text-slate-400">Cargando etapas...</p>
+                      ) : null}
+                      {workshopStages.map((stage, index) => {
                         const stageData = stageMap.get(stage.id);
                         const isRecepcionStep = stage.id === "recepcionado";
                         const isCompleted =
@@ -670,7 +711,7 @@ export default function TallerGestion() {
 
                         return (
                           <div key={stage.id} className="relative flex gap-4 pb-7 last:pb-0">
-                            {index < WORKSHOP_STAGES.length - 1 ? (
+                            {index < workshopStages.length - 1 ? (
                               <div
                                 className={`absolute left-5 top-10 h-[calc(100%-4px)] w-px ${
                                   isCompleted ? "bg-alert-green/60" : "border-l border-dashed border-border-dark"
@@ -724,7 +765,7 @@ export default function TallerGestion() {
                                           : `Completado ${formatDateTime(record.fecha_recep)}`
                                         : stageData?.updated_at
                                           ? `Etapa completada ${formatDateTime(stageData.updated_at)}`
-                                          : `Etapa completada antes de ${WORKSHOP_STAGES[currentStageIndex]?.label.toLowerCase()}`
+                                          : `Etapa completada antes de ${workshopStages[currentStageIndex]?.label?.toLowerCase() || "la etapa actual"}`
                                       : isActive
                                         ? stageData?.updated_at
                                           ? relativeTime(stageData.updated_at)

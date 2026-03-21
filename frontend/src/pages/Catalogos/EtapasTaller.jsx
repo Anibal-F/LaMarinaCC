@@ -154,9 +154,9 @@ export default function CatalogoEtapasTaller() {
       
       console.log("[persistOrder] Enviando orden:", orderedIds);
       
-      // Enviar solo el array de IDs, no un objeto
+      // Enviar solo el array de IDs vía POST
       const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas/reordenar`, {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(orderedIds)
       });

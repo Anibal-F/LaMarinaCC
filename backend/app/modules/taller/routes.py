@@ -626,8 +626,9 @@ def update_etapa(etapa_id: int, payload: EtapaPayload):
     return row
 
 
-@router.put("/catalogos/etapas/reordenar")
+@router.post("/catalogos/etapas/reordenar", response_model=None)
 async def reorder_etapas(request: Request):
+    """Reordena las etapas. Acepta un array de IDs o un objeto {ordered_ids: [...]}."""
     _ensure_taller_schema()
     
     # Obtener el body crudo como JSON
@@ -640,10 +641,13 @@ async def reorder_etapas(request: Request):
     # Extraer los IDs del body
     if isinstance(body, list):
         ordered_ids = body
-    elif isinstance(body, dict) and 'ordered_ids' in body:
-        ordered_ids = body['ordered_ids']
+    elif isinstance(body, dict):
+        if 'ordered_ids' in body:
+            ordered_ids = body['ordered_ids']
+        else:
+            raise HTTPException(status_code=400, detail="Se esperaba {ordered_ids: [...]} o un array")
     else:
-        raise HTTPException(status_code=400, detail="Se esperaba un array de IDs o {ordered_ids: [...]}")
+        raise HTTPException(status_code=400, detail="Body inválido")
     
     # Convertir IDs a enteros
     try:

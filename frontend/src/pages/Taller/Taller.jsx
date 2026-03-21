@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar.jsx";
@@ -20,8 +20,25 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
   
   // Selecciones
   const [selectedPaquete, setSelectedPaquete] = useState("");
+  const [selectedPaqueteObj, setSelectedPaqueteObj] = useState(null);
   const [suggestedPaquete, setSuggestedPaquete] = useState(null);
   const [asignaciones, setAsignaciones] = useState([]); // [{etapa_id, personal_id, estacion_id}]
+  
+  // Búsqueda de paquetes
+  const [paqueteSearch, setPaqueteSearch] = useState("");
+  const [paqueteDropdownOpen, setPaqueteDropdownOpen] = useState(false);
+  const paqueteSearchRef = useRef(null);
+
+  // Resetear estados cuando se cierra el modal
+  useEffect(() => {
+    if (!isOpen) {
+      setPaqueteSearch("");
+      setSelectedPaquete("");
+      setSelectedPaqueteObj(null);
+      setSuggestedPaquete(null);
+      setPaqueteDropdownOpen(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !record) return;
@@ -31,8 +48,9 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
         setLoading(true);
         setError("");
         
+        // Cargar paquetes SIN ASIGNAR (sin orden_admision_id) - disponibles para asignar
         const [paquetesRes, personalRes, estacionesRes, etapasRes] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_URL}/inventario/paquetes?estatus=RECIBIDO&limit=100`),
+          fetch(`${import.meta.env.VITE_API_URL}/inventario/paquetes?estatus=RECIBIDO&sin_asignar=true&limit=500`),
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/personal`),
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/estaciones`),
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas`)
@@ -44,21 +62,25 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
         const etapasData = etapasRes.ok ? await etapasRes.json() : [];
         
         const paquetesList = Array.isArray(paquetesData.items) ? paquetesData.items : Array.isArray(paquetesData) ? paquetesData : [];
-        setPaquetes(paquetesList);
+        // Filtrar solo paquetes sin orden_admision_id (sin asignar)
+        const paquetesSinAsignar = paquetesList.filter(p => !p.orden_admision_id && !p.folio_ot);
+        setPaquetes(paquetesSinAsignar);
         setPersonal(Array.isArray(personalData) ? personalData : []);
         setEstaciones(Array.isArray(estacionesData) ? estacionesData : []);
         setEtapas(Array.isArray(etapasData) ? etapasData.filter(e => e.activo !== false).sort((a,b) => (a.orden||0)-(b.orden||0)) : []);
         
-        // Buscar paquete sugerido por número de reporte/siniestro
+        // Buscar paquete sugerido por número de reporte/siniestro (solo entre los sin asignar)
         const reporteSiniestro = record?.folio_seguro || record?.numero_reporte_siniestro;
-        if (reporteSiniestro && paquetesList.length > 0) {
-          const sugerido = paquetesList.find(p => 
+        if (reporteSiniestro && paquetesSinAsignar.length > 0) {
+          const sugerido = paquetesSinAsignar.find(p => 
             p.numero_reporte_siniestro && 
             p.numero_reporte_siniestro.toLowerCase() === reporteSiniestro.toLowerCase()
           );
           if (sugerido) {
             setSuggestedPaquete(sugerido);
             setSelectedPaquete(String(sugerido.id));
+            setSelectedPaqueteObj(sugerido);
+            setPaqueteSearch(`${sugerido.folio_paquete} - ${sugerido.numero_reporte_siniestro}`);
           }
         }
         
@@ -82,6 +104,17 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
     
     loadCatalogs();
   }, [isOpen, record]);
+
+  // Cerrar dropdown al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (paqueteSearchRef.current && !paqueteSearchRef.current.contains(event.target)) {
+        setPaqueteDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleAsignacionChange = (etapaId, field, value) => {
     setAsignaciones(prev => prev.map(a => 
@@ -220,25 +253,136 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                   </div>
                 )}
                 
-                <select
-                  value={selectedPaquete}
-                  onChange={(e) => {
-                    setSelectedPaquete(e.target.value);
-                    // Si el usuario cambia manualmente, remover la marca de sugerido
-                    if (suggestedPaquete && e.target.value !== String(suggestedPaquete.id)) {
-                      setSuggestedPaquete(null);
-                    }
-                  }}
-                  className="w-full rounded-lg border border-border-dark bg-background-dark px-4 py-2.5 text-sm text-white"
-                >
-                  <option value="">Seleccionar paquete (opcional)</option>
-                  {paquetes.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.folio_paquete} - {p.numero_reporte_siniestro} ({p.total_piezas} piezas)
-                      {suggestedPaquete?.id === p.id ? " ★ Sugerido" : ""}
-                    </option>
-                  ))}
-                </select>
+                {/* Searchable Dropdown para Paquetes */}
+                <div className="relative" ref={paqueteSearchRef}>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-lg">
+                      search
+                    </span>
+                    <input
+                      type="text"
+                      value={paqueteSearch}
+                      onChange={(e) => {
+                        setPaqueteSearch(e.target.value);
+                        setPaqueteDropdownOpen(true);
+                        // Limpiar selección si el usuario borra
+                        if (!e.target.value.trim()) {
+                          setSelectedPaquete("");
+                          setSelectedPaqueteObj(null);
+                          setSuggestedPaquete(null);
+                        }
+                      }}
+                      onFocus={() => setPaqueteDropdownOpen(true)}
+                      placeholder="Buscar paquete por folio o número de reporte..."
+                      className="w-full rounded-lg border border-border-dark bg-background-dark pl-10 pr-10 py-2.5 text-sm text-white placeholder-slate-500"
+                    />
+                    {paqueteSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaqueteSearch("");
+                          setSelectedPaquete("");
+                          setSelectedPaqueteObj(null);
+                          setSuggestedPaquete(null);
+                          setPaqueteDropdownOpen(false);
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      >
+                        <span className="material-symbols-outlined text-lg">close</span>
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Dropdown de resultados */}
+                  {paqueteDropdownOpen && (
+                    <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-border-dark bg-surface-dark shadow-xl">
+                      {paquetes.filter(p => {
+                        const search = paqueteSearch.toLowerCase();
+                        return (
+                          !search ||
+                          p.folio_paquete?.toLowerCase().includes(search) ||
+                          p.numero_reporte_siniestro?.toLowerCase().includes(search)
+                        );
+                      }).length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-slate-400">
+                          {paqueteSearch ? "No se encontraron paquetes" : "Escribe para buscar paquetes..."}
+                        </div>
+                      ) : (
+                        paquetes
+                          .filter(p => {
+                            const search = paqueteSearch.toLowerCase();
+                            return (
+                              !search ||
+                              p.folio_paquete?.toLowerCase().includes(search) ||
+                              p.numero_reporte_siniestro?.toLowerCase().includes(search)
+                            );
+                          })
+                          .slice(0, 50)
+                          .map(p => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedPaquete(String(p.id));
+                                setSelectedPaqueteObj(p);
+                                setPaqueteSearch(`${p.folio_paquete} - ${p.numero_reporte_siniestro}`);
+                                setPaqueteDropdownOpen(false);
+                                // Si no es el sugerido, quitar la marca
+                                if (suggestedPaquete?.id !== p.id) {
+                                  setSuggestedPaquete(null);
+                                }
+                              }}
+                              className={`w-full px-4 py-3 text-left text-sm hover:bg-white/5 transition-colors border-b border-border-dark last:border-0 ${
+                                selectedPaquete === String(p.id) ? 'bg-primary/10 border-l-2 border-l-primary' : ''
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="font-bold text-white">{p.folio_paquete}</span>
+                                  <span className="text-slate-400 ml-2">-</span>
+                                  <span className="text-slate-300 ml-2">{p.numero_reporte_siniestro}</span>
+                                  <span className="text-slate-500 ml-2">({p.total_piezas} piezas)</span>
+                                </div>
+                                {suggestedPaquete?.id === p.id && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-alert-green/20 px-2 py-0.5 text-[10px] font-bold text-alert-green">
+                                    <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
+                                    Sugerido
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Info del paquete seleccionado */}
+                {selectedPaqueteObj && (
+                  <div className="mt-3 rounded-lg bg-primary/10 border border-primary/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-primary font-bold">Paquete seleccionado:</p>
+                        <p className="text-sm text-white">
+                          {selectedPaqueteObj.folio_paquete} - {selectedPaqueteObj.numero_reporte_siniestro}
+                        </p>
+                        <p className="text-xs text-slate-400">{selectedPaqueteObj.total_piezas} piezas</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPaquete("");
+                          setSelectedPaqueteObj(null);
+                          setPaqueteSearch("");
+                          setSuggestedPaquete(null);
+                        }}
+                        className="text-slate-400 hover:text-alert-red"
+                      >
+                        <span className="material-symbols-outlined">delete</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
 
               {/* Asignaciones por Etapa */}

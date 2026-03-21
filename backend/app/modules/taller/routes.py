@@ -1,6 +1,6 @@
 from typing import Any, List
 
-from fastapi import APIRouter, Body, HTTPException, Query, status
+from fastapi import APIRouter, Body, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
@@ -631,31 +631,44 @@ def update_etapa(etapa_id: int, payload: EtapaPayload):
 
 
 @router.put("/catalogos/etapas/reordenar")
-def reorder_etapas(ordered_ids: List[Any] = Body(...)):
+async def reorder_etapas(request: Request):
     _ensure_taller_schema()
     
-    # Debug: imprimir lo que recibimos
-    print(f"[reorder_etapas] Recibido: {ordered_ids}", flush=True)
+    # Obtener el body crudo como JSON
+    try:
+        body = await request.json()
+        print(f"[reorder_etapas] Body recibido: {body}", flush=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error parseando JSON: {e}")
     
-    # Convertir IDs a enteros con manejo de errores
+    # Extraer los IDs del body
+    if isinstance(body, list):
+        ordered_ids = body
+    elif isinstance(body, dict) and 'ordered_ids' in body:
+        ordered_ids = body['ordered_ids']
+    else:
+        raise HTTPException(status_code=400, detail="Se esperaba un array de IDs o {ordered_ids: [...]}")
+    
+    # Convertir IDs a enteros
     try:
         parsed_ids = []
         for item_id in ordered_ids:
             if item_id is None:
                 continue
             if isinstance(item_id, dict):
-                # Si viene como objeto, extraer el id
                 item_id = item_id.get('id', item_id.get('ID'))
             if item_id is not None and str(item_id).strip() != '':
                 parsed_ids.append(int(item_id))
     except (ValueError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=f"IDs inválidos en la lista: {e}")
+        raise HTTPException(status_code=400, detail=f"IDs inválidos: {e}")
+    
+    print(f"[reorder_etapas] IDs parseados: {parsed_ids}", flush=True)
     
     if len(parsed_ids) == 0:
         raise HTTPException(status_code=400, detail="La lista de etapas está vacía")
     
     if len(set(parsed_ids)) != len(parsed_ids):
-        raise HTTPException(status_code=400, detail="La lista de etapas contiene duplicados")
+        raise HTTPException(status_code=400, detail="La lista contiene duplicados")
 
     with get_connection() as conn:
         conn.row_factory = dict_row
@@ -664,7 +677,7 @@ def reorder_etapas(ordered_ids: List[Any] = Body(...)):
         ).fetchall()
         current_ids = [int(row["id"]) for row in current_rows]
         if set(current_ids) != set(parsed_ids):
-            raise HTTPException(status_code=400, detail="Debes enviar todas las etapas para reordenar")
+            raise HTTPException(status_code=400, detail="Debes enviar todas las etapas")
 
         offset = len(parsed_ids) + 100
         for index, etapa_id in enumerate(parsed_ids, start=1):

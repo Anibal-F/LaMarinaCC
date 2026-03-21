@@ -432,6 +432,7 @@ export default function BitacoraPiezas() {
 
   // Leer parámetros de URL
   const location = useLocation();
+  const [skipSearchFetch, setSkipSearchFetch] = useState(false);
   
   useEffect(() => {
     try {
@@ -446,8 +447,9 @@ export default function BitacoraPiezas() {
       const searchParam = params.get('search');
       if (searchParam) {
         const decodedSearch = decodeURIComponent(searchParam);
-        console.log('URL Search param:', searchParam, 'Decoded:', decodedSearch);
         setFiltroBusqueda(decodedSearch);
+        // Marcar que el próximo fetch debe saltarse porque viene de URL
+        setSkipSearchFetch(true);
       }
     } catch (error) {
       console.error('Error parsing URL params:', error);
@@ -537,6 +539,12 @@ export default function BitacoraPiezas() {
 
   // Buscar al presionar Enter o cambiar filtros
   useEffect(() => {
+    // Si viene de URL, solo filtrar localmente sin fetchear
+    if (skipSearchFetch) {
+      setSkipSearchFetch(false);
+      return;
+    }
+    
     const timeout = setTimeout(() => {
       fetchPiezas();
     }, 300);
@@ -672,21 +680,6 @@ export default function BitacoraPiezas() {
             // Fecha vencida Y no cancelada Y no recibida Y no entregada Y no es Reasignada/Cancelada
             const isFiltered = diffDays >= 0 || pieza.estatus?.toLowerCase().includes('cancelada') || pieza.recibido || pieza.entregado || pieza.tipo_registro === 'Reasignada/Cancelada';
             
-            // Debug para pieza específica
-            if (pieza.numero_orden?.includes('8553803')) {
-              console.log('Debug vencidas filter:', {
-                nombre: pieza.nombre,
-                numero_orden: pieza.numero_orden,
-                diffDays,
-                fecha_promesa: pieza.fecha_promesa,
-                estatus: pieza.estatus,
-                recibido: pieza.recibido,
-                entregado: pieza.entregado,
-                tipo_registro: pieza.tipo_registro,
-                isFiltered
-              });
-            }
-            
             if (isFiltered) {
               return false;
             }
@@ -706,27 +699,6 @@ export default function BitacoraPiezas() {
         const searchDigits = extractDigits(filtroBusqueda);
         const reporteDigits = extractDigits(pieza.numero_reporte);
         const ordenDigits = extractDigits(pieza.numero_orden);
-        
-        // Debug: mostrar comparación para ciertos valores
-        if (searchLower === '8553803' || pieza.numero_orden?.includes('8553803')) {
-          console.log('Debug pieza:', {
-            nombre: pieza.nombre,
-            numero_orden: pieza.numero_orden,
-            searchLower,
-            ordenDigits,
-            searchDigits,
-            matchesBasic: (
-              pieza.nombre?.toLowerCase().includes(searchLower) ||
-              pieza.numero_parte?.toLowerCase().includes(searchLower) ||
-              pieza.proveedor?.nombre?.toLowerCase().includes(searchLower) ||
-              (pieza.numero_orden && pieza.numero_orden.toLowerCase().includes(searchLower))
-            ),
-            matchesReporte: searchDigits.length >= 4 && (
-              reporteDigits.includes(searchDigits) || 
-              ordenDigits.includes(searchDigits)
-            )
-          });
-        }
         
         // Coincidencia por nombre, parte, proveedor o número de orden
         const matchesBasic = (
@@ -791,15 +763,6 @@ export default function BitacoraPiezas() {
     
     return resultado;
   }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroOrden, filtroReporte, filtroRecibido, filtroIndicador, sortColumn, sortDirection]);
-
-  // Debug: mostrar info de paginación
-  console.log('Debug paginación:', {
-    totalPiezas: piezas.length,
-    piezasFiltradas: piezasFiltradas.length,
-    page,
-    pageSize,
-    totalPages: Math.ceil(piezasFiltradas.length / pageSize)
-  });
 
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);

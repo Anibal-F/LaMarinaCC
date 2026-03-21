@@ -139,30 +139,50 @@ export default function CatalogoEtapasTaller() {
   const persistOrder = async (nextItems) => {
     try {
       setReordering(true);
-      // Asegurar que los IDs sean números
-      const orderedIds = nextItems.map((item) => Number(item.id));
+      
+      // Filtrar y validar IDs - solo números enteros válidos
+      const orderedIds = nextItems
+        .map((item) => item.id)
+        .filter((id) => id !== null && id !== undefined && id !== '')
+        .map((id) => parseInt(id, 10))
+        .filter((id) => !isNaN(id));
+      
+      // Validar que tenemos IDs
+      if (orderedIds.length === 0) {
+        throw new Error("No hay etapas válidas para reordenar.");
+      }
+      
+      console.log("[persistOrder] Enviando orden:", orderedIds);
+      
       const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas/reordenar`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ordered_ids: orderedIds })
       });
+      
       if (!response.ok) {
         const data = await response.json().catch(() => null);
+        console.error("[persistOrder] Error response:", data);
         // Manejar errores de validación de FastAPI (pueden venir como lista)
         let errorMessage = "No se pudo reordenar las etapas.";
         if (data?.detail) {
           if (Array.isArray(data.detail)) {
-            errorMessage = data.detail.map(e => e.msg || String(e)).join(", ");
+            errorMessage = data.detail.map(e => {
+              if (typeof e === 'string') return e;
+              return e.msg || e.loc?.join('.') || JSON.stringify(e);
+            }).join("; ");
           } else {
             errorMessage = String(data.detail);
           }
         }
         throw new Error(errorMessage);
       }
+      
       const payload = await response.json();
       setItems(Array.isArray(payload) ? payload : nextItems);
       setToast({ type: "success", message: "Orden de etapas actualizado." });
     } catch (err) {
+      console.error("[persistOrder] Error:", err);
       await loadItems();
       setToast({ type: "error", message: err.message || "No se pudo reordenar las etapas." });
     } finally {

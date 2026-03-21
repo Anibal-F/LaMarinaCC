@@ -17,6 +17,7 @@ const tabs = [
 ];
 
 const evidenceCategories = [
+  { id: "cuatro_esquinas", label: "4 Esquinas", icon: "grid_on" },
   { id: "frontal", label: "Frontal", icon: "directions_car" },
   { id: "trasera", label: "Trasera", icon: "settings_backup_restore" },
   { id: "lateral_izquierdo", label: "Lateral Izquierdo", icon: "chevron_left" },

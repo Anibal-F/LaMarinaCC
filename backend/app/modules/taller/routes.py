@@ -670,31 +670,57 @@ async def reorder_etapas(request: Request):
     if len(set(parsed_ids)) != len(parsed_ids):
         raise HTTPException(status_code=400, detail="La lista contiene duplicados")
 
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         conn.row_factory = dict_row
-        current_rows = conn.execute(
-            "SELECT id FROM taller_etapas ORDER BY orden ASC"
-        ).fetchall()
-        current_ids = [int(row["id"]) for row in current_rows]
-        if set(current_ids) != set(parsed_ids):
-            raise HTTPException(status_code=400, detail="Debes enviar todas las etapas")
+        
+        # Desactivar autocommit para manejar la transacción manualmente
+        conn.autocommit = False
+        
+        try:
+            # Verificar que tenemos todas las etapas
+            current_rows = conn.execute(
+                "SELECT id FROM taller_etapas ORDER BY orden ASC"
+            ).fetchall()
+            current_ids = [int(row["id"]) for row in current_rows]
+            if set(current_ids) != set(parsed_ids):
+                conn.rollback()
+                raise HTTPException(status_code=400, detail="Debes enviar todas las etapas")
 
-        offset = len(parsed_ids) + 100
-        for index, etapa_id in enumerate(parsed_ids, start=1):
-            conn.execute(
-                "UPDATE taller_etapas SET orden = %s WHERE id = %s",
-                (offset + index, etapa_id),
-            )
-        for index, etapa_id in enumerate(parsed_ids, start=1):
-            conn.execute(
-                "UPDATE taller_etapas SET orden = %s WHERE id = %s",
-                (index, etapa_id),
-            )
-
-        rows = conn.execute(
-            "SELECT id, clave, nb_etapa, orden, activo, created_at FROM taller_etapas ORDER BY orden ASC"
-        ).fetchall()
-    return rows
+            # Usar un offset muy grande para evitar conflictos con el constraint unique
+            offset = 100000
+            
+            # Paso 1: Mover todo al offset (valores temporales altos)
+            for index, etapa_id in enumerate(parsed_ids, start=1):
+                conn.execute(
+                    "UPDATE taller_etapas SET orden = %s WHERE id = %s",
+                    (offset + index, etapa_id),
+                )
+            
+            # Paso 2: Asignar el orden final correcto
+            for index, etapa_id in enumerate(parsed_ids, start=1):
+                conn.execute(
+                    "UPDATE taller_etapas SET orden = %s WHERE id = %s",
+                    (index, etapa_id),
+                )
+            
+            conn.commit()
+            
+            rows = conn.execute(
+                "SELECT id, clave, nb_etapa, orden, activo, created_at FROM taller_etapas ORDER BY orden ASC"
+            ).fetchall()
+            return rows
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.autocommit = True
+            conn.close()
+    except Exception as e:
+        if hasattr(conn, 'close'):
+            conn.close()
+        raise
 
 
 @router.delete("/catalogos/etapas/{etapa_id}", status_code=status.HTTP_204_NO_CONTENT)

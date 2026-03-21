@@ -772,6 +772,95 @@ def list_checklist_items(etapa_id: int | None = None, activo: bool | None = None
     return rows
 
 
+@router.post("/catalogos/checklist-items/reordenar", response_model=None)
+async def reorder_checklist_items(request: Request):
+    """Reordena los items del checklist dentro de una etapa específica.
+    Body: { etapa_id: number, ordered_ids: number[] }
+    """
+    _ensure_taller_schema()
+    
+    try:
+        body = await request.json()
+        print(f"[reorder_checklist] Body recibido: {body}", flush=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error parseando JSON: {e}")
+    
+    etapa_id = body.get('etapa_id')
+    ordered_ids = body.get('ordered_ids', [])
+    
+    if not etapa_id:
+        raise HTTPException(status_code=400, detail="etapa_id es requerido")
+    
+    if not isinstance(ordered_ids, list) or len(ordered_ids) == 0:
+        raise HTTPException(status_code=400, detail="ordered_ids debe ser un array no vacío")
+    
+    # Convertir IDs a enteros
+    try:
+        parsed_ids = [int(item_id) for item_id in ordered_ids if item_id is not None]
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"IDs inválidos: {e}")
+    
+    print(f"[reorder_checklist] Etapa: {etapa_id}, IDs: {parsed_ids}", flush=True)
+    
+    conn = get_connection()
+    try:
+        conn.row_factory = dict_row
+        conn.autocommit = False
+        
+        try:
+            # Verificar que todos los items pertenecen a esta etapa
+            current_rows = conn.execute(
+                "SELECT id FROM taller_checklist_items WHERE etapa_id = %s ORDER BY orden ASC",
+                (etapa_id,)
+            ).fetchall()
+            current_ids = [int(row["id"]) for row in current_rows]
+            
+            if set(current_ids) != set(parsed_ids):
+                conn.rollback()
+                raise HTTPException(status_code=400, detail="Los IDs no coinciden con los items de esta etapa")
+            
+            # Reordenar usando offset para evitar constraint unique
+            offset = 100000
+            for index, item_id in enumerate(parsed_ids, start=1):
+                conn.execute(
+                    "UPDATE taller_checklist_items SET orden = %s WHERE id = %s AND etapa_id = %s",
+                    (offset + index, item_id, etapa_id),
+                )
+            
+            for index, item_id in enumerate(parsed_ids, start=1):
+                conn.execute(
+                    "UPDATE taller_checklist_items SET orden = %s WHERE id = %s AND etapa_id = %s",
+                    (index, item_id, etapa_id),
+                )
+            
+            conn.commit()
+            
+            # Retornar los items actualizados de esta etapa
+            rows = conn.execute(
+                """
+                SELECT tci.id, tci.etapa_id, te.nb_etapa, te.clave, tci.descripcion, tci.orden,
+                       tci.obligatorio, tci.activo, tci.created_at
+                FROM taller_checklist_items tci
+                JOIN taller_etapas te ON te.id = tci.etapa_id
+                WHERE tci.etapa_id = %s
+                ORDER BY tci.orden ASC
+                """,
+                (etapa_id,)
+            ).fetchall()
+            return rows
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.autocommit = True
+            conn.close()
+    except Exception as e:
+        if hasattr(conn, 'close'):
+            conn.close()
+        raise
+
+
 @router.post("/catalogos/checklist-items", status_code=status.HTTP_201_CREATED)
 def create_checklist_item(payload: ChecklistItemPayload):
     _ensure_taller_schema()

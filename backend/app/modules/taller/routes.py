@@ -16,10 +16,6 @@ class EtapaPayload(BaseModel):
     activo: bool = True
 
 
-class EtapaReorderPayload(BaseModel):
-    ordered_ids: List[Any] = Field(min_length=1)
-
-
 class ChecklistItemPayload(BaseModel):
     etapa_id: int
     descripcion: str = Field(min_length=1, max_length=255)

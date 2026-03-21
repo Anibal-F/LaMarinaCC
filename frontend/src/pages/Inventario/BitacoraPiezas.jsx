@@ -792,6 +792,15 @@ export default function BitacoraPiezas() {
     return resultado;
   }, [piezas, filtroEstatus, filtroTipo, fuenteActiva, filtroBusqueda, filtroOrden, filtroReporte, filtroRecibido, filtroIndicador, sortColumn, sortDirection]);
 
+  // Debug: mostrar info de paginación
+  console.log('Debug paginación:', {
+    totalPiezas: piezas.length,
+    piezasFiltradas: piezasFiltradas.length,
+    page,
+    pageSize,
+    totalPages: Math.ceil(piezasFiltradas.length / pageSize)
+  });
+
   // Paginación
   const totalPages = Math.ceil(piezasFiltradas.length / pageSize);
   const pagedPiezas = piezasFiltradas.slice((page - 1) * pageSize, page * pageSize);

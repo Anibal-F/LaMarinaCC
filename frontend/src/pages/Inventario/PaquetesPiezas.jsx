@@ -43,7 +43,7 @@ function normalizePieceRows(relaciones = []) {
             numeroParte: item?.numero_parte || "",
           })
         )
-        .filter((item) => item.descripcion || item.numeroParte || item.almacen || item.cantidad)
+        .filter((item) => item.descripcion?.trim() || item.numeroParte?.trim() || item.almacen?.trim())
     : [];
 
   return rows.length ? rows : [createPieceRow()];
@@ -136,8 +136,13 @@ function mapMediaItem(item) {
   };
 }
 
+// Helper para obtener piezas válidas (con descripción no vacía)
+function getValidPiezas(piezas) {
+  return (piezas || []).filter((pieza) => String(pieza.descripcion || "").trim().length > 0);
+}
+
 function buildPayload(form) {
-  const piezas = (form.piezas || [])
+  const piezas = getValidPiezas(form.piezas)
     .map((pieza) => ({
       bitacora_pieza_id: pieza.bitacoraPiezaId || null,
       nombre_pieza: String(pieza.descripcion || "").trim(),
@@ -148,8 +153,7 @@ function buildPayload(form) {
       fecha_recepcion: pieza.recibida ? new Date().toISOString() : null,
       almacen: String(pieza.almacen || "").trim() || null,
       estatus: form.estado,
-    }))
-    .filter((pieza) => pieza.nombre_pieza);
+    }));
 
   // Calcular estatus automáticamente basado en piezas recibidas
   const totalPiezas = piezas.length;
@@ -462,29 +466,34 @@ function PackageModal({
                   </div>
                   
                   {/* Indicador de progreso de recepción */}
-                  {form.piezas && form.piezas.length > 0 && (
-                    <div className="flex items-center gap-3 px-1">
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium text-slate-400">
-                            Progreso de recepción
-                          </span>
-                          <span className="text-xs font-bold text-white">
-                            {form.piezas.filter(p => p.recibida).length} / {form.piezas.length} piezas
-                          </span>
+                  {(() => {
+                    const piezasValidas = getValidPiezas(form.piezas);
+                    const piezasRecibidas = piezasValidas.filter(p => p.recibida).length;
+                    const totalPiezas = piezasValidas.length;
+                    return totalPiezas > 0 ? (
+                      <div className="flex items-center gap-3 px-1">
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-slate-400">
+                              Progreso de recepción
+                            </span>
+                            <span className="text-xs font-bold text-white">
+                              {piezasRecibidas} / {totalPiezas} piezas
+                            </span>
+                          </div>
+                          <div className="h-2 bg-surface-dark rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-primary rounded-full transition-all duration-300"
+                              style={{ width: `${(piezasRecibidas / totalPiezas) * 100}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-2 bg-surface-dark rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary rounded-full transition-all duration-300"
-                            style={{ width: `${(form.piezas.filter(p => p.recibida).length / form.piezas.length) * 100}%` }}
-                          />
-                        </div>
+                        {piezasRecibidas === totalPiezas && (
+                          <span className="material-symbols-outlined text-alert-green text-xl">check_circle</span>
+                        )}
                       </div>
-                      {form.piezas.filter(p => p.recibida).length === form.piezas.length && form.piezas.length > 0 && (
-                        <span className="material-symbols-outlined text-alert-green text-xl">check_circle</span>
-                      )}
-                    </div>
-                  )}
+                    ) : null;
+                  })()}
                   
                   {autofillInfo?.fetched ? (
                     autofillInfo.count ? (
@@ -1485,9 +1494,9 @@ export default function PaquetesPiezas() {
   };
 
   const handleSave = async () => {
-    const piezas = (form.piezas || []).filter((pieza) => String(pieza.descripcion || "").trim());
+    const piezasValidas = getValidPiezas(form.piezas);
 
-    if (!form.reporte.trim() || !piezas.length) {
+    if (!form.reporte.trim() || !piezasValidas.length) {
       window.alert("Completa el reporte y al menos una pieza.");
       return;
     }
@@ -1505,8 +1514,8 @@ export default function PaquetesPiezas() {
     }
     
     // Verificar si todas las piezas están recibidas y no está ya completado
-    const totalPiezas = piezas.length;
-    const piezasRecibidas = piezas.filter(p => p.recibida).length;
+    const totalPiezas = piezasValidas.length;
+    const piezasRecibidas = piezasValidas.filter(p => p.recibida).length;
     const estaCompletado = form.estado === "Completado";
     
     if (piezasRecibidas === totalPiezas && totalPiezas > 0 && !estaCompletado && !confirmCompleteOpen) {
@@ -1920,7 +1929,7 @@ export default function PaquetesPiezas() {
             </div>
             
             <p className="text-slate-300 mb-2">
-              Todas las piezas ({form.piezas?.length || 0}) han sido marcadas como recibidas.
+              Todas las piezas ({getValidPiezas(form.piezas).length}) han sido marcadas como recibidas.
             </p>
             
             <p className="text-slate-400 text-sm mb-6">

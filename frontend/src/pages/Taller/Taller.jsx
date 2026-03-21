@@ -20,6 +20,7 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
   
   // Selecciones
   const [selectedPaquete, setSelectedPaquete] = useState("");
+  const [suggestedPaquete, setSuggestedPaquete] = useState(null);
   const [asignaciones, setAsignaciones] = useState([]); // [{etapa_id, personal_id, estacion_id}]
 
   useEffect(() => {
@@ -42,10 +43,24 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
         const estacionesData = estacionesRes.ok ? await estacionesRes.json() : [];
         const etapasData = etapasRes.ok ? await etapasRes.json() : [];
         
-        setPaquetes(Array.isArray(paquetesData.items) ? paquetesData.items : Array.isArray(paquetesData) ? paquetesData : []);
+        const paquetesList = Array.isArray(paquetesData.items) ? paquetesData.items : Array.isArray(paquetesData) ? paquetesData : [];
+        setPaquetes(paquetesList);
         setPersonal(Array.isArray(personalData) ? personalData : []);
         setEstaciones(Array.isArray(estacionesData) ? estacionesData : []);
         setEtapas(Array.isArray(etapasData) ? etapasData.filter(e => e.activo !== false).sort((a,b) => (a.orden||0)-(b.orden||0)) : []);
+        
+        // Buscar paquete sugerido por número de reporte/siniestro
+        const reporteSiniestro = record?.folio_seguro || record?.numero_reporte_siniestro;
+        if (reporteSiniestro && paquetesList.length > 0) {
+          const sugerido = paquetesList.find(p => 
+            p.numero_reporte_siniestro && 
+            p.numero_reporte_siniestro.toLowerCase() === reporteSiniestro.toLowerCase()
+          );
+          if (sugerido) {
+            setSuggestedPaquete(sugerido);
+            setSelectedPaquete(String(sugerido.id));
+          }
+        }
         
         // Inicializar asignaciones vacías por etapa
         const initialAsignaciones = (Array.isArray(etapasData) ? etapasData.filter(e => e.activo !== false) : [])
@@ -185,16 +200,39 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
                 <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-primary mb-4">
                   <span className="material-symbols-outlined text-[18px]">inventory_2</span>
                   Paquete de Piezas
+                  {suggestedPaquete && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-alert-green/20 px-2 py-0.5 text-[10px] font-bold text-alert-green">
+                      <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
+                      Sugerido
+                    </span>
+                  )}
                 </h3>
+                
+                {suggestedPaquete && (
+                  <div className="mb-3 rounded-lg bg-alert-green/10 border border-alert-green/30 p-3">
+                    <p className="text-xs text-alert-green flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      Se encontró un paquete asociado al reporte <strong>{record?.folio_seguro}</strong>
+                    </p>
+                  </div>
+                )}
+                
                 <select
                   value={selectedPaquete}
-                  onChange={(e) => setSelectedPaquete(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedPaquete(e.target.value);
+                    // Si el usuario cambia manualmente, remover la marca de sugerido
+                    if (suggestedPaquete && e.target.value !== String(suggestedPaquete.id)) {
+                      setSuggestedPaquete(null);
+                    }
+                  }}
                   className="w-full rounded-lg border border-border-dark bg-background-dark px-4 py-2.5 text-sm text-white"
                 >
                   <option value="">Seleccionar paquete (opcional)</option>
                   {paquetes.map(p => (
                     <option key={p.id} value={p.id}>
                       {p.folio_paquete} - {p.numero_reporte_siniestro} ({p.total_piezas} piezas)
+                      {suggestedPaquete?.id === p.id ? " ★ Sugerido" : ""}
                     </option>
                   ))}
                 </select>
@@ -739,9 +777,13 @@ export default function Taller() {
       <AsignarModal
         record={asignarRecord}
         isOpen={asignarModalOpen}
-        onClose={() => setAsignarModalOpen(false)}
+        onClose={() => {
+          setAsignarModalOpen(false);
+          setAsignarRecord(null);
+        }}
         onSaved={() => {
           loadRecords();
+          setAsignarRecord(null);
         }}
       />
     </div>

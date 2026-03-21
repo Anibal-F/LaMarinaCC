@@ -1288,6 +1288,7 @@ def get_paquetes(
     estatus: Optional[str] = Query(None, description="Filtrar por estatus del paquete"),
     orden_admision_id: Optional[int] = Query(None, description="Filtrar por orden de admisión"),
     numero_reporte_siniestro: Optional[str] = Query(None, description="Filtrar por reporte/siniestro"),
+    sin_asignar: Optional[bool] = Query(None, description="Filtrar solo paquetes sin orden de admisión asignada"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -1324,6 +1325,9 @@ def get_paquetes(
         if orden_admision_id:
             query += " AND p.orden_admision_id = %s"
             params.append(orden_admision_id)
+        
+        if sin_asignar:
+            query += " AND p.orden_admision_id IS NULL"
 
         if numero_reporte_siniestro:
             query += " AND p.numero_reporte_siniestro ILIKE %s"

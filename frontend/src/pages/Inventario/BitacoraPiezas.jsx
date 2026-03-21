@@ -445,7 +445,9 @@ export default function BitacoraPiezas() {
       // Si viene ?search=xxx, aplicar búsqueda (decodificar el valor)
       const searchParam = params.get('search');
       if (searchParam) {
-        setFiltroBusqueda(decodeURIComponent(searchParam));
+        const decodedSearch = decodeURIComponent(searchParam);
+        console.log('URL Search param:', searchParam, 'Decoded:', decodedSearch);
+        setFiltroBusqueda(decodedSearch);
       }
     } catch (error) {
       console.error('Error parsing URL params:', error);
@@ -939,7 +941,8 @@ export default function BitacoraPiezas() {
           <AppHeader
             showSearch
             searchPlaceholder="Buscar pieza, # parte o proveedor..."
-            onSearch={setFiltroBusqueda}
+            searchValue={filtroBusqueda}
+            onSearchChange={setFiltroBusqueda}
             rightExtras={
               <button
                 onClick={fetchPiezas}

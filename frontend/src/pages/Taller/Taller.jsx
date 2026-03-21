@@ -57,12 +57,22 @@ function AsignarModal({ record, isOpen, onClose, onSaved }) {
           fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas`)
         ]);
         
+        // Debug: Log para verificar respuesta del backend
+        console.log('[AsignarModal] Paquetes response status:', paquetesRes.status, paquetesRes.statusText);
+        
         const paquetesData = paquetesRes.ok ? await paquetesRes.json() : [];
         const personalData = personalRes.ok ? await personalRes.json() : [];
         const estacionesData = estacionesRes.ok ? await estacionesRes.json() : [];
         const etapasData = etapasRes.ok ? await etapasRes.json() : [];
         
+        console.log('[AsignarModal] Paquetes data:', paquetesData);
+        console.log('[AsignarModal] Paquetes items length:', paquetesData?.items?.length || paquetesData?.length || 0);
+        
         const paquetesList = Array.isArray(paquetesData.items) ? paquetesData.items : Array.isArray(paquetesData) ? paquetesData : [];
+        
+        if (!paquetesRes.ok) {
+          console.error('[AsignarModal] Error cargando paquetes:', paquetesRes.statusText);
+        }
         // Filtrar solo paquetes sin orden_admision_id (sin asignar)
         const paquetesSinAsignar = paquetesList.filter(p => !p.orden_admision_id && !p.folio_ot);
         setPaquetes(paquetesSinAsignar);

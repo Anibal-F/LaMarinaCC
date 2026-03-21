@@ -275,14 +275,24 @@ def _ensure_taller_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_taller_estacion_asignaciones_activa ON taller_estacion_asignaciones(estacion_id, activa)"
         )
 
+        # Migración: recalcular ordenes si hay duplicados (asignar orden temporal muy alto)
+        conn.execute("""
+            WITH duplicates AS (
+                SELECT id, ROW_NUMBER() OVER (PARTITION BY orden ORDER BY id) as rn
+                FROM taller_etapas
+            )
+            UPDATE taller_etapas SET orden = 100000 + duplicates.rn
+            FROM duplicates
+            WHERE taller_etapas.id = duplicates.id AND duplicates.rn > 1
+        """)
+
         for clave, nb_etapa, orden in DEFAULT_STAGES:
+            # Solo insertar si no existe, no actualizar el orden para evitar conflictos
             conn.execute(
                 """
                 INSERT INTO taller_etapas (clave, nb_etapa, orden, activo)
                 VALUES (%s, %s, %s, TRUE)
-                ON CONFLICT (clave) DO UPDATE
-                SET nb_etapa = EXCLUDED.nb_etapa,
-                    orden = EXCLUDED.orden
+                ON CONFLICT (clave) DO NOTHING
                 """,
                 (clave, nb_etapa, orden),
             )

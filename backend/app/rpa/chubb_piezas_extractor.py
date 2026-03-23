@@ -291,12 +291,25 @@ async def set_fecha_desde(page: Page, fecha_str: str) -> bool:
             fecha_chubb = "01/01/2026"
         
         # Hacer click en el campo de fecha para abrir el datepicker
+        # Usar force=True para click aunque no sea visible
         fecha_input = page.locator('#ListFilters_9__ParameterValue')
         if await fecha_input.count() == 0:
             print("[FechaFilter] ✗ Campo de fecha no encontrado")
             return False
         
-        await fecha_input.click()
+        # Intentar click normal primero, luego con force
+        try:
+            await fecha_input.click(timeout=5000)
+        except:
+            try:
+                await fecha_input.click(force=True, timeout=5000)
+            except:
+                # Fallback: usar JavaScript para hacer click
+                await page.evaluate("""() => {
+                    const input = document.getElementById('ListFilters_9__ParameterValue');
+                    if (input) input.click();
+                }""")
+        
         print("[FechaFilter] Datepicker abierto")
         await asyncio.sleep(1)
         
@@ -586,11 +599,7 @@ async def search_expediente(page: Page, num_expediente: str, fecha_desde: str = 
                 return False
             exp_input = page.locator('#ListFilters_0__ParameterValue')
         
-        # Configurar fecha desde si se proporciona
-        if fecha_desde:
-            await set_fecha_desde(page, fecha_desde)
-        
-        # Expandir el acordeón de Filtros si está colapsado
+        # Expandir el acordeón de Filtros si está colapsado (PRIMERO!)
         print("[Search] Verificando acordeón de Filtros...")
         try:
             # El acordeón tiene id ui-id-1 (header) y ui-id-2 (content)
@@ -606,6 +615,12 @@ async def search_expediente(page: Page, num_expediente: str, fecha_desde: str = 
                     print("[Search] ✓ Acordeón expandido")
         except Exception as e:
             print(f"[Search] Nota: No se pudo verificar acordeón: {e}")
+        
+        # Configurar fecha desde si se proporciona (DESPUÉS de expandir acordeón)
+        if fecha_desde:
+            fecha_ok = await set_fecha_desde(page, fecha_desde)
+            if not fecha_ok:
+                print("[Search] ⚠ No se pudo configurar fecha, continuando sin filtro de fecha...")
         
         # Esperar a que el input sea visible
         print("[Search] Esperando a que el campo sea visible...")

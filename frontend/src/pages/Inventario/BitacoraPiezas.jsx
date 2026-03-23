@@ -1004,9 +1004,9 @@ export default function BitacoraPiezas() {
                   Qualitas
                 </button>
                 <button
-                  onClick={() => setFuenteActiva('Chubb')}
+                  onClick={() => setFuenteActiva('CHUBB')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
-                    fuenteActiva === 'Chubb'
+                    fuenteActiva === 'CHUBB'}
                       ? 'bg-green-600 text-white'
                       : 'text-slate-400 hover:text-white'
                   }`}

@@ -25,7 +25,9 @@ export default function AdminCredenciales() {
     autosync: false,
     synctime: 2,
     autosync_piezas: false,
-    synctime_piezas: "06:00"
+    synctime_piezas: "06:00",
+    autosync_ordenes_mode: "intervalo",
+    synctime_ordenes_diaria: "06:00"
   });
 
   const fetchCredenciales = async () => {
@@ -144,7 +146,11 @@ export default function AdminCredenciales() {
         taller_id: "",
         activo: true,
         autosync: false,
-        synctime: 2
+        synctime: 2,
+        autosync_piezas: false,
+        synctime_piezas: "06:00",
+        autosync_ordenes_mode: "intervalo",
+        synctime_ordenes_diaria: "06:00"
       });
       setFieldErrors({});
       setEditingId(null);
@@ -216,7 +222,9 @@ export default function AdminCredenciales() {
                     autosync: false,
                     synctime: 2,
                     autosync_piezas: false,
-                    synctime_piezas: "06:00"
+                    synctime_piezas: "06:00",
+                    autosync_ordenes_mode: "intervalo",
+                    synctime_ordenes_diaria: "06:00"
                   });
                 }}
               >
@@ -319,47 +327,82 @@ export default function AdminCredenciales() {
                   />
                 </div>
 
-                {/* Configuración de Sincronización Automática */}
+                {/* Configuración de Extracción de Órdenes */}
                 <div className="md:col-span-2 border-t border-border-dark pt-4 mt-2">
                   <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary">sync</span>
-                    Configuración de Sincronización Automática (RPA)
+                    Extracción de Órdenes (Indicadores)
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center justify-between bg-background-dark rounded-lg px-4 py-3">
-                      <div>
-                        <label className="text-sm text-white font-medium block">Sincronización Automática</label>
-                        <span className="text-xs text-slate-400">El RPA se ejecutará automáticamente</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm({ ...form, autosync: !form.autosync })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          form.autosync ? 'bg-green-600' : 'bg-slate-600'
-                        }`}
-                      >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          form.autosync ? 'translate-x-6' : 'translate-x-1'
-                        }`} />
-                      </button>
-                    </div>
-
+                  
+                  {/* Toggle principal */}
+                  <div className="flex items-center justify-between bg-background-dark rounded-lg px-4 py-3 mb-4">
                     <div>
-                      <label className="text-xs text-slate-400 mb-1 block">Frecuencia de Sincronización</label>
-                      <select
-                        className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
-                        value={form.synctime}
-                        onChange={(event) => setForm({ ...form, synctime: parseInt(event.target.value) })}
-                        disabled={!form.autosync}
-                      >
-                        {synctimeOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="text-sm text-white font-medium block">Sincronización Automática</label>
+                      <span className="text-xs text-slate-400">Extraer órdenes/indicadores automáticamente</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, autosync: !form.autosync })}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        form.autosync ? 'bg-green-600' : 'bg-slate-600'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        form.autosync ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
                   </div>
+
+                  {/* Selector de modo */}
+                  {form.autosync && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-slate-400 mb-1 block">Modo de Ejecución</label>
+                        <select
+                          className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
+                          value={form.autosync_ordenes_mode}
+                          onChange={(event) => setForm({ ...form, autosync_ordenes_mode: event.target.value })}
+                        >
+                          <option value="intervalo">⏱️ Cada X horas (intervalo)</option>
+                          <option value="diario">📅 Diario a hora específica</option>
+                        </select>
+                      </div>
+
+                      {/* Opción Intervalo */}
+                      {form.autosync_ordenes_mode === 'intervalo' && (
+                        <div>
+                          <label className="text-xs text-slate-400 mb-1 block">Frecuencia de Sincronización</label>
+                          <select
+                            className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
+                            value={form.synctime}
+                            onChange={(event) => setForm({ ...form, synctime: parseInt(event.target.value) })}
+                          >
+                            {synctimeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Opción Diaria */}
+                      {form.autosync_ordenes_mode === 'diario' && (
+                        <div>
+                          <label className="text-xs text-slate-400 mb-1 block">Hora de Ejecución (24h) · Mazatlán</label>
+                          <input
+                            type="time"
+                            className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
+                            value={form.synctime_ordenes_diaria}
+                            onChange={(event) => setForm({ ...form, synctime_ordenes_diaria: event.target.value })}
+                          />
+                          <span className="text-xs text-slate-500 mt-1 block">
+                            Hora de Mazatlán (UTC-7)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Configuración de Extracción de Piezas (Diaria) */}
@@ -466,7 +509,7 @@ export default function AdminCredenciales() {
                       AutoSync
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
-                      Intervalo
+                      Órdenes
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
                       Piezas Auto
@@ -533,7 +576,17 @@ export default function AdminCredenciales() {
                       <td className="px-4 py-3 text-center">
                         {cred.autosync ? (
                           <span className="text-xs text-slate-300">
-                            {cred.synctime || 2}h
+                            {cred.autosync_ordenes_mode === 'diario' ? (
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="material-symbols-outlined text-[10px]">calendar_today</span>
+                                {cred.synctime_ordenes_diaria || '06:00'}
+                              </span>
+                            ) : (
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="material-symbols-outlined text-[10px]">schedule</span>
+                                {cred.synctime || 2}h
+                              </span>
+                            )}
                           </span>
                         ) : (
                           <span className="text-xs text-slate-500">-</span>
@@ -588,7 +641,9 @@ export default function AdminCredenciales() {
                                 autosync: Boolean(cred.autosync),
                                 synctime: cred.synctime || 2,
                                 autosync_piezas: Boolean(cred.autosync_piezas),
-                                synctime_piezas: cred.synctime_piezas || "06:00"
+                                synctime_piezas: cred.synctime_piezas || "06:00",
+                                autosync_ordenes_mode: cred.autosync_ordenes_mode || "intervalo",
+                                synctime_ordenes_diaria: cred.synctime_ordenes_diaria || "06:00"
                               });
                             }}
                           >

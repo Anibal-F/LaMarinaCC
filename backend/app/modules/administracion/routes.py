@@ -224,7 +224,9 @@ def list_credenciales():
         conn.execute("""
             ALTER TABLE aseguradora_credenciales 
             ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
-            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00',
+            ADD COLUMN IF NOT EXISTS autosync_ordenes_mode VARCHAR(20) DEFAULT 'intervalo',
+            ADD COLUMN IF NOT EXISTS synctime_ordenes_diaria VARCHAR(5) DEFAULT '06:00'
         """)
         conn.commit()
         
@@ -235,6 +237,8 @@ def list_credenciales():
                    COALESCE(synctime, 2) as synctime,
                    COALESCE(autosync_piezas, false) as autosync_piezas,
                    COALESCE(synctime_piezas, '06:00') as synctime_piezas,
+                   COALESCE(autosync_ordenes_mode, 'intervalo') as autosync_ordenes_mode,
+                   COALESCE(synctime_ordenes_diaria, '06:00') as synctime_ordenes_diaria,
                    created_at, updated_at
             FROM aseguradora_credenciales
             ORDER BY id ASC
@@ -256,6 +260,8 @@ def create_credencial(payload: dict):
     synctime = payload.get("synctime", 2)
     autosync_piezas = payload.get("autosync_piezas", False)
     synctime_piezas = payload.get("synctime_piezas", "06:00")
+    autosync_ordenes_mode = payload.get("autosync_ordenes_mode", "intervalo")
+    synctime_ordenes_diaria = payload.get("synctime_ordenes_diaria", "06:00")
 
     if not seguro:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seguro requerido")
@@ -271,18 +277,20 @@ def create_credencial(payload: dict):
         conn.execute("""
             ALTER TABLE aseguradora_credenciales 
             ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
-            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00',
+            ADD COLUMN IF NOT EXISTS autosync_ordenes_mode VARCHAR(20) DEFAULT 'intervalo',
+            ADD COLUMN IF NOT EXISTS synctime_ordenes_diaria VARCHAR(5) DEFAULT '06:00'
         """)
         
         row = conn.execute(
             """
             INSERT INTO aseguradora_credenciales 
-            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, autosync_piezas, synctime_piezas)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, autosync_piezas, synctime_piezas, autosync_ordenes_mode, synctime_ordenes_diaria)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, 
-                      autosync, synctime, autosync_piezas, synctime_piezas, created_at
+                      autosync, synctime, autosync_piezas, synctime_piezas, autosync_ordenes_mode, synctime_ordenes_diaria, created_at
             """,
-            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, autosync_piezas, synctime_piezas),
+            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, autosync_piezas, synctime_piezas, autosync_ordenes_mode, synctime_ordenes_diaria),
         ).fetchone()
 
     return {
@@ -297,14 +305,16 @@ def create_credencial(payload: dict):
         "synctime": row[8],
         "autosync_piezas": row[9],
         "synctime_piezas": row[10],
-        "created_at": row[11],
+        "autosync_ordenes_mode": row[11],
+        "synctime_ordenes_diaria": row[12],
+        "created_at": row[13],
     }
 
 
 @router.put("/credenciales/{credencial_id}")
 def update_credencial(credencial_id: int, payload: dict):
     """Actualiza una credencial existente."""
-    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo", "autosync", "synctime", "autosync_piezas", "synctime_piezas"}
+    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo", "autosync", "synctime", "autosync_piezas", "synctime_piezas", "autosync_ordenes_mode", "synctime_ordenes_diaria"}
     updates = {key: value for key, value in payload.items() if key in allowed}
 
     if not updates:
@@ -322,7 +332,9 @@ def update_credencial(credencial_id: int, payload: dict):
         conn.execute("""
             ALTER TABLE aseguradora_credenciales 
             ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
-            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00',
+            ADD COLUMN IF NOT EXISTS autosync_ordenes_mode VARCHAR(20) DEFAULT 'intervalo',
+            ADD COLUMN IF NOT EXISTS synctime_ordenes_diaria VARCHAR(5) DEFAULT '06:00'
         """)
         
         row = conn.execute(
@@ -331,7 +343,7 @@ def update_credencial(credencial_id: int, payload: dict):
             SET {fields}, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
             RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, 
-                      autosync, synctime, autosync_piezas, synctime_piezas, created_at, updated_at
+                      autosync, synctime, autosync_piezas, synctime_piezas, autosync_ordenes_mode, synctime_ordenes_diaria, created_at, updated_at
             """,
             values,
         ).fetchone()
@@ -351,8 +363,10 @@ def update_credencial(credencial_id: int, payload: dict):
         "synctime": row[8],
         "autosync_piezas": row[9],
         "synctime_piezas": row[10],
-        "created_at": row[11],
-        "updated_at": row[12],
+        "autosync_ordenes_mode": row[11],
+        "synctime_ordenes_diaria": row[12],
+        "created_at": row[13],
+        "updated_at": row[14],
     }
 
 

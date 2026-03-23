@@ -3,7 +3,11 @@ Scheduler automático para actualización de indicadores de Qualitas y CHUBB.
 
 Ejecuta actualizaciones según la configuración de la tabla aseguradora_credenciales:
 - autosync: habilita/deshabilita la sincronización automática
-- synctime: tiempo en horas entre sincronizaciones
+- synctime: tiempo en horas entre sincronizaciones (modo intervalo)
+- autosync_ordenes_mode: 'intervalo' o 'diario'
+- synctime_ordenes_diaria: hora de ejecución diaria (HH:MM)
+
+Zona horaria: America/Mazatlan (Mazatlán, Sinaloa)
 """
 
 import asyncio
@@ -13,8 +17,9 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
+import pytz
 from app.modules.administracion.rpa_queue import (
     create_task, get_task, update_task, TaskType, TaskStatus
 )
@@ -33,6 +38,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Zona horaria de Mazatlán
+MAZATLAN_TZ = pytz.timezone('America/Mazatlan')
+
 # Configuración del scheduler
 DEFAULT_INTERVAL_HOURS = 2  # Ejecutar cada 2 horas (fallback)
 
@@ -46,8 +54,18 @@ SCHEDULER_TO_SEGURO_MAP = {
 _schedulers = {}  # Diccionario para múltiples schedulers
 
 
+def _now_mazatlan() -> datetime:
+    """Retorna la fecha/hora actual en zona horaria de Mazatlán."""
+    return datetime.now(MAZATLAN_TZ)
+
+
 class RPAScheduler:
-    """Scheduler para ejecutar RPA periódicamente con configuración desde BD."""
+    """Scheduler para ejecutar RPA periódicamente con configuración desde BD.
+    
+    Soporta dos modos:
+    - Modo 'intervalo': Ejecuta cada X horas (synctime)
+    - Modo 'diario': Ejecuta a una hora específica cada día (synctime_ordenes_diaria)
+    """
     
     def __init__(self, name: str, task_type: TaskType, interval_hours: int = DEFAULT_INTERVAL_HOURS):
         self.name = name
@@ -55,6 +73,9 @@ class RPAScheduler:
         self._configured_interval = interval_hours  # Intervalo base
         self.interval_hours = interval_hours
         self.interval_seconds = interval_hours * 3600
+        self._mode = 'intervalo'  # 'intervalo' o 'diario'
+        self._daily_hour = 6  # Hora para modo diario (6 AM por defecto)
+        self._daily_minute = 0
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._current_task_id: Optional[str] = None
@@ -81,6 +102,17 @@ class RPAScheduler:
         self._stop_event.set()
         logger.info(f"[Scheduler {self.name}] Deteniendo...")
     
+    def _calculate_next_run_daily(self) -> datetime:
+        """Calcula la próxima hora de ejecución diaria en hora de Mazatlán."""
+        now = _now_mazatlan()
+        next_run = now.replace(hour=self._daily_hour, minute=self._daily_minute, second=0, microsecond=0)
+        
+        # Si ya pasó la hora hoy, programar para mañana
+        if next_run <= now:
+            next_run = next_run + timedelta(days=1)
+        
+        return next_run
+
     def _run_loop(self):
         """Loop principal del scheduler."""
         # Esperar un poco al inicio para que el servidor termine de cargar
@@ -98,12 +130,41 @@ class RPAScheduler:
                         break
                     continue
                 
-                self._next_run_time = datetime.now() + timedelta(seconds=self.interval_seconds)
-                logger.info(f"[Scheduler {self.name}] Próxima ejecución: {self._next_run_time.strftime('%Y-%m-%d %H:%M:%S')} (intervalo: {self.interval_hours}h)")
-                
-                # Esperar hasta el próximo intervalo
-                if self._stop_event.wait(self.interval_seconds):
-                    break
+                # Calcular próxima ejecución según el modo
+                if self._mode == 'diario':
+                    self._next_run_time = self._calculate_next_run_daily()
+                    seconds_until_next = (self._next_run_time - _now_mazatlan()).total_seconds()
+                    logger.info(f"[Scheduler {self.name}] Modo DIARIO - Próxima ejecución: {self._next_run_time.strftime('%Y-%m-%d %H:%M:%S')} (Mazatlán)")
+                    
+                    # Esperar hasta la próxima ejecución (verificar cada minuto)
+                    wait_interval = min(seconds_until_next, 60)
+                    elapsed = 0
+                    while elapsed < seconds_until_next and not self._stop_event.is_set():
+                        if self._stop_event.wait(wait_interval):
+                            return
+                        elapsed += wait_interval
+                        # Recargar config periódicamente
+                        if elapsed % 300 == 0:  # Cada 5 minutos
+                            self._update_config_from_db()
+                            if not self._autosync_enabled:
+                                break
+                            # Recalcular si cambió la hora
+                            new_next_run = self._calculate_next_run_daily()
+                            if new_next_run != self._next_run_time:
+                                seconds_until_next = (new_next_run - _now_mazatlan()).total_seconds()
+                                elapsed = 0
+                                self._next_run_time = new_next_run
+                                
+                    if self._stop_event.is_set():
+                        break
+                else:
+                    # Modo intervalo (cada X horas)
+                    self._next_run_time = _now_mazatlan() + timedelta(seconds=self.interval_seconds)
+                    logger.info(f"[Scheduler {self.name}] Modo INTERVALO - Próxima ejecución: {self._next_run_time.strftime('%Y-%m-%d %H:%M:%S')} (cada {self.interval_hours}h)")
+                    
+                    # Esperar hasta el próximo intervalo
+                    if self._stop_event.wait(self.interval_seconds):
+                        break
                 
                 # Ejecutar actualización
                 self._execute_update()
@@ -123,13 +184,34 @@ class RPAScheduler:
             
             if config:
                 self._autosync_enabled = config.get('autosync', False)
-                new_interval = config.get('synctime', DEFAULT_INTERVAL_HOURS)
                 
-                # Solo actualizar si cambió el intervalo
-                if new_interval != self.interval_hours:
-                    self.interval_hours = new_interval
-                    self.interval_seconds = new_interval * 3600
-                    logger.info(f"[Scheduler {self.name}] Intervalo actualizado desde BD: {new_interval} horas")
+                # Leer modo de ejecución (intervalo o diario)
+                new_mode = config.get('autosync_ordenes_mode', 'intervalo')
+                if new_mode != self._mode:
+                    self._mode = new_mode
+                    logger.info(f"[Scheduler {self.name}] Modo actualizado: {new_mode}")
+                
+                # Leer hora diaria si está en modo diario
+                daily_time_str = config.get('synctime_ordenes_diaria', '06:00')
+                try:
+                    parts = daily_time_str.split(':')
+                    if len(parts) == 2:
+                        new_hour = int(parts[0])
+                        new_minute = int(parts[1])
+                        if (new_hour, new_minute) != (self._daily_hour, self._daily_minute):
+                            self._daily_hour = new_hour
+                            self._daily_minute = new_minute
+                            logger.info(f"[Scheduler {self.name}] Hora diaria actualizada: {new_hour:02d}:{new_minute:02d}")
+                except:
+                    pass
+                
+                # Solo actualizar intervalo si está en modo intervalo
+                if self._mode == 'intervalo':
+                    new_interval = config.get('synctime', DEFAULT_INTERVAL_HOURS)
+                    if new_interval != self.interval_hours:
+                        self.interval_hours = new_interval
+                        self.interval_seconds = new_interval * 3600
+                        logger.info(f"[Scheduler {self.name}] Intervalo actualizado: {new_interval} horas")
             else:
                 # Si no hay configuración, usar valores por defecto
                 self._autosync_enabled = False
@@ -139,8 +221,8 @@ class RPAScheduler:
     
     def _execute_update(self):
         """Ejecuta la actualización de indicadores."""
-        logger.info(f"[Scheduler {self.name}] Iniciando actualización programada")
-        self._last_run_time = datetime.now()
+        logger.info(f"[Scheduler {self.name}] Iniciando actualización programada (Mazatlán: {_now_mazatlan().strftime('%Y-%m-%d %H:%M:%S')})")
+        self._last_run_time = _now_mazatlan()
         
         # Verificar si hay una tarea en curso
         if self._current_task_id:
@@ -155,7 +237,7 @@ class RPAScheduler:
             {
                 "auto_retry": True,
                 "scheduled": True,
-                "scheduled_at": datetime.now().isoformat()
+                "scheduled_at": _now_mazatlan().isoformat()
             }
         )
         
@@ -170,7 +252,7 @@ class RPAScheduler:
             {
                 "auto_retry": True,
                 "forced": True,
-                "scheduled_at": datetime.now().isoformat()
+                "scheduled_at": _now_mazatlan().isoformat()
             }
         )
         
@@ -187,17 +269,21 @@ class RPAScheduler:
             except:
                 pass
         
+        now = _now_mazatlan()
         return {
             "name": self.name,
             "running": self._running,
+            "mode": self._mode,
             "interval_hours": self.interval_hours,
+            "daily_time": f"{self._daily_hour:02d}:{self._daily_minute:02d}" if self._mode == 'diario' else None,
+            "timezone": "America/Mazatlan",
             "autosync_enabled": autosync_config.get('autosync', False) if autosync_config else False,
             "autosync_configured": autosync_config.get('synctime', DEFAULT_INTERVAL_HOURS) if autosync_config else DEFAULT_INTERVAL_HOURS,
             "last_run": self._last_run_time.isoformat() if self._last_run_time else None,
             "next_run": self._next_run_time.isoformat() if self._next_run_time else None,
             "current_task_id": self._current_task_id,
             "time_until_next_run": (
-                (self._next_run_time - datetime.now()).total_seconds() 
+                (self._next_run_time - now).total_seconds() 
                 if self._next_run_time else None
             )
         }

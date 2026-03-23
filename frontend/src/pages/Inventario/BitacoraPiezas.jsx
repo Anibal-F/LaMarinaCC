@@ -1006,7 +1006,7 @@ export default function BitacoraPiezas() {
                 <button
                   onClick={() => setFuenteActiva('CHUBB')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
-                    fuenteActiva === 'CHUBB'}
+                    fuenteActiva === 'CHUBB'
                       ? 'bg-blue-600 text-white'
                       : 'text-slate-400 hover:text-white'
                   }`}

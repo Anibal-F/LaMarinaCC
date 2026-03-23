@@ -31,6 +31,7 @@ async def get_expedientes_pendientes() -> List[Dict[str, Any]]:
     """
     Obtiene de la base de datos los expedientes CHUBB autorizados
     con Estatus AudaTrace vacío o NULL.
+    Solo incluye expedientes del año actual (2026) y ordena por fecha de creación más reciente.
     """
     from app.core.db import get_connection
     
@@ -43,11 +44,13 @@ async def get_expedientes_pendientes() -> List[Dict[str, Any]]:
                     tipo_vehiculo,
                     estado,
                     placas,
-                    fecha_extraccion
+                    fecha_extraccion,
+                    fecha_creacion
                 FROM chubb_expedientes
                 WHERE estado = 'Autorizado'
                   AND (estatus_audatrace IS NULL OR estatus_audatrace = '')
-                ORDER BY num_expediente, fecha_extraccion DESC
+                  AND num_expediente LIKE 'PA26%'  -- Solo expedientes del 2026
+                ORDER BY num_expediente, fecha_creacion DESC NULLS LAST
                 LIMIT 50
             """).fetchall()
             
@@ -58,7 +61,8 @@ async def get_expedientes_pendientes() -> List[Dict[str, Any]]:
                     'tipo_vehiculo': row[2],
                     'estado': row[3],
                     'placas': row[4],
-                    'fecha_extraccion': row[5]
+                    'fecha_extraccion': row[5],
+                    'fecha_creacion': row[6]
                 }
                 for row in rows
             ]
@@ -934,7 +938,7 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
             'errors': []
         }
     
-    print(f"[Init] {len(expedientes)} expedientes pendientes encontrados")
+    print(f"[Init] {len(expedientes)} expedientes pendientes del 2026 encontrados (más recientes primero)")
     
     fecha_extraccion = datetime.now().isoformat()
     results = []

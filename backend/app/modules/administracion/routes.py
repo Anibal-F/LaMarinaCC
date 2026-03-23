@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, HTTPException, status
 from psycopg.rows import dict_row
 
@@ -506,3 +507,187 @@ def set_piezas_schedule(payload: dict):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error actualizando horario: {str(e)}")
+
+
+# =====================================================
+# TRACKING DE EJECUCIONES DE PIEZAS (MANUAL Y AUTOMÁTICA)
+# =====================================================
+
+def _ensure_piezas_execution_log_table():
+    """Crea la tabla de log de ejecuciones si no existe."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rpa_piezas_execution_log (
+                id SERIAL PRIMARY KEY,
+                seguro VARCHAR(50) NOT NULL,  -- 'QUALITAS' o 'CHUBB'
+                execution_type VARCHAR(20) NOT NULL,  -- 'manual' o 'automatic'
+                job_id VARCHAR(100),
+                status VARCHAR(20) NOT NULL DEFAULT 'started',  -- 'started', 'completed', 'failed'
+                started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMPTZ,
+                piezas_count INTEGER DEFAULT 0,
+                error_message TEXT,
+                metadata JSONB
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_piezas_log_seguro 
+            ON rpa_piezas_execution_log(seguro)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_piezas_log_started 
+            ON rpa_piezas_execution_log(started_at DESC)
+        """)
+
+
+def log_piezas_execution_start(seguro: str, execution_type: str, job_id: str = None) -> int:
+    """
+    Registra el inicio de una ejecución de piezas.
+    Retorna el ID del log creado.
+    """
+    _ensure_piezas_execution_log_table()
+    
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO rpa_piezas_execution_log (seguro, execution_type, job_id, status)
+            VALUES (%s, %s, %s, 'started')
+            RETURNING id
+            """,
+            (seguro, execution_type, job_id)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def log_piezas_execution_complete(log_id: int, piezas_count: int = 0, metadata: dict = None):
+    """Registra la finalización exitosa de una ejecución."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE rpa_piezas_execution_log 
+            SET status = 'completed',
+                completed_at = CURRENT_TIMESTAMP,
+                piezas_count = %s,
+                metadata = %s
+            WHERE id = %s
+            """,
+            (piezas_count, json.dumps(metadata) if metadata else None, log_id)
+        )
+
+
+def log_piezas_execution_failed(log_id: int, error_message: str):
+    """Registra una ejecución fallida."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE rpa_piezas_execution_log 
+            SET status = 'failed',
+                completed_at = CURRENT_TIMESTAMP,
+                error_message = %s
+            WHERE id = %s
+            """,
+            (error_message, log_id)
+        )
+
+
+@router.get("/piezas-execution/last/{seguro}")
+def get_last_piezas_execution(seguro: str):
+    """
+    Obtiene la última ejecución de piezas para un seguro específico.
+    
+    Parámetros:
+    - seguro: 'QUALITAS' o 'CHUBB'
+    
+    Retorna:
+    - Última ejecución completada (manual o automática)
+    - O la ejecución en curso si hay una
+    """
+    try:
+        _ensure_piezas_execution_log_table()
+        
+        with get_connection() as conn:
+            conn.row_factory = dict_row
+            
+            # Buscar la última ejecución (completada o en curso)
+            row = conn.execute(
+                """
+                SELECT 
+                    id,
+                    seguro,
+                    execution_type,
+                    job_id,
+                    status,
+                    started_at,
+                    completed_at,
+                    piezas_count,
+                    error_message,
+                    metadata,
+                    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))/3600 as hours_ago
+                FROM rpa_piezas_execution_log
+                WHERE seguro = %s
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (seguro.upper(),)
+            ).fetchone()
+            
+            if not row:
+                return {
+                    "has_execution": False,
+                    "message": f"No hay ejecuciones registradas para {seguro}"
+                }
+            
+            return {
+                "has_execution": True,
+                "execution": dict(row),
+                "is_recent": row['hours_ago'] < 4 if row['hours_ago'] else False
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo última ejecución: {str(e)}")
+
+
+@router.get("/piezas-execution/history/{seguro}")
+def get_piezas_execution_history(seguro: str, limit: int = 10):
+    """
+    Obtiene el historial de ejecuciones de piezas.
+    
+    Parámetros:
+    - seguro: 'QUALITAS' o 'CHUBB'
+    - limit: Cantidad de registros a retornar (default: 10)
+    """
+    try:
+        _ensure_piezas_execution_log_table()
+        
+        with get_connection() as conn:
+            conn.row_factory = dict_row
+            
+            rows = conn.execute(
+                """
+                SELECT 
+                    id,
+                    seguro,
+                    execution_type,
+                    job_id,
+                    status,
+                    started_at,
+                    completed_at,
+                    piezas_count,
+                    error_message,
+                    EXTRACT(EPOCH FROM (COALESCE(completed_at, CURRENT_TIMESTAMP) - started_at))/60 as duration_minutes
+                FROM rpa_piezas_execution_log
+                WHERE seguro = %s
+                ORDER BY started_at DESC
+                LIMIT %s
+                """,
+                (seguro.upper(), limit)
+            ).fetchall()
+            
+            return {
+                "seguro": seguro.upper(),
+                "count": len(rows),
+                "executions": [dict(row) for row in rows]
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo historial: {str(e)}")

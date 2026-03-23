@@ -203,7 +203,15 @@ class PiezasScheduler:
         self._last_run = _now_mazatlan()
         logger.info(f"[PiezasScheduler] Iniciando extracción de piezas programada (Mazatlán: {self._last_run.strftime('%Y-%m-%d %H:%M:%S')})")
         
+        # Importar función de logging
+        try:
+            from app.modules.administracion.routes import log_piezas_execution_start
+            logging_available = True
+        except:
+            logging_available = False
+        
         # Crear tarea para Qualitas piezas
+        qualitas_log_id = None
         try:
             task_id_qualitas = create_task(
                 TaskType.QUALITAS_PIEZAS,
@@ -214,6 +222,11 @@ class PiezasScheduler:
                 }
             )
             logger.info(f"[PiezasScheduler] Tarea Qualitas creada: {task_id_qualitas}")
+            
+            # Registrar inicio de ejecución
+            if logging_available:
+                qualitas_log_id = log_piezas_execution_start('QUALITAS', 'automatic', task_id_qualitas)
+                logger.info(f"[PiezasScheduler] Log Qualitas creado: {qualitas_log_id}")
         except Exception as e:
             logger.error(f"[PiezasScheduler] Error creando tarea Qualitas: {e}")
         
@@ -221,6 +234,7 @@ class PiezasScheduler:
         time.sleep(300)
         
         # Crear tarea para CHUBB piezas
+        chubb_log_id = None
         try:
             task_id_chubb = create_task(
                 TaskType.CHUBB_PIEZAS,
@@ -232,6 +246,11 @@ class PiezasScheduler:
                 }
             )
             logger.info(f"[PiezasScheduler] Tarea CHUBB creada: {task_id_chubb}")
+            
+            # Registrar inicio de ejecución
+            if logging_available:
+                chubb_log_id = log_piezas_execution_start('CHUBB', 'automatic', task_id_chubb)
+                logger.info(f"[PiezasScheduler] Log CHUBB creado: {chubb_log_id}")
         except Exception as e:
             logger.error(f"[PiezasScheduler] Error creando tarea CHUBB: {e}")
     

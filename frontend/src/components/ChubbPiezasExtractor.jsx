@@ -33,10 +33,26 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
   const logsContainerRef = useRef(null);
   const intervalRef = useRef(null);
 
-  // Cargar datos al montar
+  // Cargar datos al montar (incluyendo última ejecución desde BD)
   useEffect(() => {
     fetchExpedientesPendientes();
+    fetchLastExecution();
   }, []);
+
+  // Consultar última ejecución real del RPA (manual o automática)
+  const fetchLastExecution = async () => {
+    try {
+      const response = await fetch(getApiUrl() + '/admin/piezas-execution/last/CHUBB');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.has_execution && data.execution) {
+          setLastExecution(new Date(data.execution.started_at));
+        }
+      }
+    } catch (err) {
+      console.error('Error al consultar última ejecución:', err);
+    }
+  };
 
   // Consultar expedientes pendientes
   const fetchExpedientesPendientes = async () => {
@@ -45,13 +61,17 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
       if (response.ok) {
         const data = await response.json();
         setExpedientesPendientes(data.total || 0);
-        if (data.expedientes && data.expedientes.length > 0 && data.expedientes[0].fecha_extraccion) {
-          setLastExecution(new Date(data.expedientes[0].fecha_extraccion));
-        }
+        // NOTA: Ya no usamos la fecha del expediente como última ejecución
+        // porque eso es la fecha del expediente en CHUBB, no la última extracción
       }
     } catch (err) {
       console.error('Error al consultar expedientes pendientes:', err);
     }
+  };
+
+  // Refrescar última ejecución desde BD
+  const refreshLastExecution = () => {
+    fetchLastExecution();
   };
 
   // Calcular si la ejecución es reciente (< 4 horas)
@@ -142,7 +162,7 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
             clearInterval(intervalRef.current);
             setIsExtracting(false);
             addLog('✓ Extracción completada exitosamente');
-            setLastExecution(new Date());
+            refreshLastExecution(); // Refresca desde BD
             fetchExpedientesPendientes();
             if (onExtractionComplete) {
               onExtractionComplete();

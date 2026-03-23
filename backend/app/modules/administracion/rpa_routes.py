@@ -18,6 +18,9 @@ router = APIRouter(prefix="/rpa", tags=["rpa"])
 # Almacenar estado de las ejecuciones (en memoria - reinicia con el servidor)
 rpa_jobs = {}
 
+# Track log IDs for piezas executions (para actualizar al completar)
+piezas_execution_logs = {}
+
 
 class RPARequest(BaseModel):
     action: Literal["login", "extract_data", "full_workflow"] = "login"
@@ -1111,10 +1114,23 @@ def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Op
             return
         
         # Verificar resultado
+        piezas_count = 0
         if process.returncode == 0:
             rpa_jobs[job_id]["status"] = "completed"
             rpa_jobs[job_id]["message"] = "Extracción de piezas CHUBB completada"
             log_message("✓ Proceso completado exitosamente")
+            
+            # Intentar extraer cantidad de piezas del output
+            try:
+                for line in full_output:
+                    if "piezas guardadas" in line.lower() or "piezas extraídas" in line.lower():
+                        import re
+                        match = re.search(r'(\d+)\s*piezas', line.lower())
+                        if match:
+                            piezas_count = int(match.group(1))
+                            break
+            except:
+                pass
         else:
             rpa_jobs[job_id]["status"] = "failed"
             rpa_jobs[job_id]["error"] = f"Error en ejecución (código {process.returncode})"
@@ -1122,10 +1138,37 @@ def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Op
         
         rpa_jobs[job_id]["output"] = "\n".join(full_output)
         
+        # Actualizar log de ejecución en BD
+        try:
+            if job_id in piezas_execution_logs:
+                log_id = piezas_execution_logs[job_id]
+                from app.modules.administracion.routes import log_piezas_execution_complete, log_piezas_execution_failed
+                
+                if rpa_jobs[job_id]["status"] == "completed":
+                    log_piezas_execution_complete(log_id, piezas_count, {"job_id": job_id})
+                else:
+                    error_msg = rpa_jobs[job_id].get("error", "Error desconocido")
+                    log_piezas_execution_failed(log_id, error_msg)
+                
+                # Limpiar del diccionario
+                del piezas_execution_logs[job_id]
+        except Exception as e:
+            logger.warning(f"[CHUBB Piezas] No se pudo actualizar log de ejecución: {e}")
+        
     except Exception as e:
         rpa_jobs[job_id]["status"] = "failed"
         rpa_jobs[job_id]["error"] = str(e)
         log_message(f"ERROR: {e}")
+        
+        # Actualizar log de ejecución en BD (fallo)
+        try:
+            if job_id in piezas_execution_logs:
+                log_id = piezas_execution_logs[job_id]
+                from app.modules.administracion.routes import log_piezas_execution_failed
+                log_piezas_execution_failed(log_id, str(e))
+                del piezas_execution_logs[job_id]
+        except:
+            pass
     
     rpa_jobs[job_id]["completed_at"] = datetime.now().isoformat()
 
@@ -1149,6 +1192,15 @@ def extract_piezas_chubb(
     import uuid
     
     job_id = str(uuid.uuid4())
+    
+    # Registrar inicio de ejecución manual
+    try:
+        from app.modules.administracion.routes import log_piezas_execution_start
+        log_id = log_piezas_execution_start('CHUBB', 'manual', job_id)
+        # Guardar el log_id en el job para actualizarlo después
+        piezas_execution_logs[job_id] = log_id
+    except Exception as e:
+        logger.warning(f"[CHUBB Piezas] No se pudo registrar log de ejecución: {e}")
     
     # Crear entrada inicial
     rpa_jobs[job_id] = {

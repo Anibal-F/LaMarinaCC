@@ -262,13 +262,11 @@ async def navigate_to_advanced_search(page: Page) -> bool:
                        timeout=30000, wait_until='domcontentloaded')
         await asyncio.sleep(3)
         
-        # Buscar y hacer clic en el menú "Buscar"
+        # Buscar y hacer clic en el menú "BUSCAR" (mayúsculas)
         menu_buscar_selectors = [
             'a:has-text("BUSCAR")',
-            'a:has-text("Buscar")',
-            'a.dropdown-toggle:has-text("BUSCAR")',
-            '#menuBuscar',
-            '[data-toggle="dropdown"]:has-text("BUSCAR")'
+            '.dropdown-toggle:has-text("BUSCAR")',
+            'a[href="#"]:has-text("BUSCAR")'
         ]
         
         menu_clicked = False
@@ -282,20 +280,27 @@ async def navigate_to_advanced_search(page: Page) -> bool:
                     menu_clicked = True
                     break
             except Exception as e:
+                print(f"[Navigate] Selector {selector} falló: {e}")
                 continue
         
         if not menu_clicked:
-            print("[Navigate] ⚠ No se pudo clickear el menú BUSCAR")
+            print("[Navigate] ⚠ No se pudo clickear el menú BUSCAR con selectores estándar")
             # Intentar con JavaScript
             js_result = await page.evaluate("""() => {
-                // Buscar links que contengan "Buscar" o "BUSCAR"
+                // Buscar links que contengan exactamente "BUSCAR"
                 const links = Array.from(document.querySelectorAll('a'));
-                const buscarLink = links.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
+                const buscarLink = links.find(a => a.textContent.trim() === 'BUSCAR');
                 if (buscarLink) {
                     buscarLink.click();
                     return {success: true, text: buscarLink.textContent};
                 }
-                return {success: false};
+                // Fallback: buscar que contenga BUSCAR
+                const buscarLink2 = links.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
+                if (buscarLink2) {
+                    buscarLink2.click();
+                    return {success: true, text: buscarLink2.textContent};
+                }
+                return {success: false, available: links.slice(0,10).map(a => a.textContent.trim())};
             }""")
             print(f"[Navigate] Resultado JS para menú: {js_result}")
             if js_result.get('success'):
@@ -303,19 +308,20 @@ async def navigate_to_advanced_search(page: Page) -> bool:
                 menu_clicked = True
         
         if menu_clicked:
-            # Buscar opción "Expedientes" o "Búsqueda de Expedientes"
+            # Buscar opción "EXPEDIENTES" (mayúsculas según la imagen)
             opcion_selectors = [
+                'a:has-text("EXPEDIENTES")',
                 'a:has-text("Expedientes")',
-                'a:has-text("BÚSQUEDA DE TICKETS")',
-                'a:has-text("Búsqueda de Tickets")',
                 'a[href*="AdvancedSearch"]',
-                'a[href*="Search"]'
+                '.dropdown-menu a'
             ]
             
             for selector in opcion_selectors:
                 try:
                     opcion = page.locator(selector).first
                     if await opcion.count() > 0 and await opcion.is_visible():
+                        text = await opcion.text_content()
+                        print(f"[Navigate] Opción encontrada: {text}")
                         await opcion.click()
                         print(f"[Navigate] ✓ Opción clickeada ({selector})")
                         await asyncio.sleep(4)
@@ -326,7 +332,8 @@ async def navigate_to_advanced_search(page: Page) -> bool:
                             print("[Navigate] ✓ Búsqueda Avanzada cargada (vía menú)")
                             return True
                         break
-                except:
+                except Exception as e:
+                    print(f"[Navigate] Error con selector {selector}: {e}")
                     continue
         
         # Si todo falla, verificar estado actual
@@ -453,25 +460,38 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
         await asyncio.sleep(4)
         
         # Verificar si se encontraron resultados
-        # Buscar la tabla de resultados (puede ser gridMyWorks u otra)
-        result_selectors = ['#gridMyWorks tbody tr', '.grid tbody tr', '#gridSearchResults tbody tr']
+        # Buscar la tabla de resultados (gridAssesmentAdvanced en AdvancedSearch)
+        result_selectors = ['#gridAssesmentAdvanced tbody tr', '#gridMyWorks tbody tr', '.grid tbody tr']
         
         for selector in result_selectors:
             try:
                 rows = await page.locator(selector).count()
                 if rows > 0:
-                    print(f"[Search] ✓ Expediente encontrado ({rows} filas)")
-                    return True
+                    # Verificar que no sea la fila de "No hay datos"
+                    first_row_text = await page.locator(f"{selector}:first-child").text_content()
+                    if first_row_text and 'Ningún dato' not in first_row_text and 'No se encontraron' not in first_row_text:
+                        print(f"[Search] ✓ Expediente encontrado ({rows} filas)")
+                        return True
             except:
                 continue
         
-        # Si no hay filas, verificar si hay mensaje de "No se encontraron resultados"
-        no_results = await page.locator('text=No se encontraron').count()
-        if no_results > 0:
-            print("[Search] ✗ Expediente no encontrado (sin resultados)")
-        else:
-            print("[Search] ⚠ No se detectaron resultados, pero tampoco mensaje de vacío")
+        # Si no hay filas, verificar si hay mensaje de "No se encontraron resultados" o "Ningún dato"
+        no_results_selectors = [
+            'text=No se encontraron',
+            'text=Ningún dato',
+            '.dataTables_empty'
+        ]
         
+        for no_result_selector in no_results_selectors:
+            try:
+                no_results = await page.locator(no_result_selector).count()
+                if no_results > 0:
+                    print(f"[Search] ✗ Expediente no encontrado ({no_result_selector})")
+                    return False
+            except:
+                continue
+        
+        print("[Search] ⚠ No se detectaron resultados, pero tampoco mensaje de vacío")
         return False
             
     except Exception as e:
@@ -494,26 +514,44 @@ async def open_expediente_details(page: Page) -> bool:
     try:
         print("[Open] Abriendo detalle del expediente...")
         
-        # Click en el icono de la lupa
-        lupa = page.locator('img.imageButtonGrid.buttonView').first
-        if await lupa.count() > 0:
-            await lupa.click()
-            await asyncio.sleep(3)
-            
-            # Manejar modal de confirmación "Sí"
+        # Click en el icono de la lupa (img.buttonView con onclick)
+        lupa_selectors = [
+            '#gridAssesmentAdvanced img.buttonView',
+            '#gridAssesmentAdvanced img[title="Visualizar"]',
+            'img.buttonView',
+            'img[title="Visualizar"]',
+            'img.imageButtonGrid.buttonView'
+        ]
+        
+        lupa_clicked = False
+        for selector in lupa_selectors:
             try:
-                btn_si = page.locator('button:has-text("Si")').first
-                if await btn_si.count() > 0 and await btn_si.is_visible():
-                    await btn_si.click()
-                    print("[Open] ✓ Modal confirmación aceptado")
+                lupa = page.locator(selector).first
+                if await lupa.count() > 0 and await lupa.is_visible():
+                    await lupa.click()
+                    print(f"[Open] ✓ Lupa clickeada ({selector})")
                     await asyncio.sleep(3)
-            except:
-                pass
-            
-            return True
-        else:
+                    lupa_clicked = True
+                    break
+            except Exception as e:
+                print(f"[Open] Selector {selector} falló: {e}")
+                continue
+        
+        if not lupa_clicked:
             print("[Open] ✗ No se encontró el botón de visualizar")
             return False
+        
+        # Manejar modal de confirmación "Sí" (si aparece)
+        try:
+            btn_si = page.locator('button:has-text("Si")').first
+            if await btn_si.count() > 0 and await btn_si.is_visible():
+                await btn_si.click()
+                print("[Open] ✓ Modal confirmación aceptado")
+                await asyncio.sleep(3)
+        except:
+            pass
+        
+        return True
             
     except Exception as e:
         print(f"[Open] Error: {e}")

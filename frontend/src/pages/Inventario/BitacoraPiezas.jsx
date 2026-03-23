@@ -996,7 +996,7 @@ export default function BitacoraPiezas() {
                   onClick={() => setFuenteActiva('Qualitas')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
                     fuenteActiva === 'Qualitas'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-purple-600 text-white'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -1007,7 +1007,7 @@ export default function BitacoraPiezas() {
                   onClick={() => setFuenteActiva('CHUBB')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
                     fuenteActiva === 'CHUBB'}
-                      ? 'bg-green-600 text-white'
+                      ? 'bg-blue-600 text-white'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -1021,7 +1021,7 @@ export default function BitacoraPiezas() {
             {fuenteActiva === 'Qualitas' && (
               <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
                 <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-blue-500">cloud_download</span>
+                  <span className="material-symbols-outlined text-purple-500">cloud_download</span>
                   Importar desde Qualitas
                 </h3>
                 <QualitasPiezasExtractor onExtractionComplete={fetchPiezas} />
@@ -1032,7 +1032,7 @@ export default function BitacoraPiezas() {
             {fuenteActiva === 'CHUBB' && (
               <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
                 <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-green-500">cloud_download</span>
+                  <span className="material-symbols-outlined text-blue-500">cloud_download</span>
                   Importar desde CHUBB
                 </h3>
                 <ChubbPiezasExtractor onExtractionComplete={fetchPiezas} />

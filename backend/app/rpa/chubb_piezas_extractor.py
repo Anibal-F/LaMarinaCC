@@ -440,11 +440,55 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
                 return False
             exp_input = page.locator('#ListFilters_0__ParameterValue')
         
-        # Limpiar y llenar campo de número de expediente
-        await exp_input.fill('')
-        await asyncio.sleep(0.5)
-        await exp_input.fill(num_expediente)
-        print("[Search] ✓ Expediente ingresado en campo de búsqueda")
+        # Expandir el acordeón de Filtros si está colapsado
+        print("[Search] Verificando acordeón de Filtros...")
+        try:
+            # El acordeón tiene id ui-id-1 (header) y ui-id-2 (content)
+            accordion_content = page.locator('#ui-id-2')
+            is_visible = await accordion_content.is_visible() if await accordion_content.count() > 0 else False
+            
+            if not is_visible:
+                print("[Search] Acordeón colapsado, expandiendo...")
+                accordion_header = page.locator('#ui-id-1')
+                if await accordion_header.count() > 0:
+                    await accordion_header.click()
+                    await asyncio.sleep(2)
+                    print("[Search] ✓ Acordeón expandido")
+        except Exception as e:
+            print(f"[Search] Nota: No se pudo verificar acordeón: {e}")
+        
+        # Esperar a que el input sea visible
+        print("[Search] Esperando a que el campo sea visible...")
+        try:
+            await page.wait_for_selector('#ListFilters_0__ParameterValue:visible', timeout=10000)
+            print("[Search] ✓ Campo visible")
+        except:
+            print("[Search] ⚠ El campo no se hizo visible, intentando con JavaScript...")
+        
+        # Intentar llenar el campo con JavaScript si no es visible para Playwright
+        try:
+            # Primero intentar fill normal
+            await exp_input.fill('')
+            await asyncio.sleep(0.3)
+            await exp_input.fill(num_expediente)
+            print("[Search] ✓ Expediente ingresado (fill normal)")
+        except Exception as fill_error:
+            print(f"[Search] Fill normal falló: {fill_error}")
+            # Fallback: usar JavaScript
+            js_result = await page.evaluate(f"""() => {{
+                const input = document.getElementById('ListFilters_0__ParameterValue');
+                if (input) {{
+                    input.value = '{num_expediente}';
+                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    return {{success: true}};
+                }}
+                return {{success: false, error: 'Input no encontrado'}};
+            }}""")
+            print(f"[Search] Resultado JS fill: {js_result}")
+            if not js_result.get('success'):
+                raise Exception(f"No se pudo llenar el campo: {js_result.get('error')}")
+        
         await asyncio.sleep(1)
         
         # Click en botón Buscar

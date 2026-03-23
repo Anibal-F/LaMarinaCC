@@ -213,6 +213,148 @@ async def do_login(page: Page, use_db: bool = True) -> bool:
         return False
 
 
+async def handle_session_modal(page: Page) -> bool:
+    """
+    Maneja el modal de 'sesión iniciada en otro terminal'.
+    Aparece cuando hay una sesión previa activa.
+    """
+    try:
+        print("[SessionModal] Verificando modal de sesión previa...")
+        
+        # Esperar un momento a que aparezca el modal
+        await asyncio.sleep(2)
+        
+        # Buscar el texto del modal
+        modal_text = await page.locator('text=ya ha iniciado sesión en otro terminal').count()
+        if modal_text > 0:
+            print("[SessionModal] Modal detectado - sesión previa encontrada")
+            
+            # Buscar botón Aceptar/Continuar
+            btn_selectors = [
+                'button:has-text("Aceptar")',
+                'button:has-text("Continuar")',
+                '.ui-button:has-text("Aceptar")',
+                'button.ui-button'
+            ]
+            
+            for selector in btn_selectors:
+                try:
+                    btn = page.locator(selector).first
+                    if await btn.count() > 0 and await btn.is_visible():
+                        await btn.click()
+                        print("[SessionModal] ✓ Botón Aceptar clickeado")
+                        await asyncio.sleep(3)
+                        return True
+                except:
+                    continue
+            
+            # Fallback: usar JavaScript
+            js_result = await page.evaluate("""() => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const btn = buttons.find(b => b.textContent.includes('Aceptar') || b.textContent.includes('Continuar'));
+                if (btn) {
+                    btn.click();
+                    return {success: true};
+                }
+                return {success: false};
+            }""")
+            if js_result.get('success'):
+                print("[SessionModal] ✓ Botón clickeado vía JS")
+                await asyncio.sleep(3)
+                return True
+        else:
+            print("[SessionModal] No se detectó modal de sesión previa")
+        
+        return False
+        
+    except Exception as e:
+        print(f"[SessionModal] Error: {e}")
+        return False
+
+
+async def set_fecha_desde(page: Page, fecha_str: str) -> bool:
+    """
+    Configura la fecha 'Desde' en el filtro de Última Fecha de Actualización.
+    Formato de entrada: YYYY-MM-DD (ej: 2026-01-01)
+    Formato en CHUBB: DD/MM/YYYY (ej: 01/01/2026)
+    """
+    try:
+        print(f"[FechaFilter] Configurando fecha desde: {fecha_str}")
+        
+        # Convertir formato YYYY-MM-DD a DD/MM/YYYY
+        try:
+            from datetime import datetime
+            fecha_dt = datetime.strptime(fecha_str, "%Y-%m-%d")
+            fecha_chubb = fecha_dt.strftime("%d/%m/%Y")
+        except:
+            print(f"[FechaFilter] Error parseando fecha {fecha_str}, usando default")
+            fecha_chubb = "01/01/2026"
+        
+        # Hacer click en el campo de fecha para abrir el datepicker
+        fecha_input = page.locator('#ListFilters_9__ParameterValue')
+        if await fecha_input.count() == 0:
+            print("[FechaFilter] ✗ Campo de fecha no encontrado")
+            return False
+        
+        await fecha_input.click()
+        print("[FechaFilter] Datepicker abierto")
+        await asyncio.sleep(1)
+        
+        # Esperar a que aparezca el datepicker
+        await page.wait_for_selector('#ui-datepicker-div', timeout=5000)
+        
+        # Extraer año, mes, día
+        year = fecha_dt.year
+        month = fecha_dt.month - 1  # El datepicker usa 0-11
+        day = fecha_dt.day
+        
+        # Seleccionar año
+        year_select = page.locator('.ui-datepicker-year')
+        if await year_select.count() > 0:
+            await year_select.select_option(str(year))
+            print(f"[FechaFilter] Año seleccionado: {year}")
+        
+        await asyncio.sleep(0.5)
+        
+        # Seleccionar mes
+        month_select = page.locator('.ui-datepicker-month')
+        if await month_select.count() > 0:
+            await month_select.select_option(str(month))
+            print(f"[FechaFilter] Mes seleccionado: {month + 1}")
+        
+        await asyncio.sleep(0.5)
+        
+        # Click en el día
+        day_selector = f'td[data-handler="selectDay"] a[data-date="{day}"]'
+        day_link = page.locator(day_selector)
+        if await day_link.count() > 0:
+            await day_link.click()
+            print(f"[FechaFilter] Día seleccionado: {day}")
+        else:
+            # Fallback: buscar por texto
+            day_links = await page.locator('td[data-handler="selectDay"] a').all()
+            for link in day_links:
+                text = await link.text_content()
+                if text.strip() == str(day):
+                    await link.click()
+                    print(f"[FechaFilter] Día seleccionado (fallback): {day}")
+                    break
+        
+        await asyncio.sleep(1)
+        
+        # Verificar que se seteó correctamente
+        current_value = await fecha_input.input_value()
+        print(f"[FechaFilter] Fecha seteada: {current_value}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[FechaFilter] Error: {e}")
+        import traceback
+        print(f"[FechaFilter] Traceback: {traceback.format_exc()}")
+        return False
+
+
 async def handle_billing_modal(page: Page) -> bool:
     """
     Maneja el volante/mensaje de billing post-login.
@@ -431,7 +573,7 @@ async def apply_autorizado_filter(page: Page) -> bool:
         return False
 
 
-async def search_expediente(page: Page, num_expediente: str) -> bool:
+async def search_expediente(page: Page, num_expediente: str, fecha_desde: str = None) -> bool:
     """Busca un expediente específico usando la búsqueda avanzada."""
     try:
         print(f"[Search] Buscando expediente: {num_expediente}")
@@ -443,6 +585,10 @@ async def search_expediente(page: Page, num_expediente: str) -> bool:
             if not await navigate_to_advanced_search(page):
                 return False
             exp_input = page.locator('#ListFilters_0__ParameterValue')
+        
+        # Configurar fecha desde si se proporciona
+        if fecha_desde:
+            await set_fecha_desde(page, fecha_desde)
         
         # Expandir el acordeón de Filtros si está colapsado
         print("[Search] Verificando acordeón de Filtros...")
@@ -859,7 +1005,7 @@ async def save_piezas_to_db(num_expediente: str, piezas: List[Dict[str, Any]],
 
 
 async def process_single_expediente(page: Page, expediente: Dict[str, Any], 
-                                    fecha_extraccion: str) -> Dict[str, Any]:
+                                    fecha_extraccion: str, fecha_desde: str = None) -> Dict[str, Any]:
     """Procesa un solo expediente extrayendo sus piezas."""
     num_exp = expediente['num_expediente']
     print(f"\n{'='*60}")
@@ -874,8 +1020,8 @@ async def process_single_expediente(page: Page, expediente: Dict[str, Any],
     }
     
     try:
-        # 1. Buscar expediente
-        if not await search_expediente(page, num_exp):
+        # 1. Buscar expediente (con fecha_desde para filtrar)
+        if not await search_expediente(page, num_exp, fecha_desde):
             result['error'] = 'Expediente no encontrado'
             return result
         
@@ -919,15 +1065,21 @@ async def process_single_expediente(page: Page, expediente: Dict[str, Any],
     return result
 
 
-async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
+async def run_piezas_extraction(headless: bool = True, use_db: bool = True, fecha_desde: str = "2026-01-01", max_expedientes: int = None):
     """Ejecuta la extracción completa de piezas."""
     print("="*70)
     print("RPA CHUBB - EXTRACCIÓN DE PIEZAS (INPART)")
     print("="*70)
+    print(f"[Init] Fecha desde: {fecha_desde}")
     
     # Obtener expedientes pendientes
     print("\n[Init] Obteniendo expedientes pendientes...")
     expedientes = await get_expedientes_pendientes()
+    
+    # Limitar expedientes si se especifica
+    if max_expedientes and len(expedientes) > max_expedientes:
+        expedientes = expedientes[:max_expedientes]
+        print(f"[Init] Limitado a {max_expedientes} expedientes")
     
     if not expedientes:
         print("[Init] No hay expedientes pendientes para procesar")
@@ -960,7 +1112,10 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
             if not await do_login(page, use_db=use_db):
                 raise RuntimeError("Login fallido")
             
-            # Manejar modal post-login
+            # Manejar modal de sesión previa (si aparece)
+            await handle_session_modal(page)
+            
+            # Manejar modal post-login (billing)
             await handle_billing_modal(page)
             
             # Esperar a que la página cargue completamente
@@ -983,7 +1138,7 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True):
             for idx, expediente in enumerate(expedientes, 1):
                 print(f"\n[Progress] {idx}/{len(expedientes)}")
                 
-                result = await process_single_expediente(page, expediente, fecha_extraccion)
+                result = await process_single_expediente(page, expediente, fecha_extraccion, fecha_desde)
                 results.append(result)
                 
                 if result['error']:
@@ -1037,11 +1192,17 @@ def main():
     parser.add_argument("--headless", action="store_true", help="Modo headless")
     parser.add_argument("--use-db", action="store_true", default=True, 
                        help="Usar credenciales desde la base de datos")
+    parser.add_argument("--fecha-desde", type=str, default="2026-01-01",
+                       help="Fecha desde la cual buscar expedientes (YYYY-MM-DD)")
+    parser.add_argument("--max-expedientes", type=int, default=None,
+                       help="Máximo número de expedientes a procesar")
     args = parser.parse_args()
     
     result = asyncio.run(run_piezas_extraction(
         headless=args.headless,
-        use_db=args.use_db
+        use_db=args.use_db,
+        fecha_desde=args.fecha_desde,
+        max_expedientes=args.max_expedientes
     ))
     
     print("\n[Done] Extracción completada")

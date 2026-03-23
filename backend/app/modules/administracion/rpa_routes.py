@@ -1008,9 +1008,10 @@ class ChubbPiezasExtractionRequest(BaseModel):
     """Solicitud para extraer piezas de expedientes CHUBB autorizados."""
     headless: bool = Field(default=True, description="Ejecutar sin ventana visible")
     max_expedientes: Optional[int] = Field(default=None, description="Máximo de expedientes a procesar (None = todos)")
+    fecha_desde: Optional[str] = Field(default="2026-01-01", description="Fecha desde la cual buscar expedientes (YYYY-MM-DD)")
 
 
-def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Optional[int] = None):
+def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Optional[int] = None, fecha_desde: Optional[str] = "2026-01-01"):
     """
     Ejecuta el script de extracción de piezas de CHUBB en un proceso separado.
     Esta función corre en background.
@@ -1046,8 +1047,12 @@ def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Op
         # Construir comando
         cmd = [
             "python3", "-u", "-m", f"app.rpa.{script_name.replace('.py', '')}",
-            "--use-db"  # Usar credenciales de BD
+            "--use-db",  # Usar credenciales de BD
+            "--fecha-desde", fecha_desde  # Fecha desde para filtrar
         ]
+        
+        if max_expedientes:
+            cmd.extend(["--max-expedientes", str(max_expedientes)])
         
         # Siempre headless en Docker
         is_docker = os.path.exists('/.dockerenv') or os.getenv('DOCKER_CONTAINER', False)
@@ -1056,6 +1061,8 @@ def run_chubb_piezas_extraction(job_id: str, headless: bool, max_expedientes: Op
             log_message("Modo: HEADLESS")
         else:
             log_message("Modo: VISUAL")
+        
+        log_message(f"Fecha desde: {fecha_desde}")
         
         # Ejecutar
         rpa_jobs[job_id]["status"] = "running"
@@ -1162,7 +1169,8 @@ def extract_piezas_chubb(
         run_chubb_piezas_extraction,
         job_id=job_id,
         headless=request.headless,
-        max_expedientes=request.max_expedientes
+        max_expedientes=request.max_expedientes,
+        fecha_desde=request.fecha_desde
     )
     
     return RPAResponse(

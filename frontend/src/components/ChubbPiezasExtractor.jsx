@@ -26,6 +26,7 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
   const [logs, setLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
   const [maxExpedientes, setMaxExpedientes] = useState('');
+  const [fechaDesde, setFechaDesde] = useState('2026-01-01'); // Fecha por defecto: 1 enero 2026
   const [lastExecution, setLastExecution] = useState(null);
   const [expedientesPendientes, setExpedientesPendientes] = useState(0);
   const logsEndRef = useRef(null);
@@ -91,6 +92,7 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           max_expedientes: maxExpedientes ? parseInt(maxExpedientes) : null,
+          fecha_desde: fechaDesde, // Formato: YYYY-MM-DD
           headless: true
         })
       });
@@ -209,6 +211,18 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
               </span>
             </div>
           )}
+        </div>
+
+        {/* Input para fecha desde */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-400">Desde:</label>
+          <input
+            type="date"
+            value={fechaDesde}
+            onChange={(e) => setFechaDesde(e.target.value)}
+            disabled={isExtracting}
+            className="w-32 bg-background-dark border border-border-dark rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-primary"
+          />
         </div>
 
         {/* Input para máximo de expedientes */}

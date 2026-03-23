@@ -1029,7 +1029,7 @@ export default function BitacoraPiezas() {
             )}
 
             {/* Extracción automática de CHUBB */}
-            {fuenteActiva === 'Chubb' && (
+            {fuenteActiva === 'CHUBB' && (
               <div className="bg-surface-dark border border-border-dark rounded-xl p-4">
                 <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-green-500">cloud_download</span>

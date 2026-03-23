@@ -26,12 +26,19 @@ router.include_router(rpa_queue_router)
 from app.modules.administracion.autosync_routes import router as autosync_router
 router.include_router(autosync_router)
 
-# Importar scheduler para iniciarlo automáticamente
+# Importar schedulers para iniciarlos automáticamente
 try:
     from app.modules.administracion import rpa_scheduler
 except Exception as e:
     import logging
-    logging.getLogger(__name__).error(f"Error cargando scheduler: {e}")
+    logging.getLogger(__name__).error(f"Error cargando scheduler RPA: {e}")
+
+# Importar scheduler de piezas
+try:
+    from app.modules.administracion import piezas_scheduler
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error(f"Error cargando scheduler de piezas: {e}")
 
 
 @router.get("/health")
@@ -324,3 +331,131 @@ def delete_credencial(credencial_id: int):
     if result.rowcount == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credencial no encontrada")
     return None
+
+
+# =====================================================
+# ENDPOINTS PARA SCHEDULER DE PIEZAS
+# =====================================================
+
+@router.get("/piezas-scheduler/status")
+def get_piezas_scheduler_status():
+    """
+    Obtiene el estado del scheduler de piezas.
+    """
+    try:
+        from app.modules.administracion.piezas_scheduler import get_piezas_scheduler_status
+        return get_piezas_scheduler_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo estado: {str(e)}")
+
+
+@router.post("/piezas-scheduler/start")
+def start_piezas_scheduler():
+    """
+    Inicia el scheduler de piezas.
+    """
+    try:
+        from app.modules.administracion.piezas_scheduler import start_piezas_scheduler
+        scheduler = start_piezas_scheduler()
+        return {
+            "success": True,
+            "message": "Scheduler de piezas iniciado",
+            "schedule_time": f"{scheduler.hour:02d}:{scheduler.minute:02d}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error iniciando scheduler: {str(e)}")
+
+
+@router.post("/piezas-scheduler/stop")
+def stop_piezas_scheduler():
+    """
+    Detiene el scheduler de piezas.
+    """
+    try:
+        from app.modules.administracion.piezas_scheduler import stop_piezas_scheduler
+        stop_piezas_scheduler()
+        return {"success": True, "message": "Scheduler de piezas detenido"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deteniendo scheduler: {str(e)}")
+
+
+@router.post("/piezas-scheduler/force-run")
+def force_run_piezas_scheduler():
+    """
+    Fuerza una ejecución inmediata de extracción de piezas.
+    """
+    try:
+        from app.modules.administracion.piezas_scheduler import force_run_piezas
+        task_ids = force_run_piezas()
+        return {
+            "success": True,
+            "message": "Ejecución forzada iniciada",
+            "task_ids": task_ids,
+            "check_status_url": "/admin/rpa-queue/tasks"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error ejecutando scheduler: {str(e)}")
+
+
+@router.post("/piezas-scheduler/enable")
+def enable_piezas_scheduler():
+    """
+    Habilita el scheduler de piezas.
+    """
+    try:
+        from app.modules.administracion.piezas_scheduler import get_piezas_scheduler
+        scheduler = get_piezas_scheduler()
+        scheduler.set_enabled(True)
+        return {"success": True, "message": "Scheduler de piezas habilitado"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error habilitando scheduler: {str(e)}")
+
+
+@router.post("/piezas-scheduler/disable")
+def disable_piezas_scheduler():
+    """
+    Deshabilita el scheduler de piezas.
+    """
+    try:
+        from app.modules.administracion.piezas_scheduler import get_piezas_scheduler
+        scheduler = get_piezas_scheduler()
+        scheduler.set_enabled(False)
+        return {"success": True, "message": "Scheduler de piezas deshabilitado"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deshabilitando scheduler: {str(e)}")
+
+
+@router.post("/piezas-scheduler/schedule")
+def set_piezas_schedule(payload: dict):
+    """
+    Cambia la hora de ejecución del scheduler de piezas.
+    
+    Ejemplo de payload:
+    {
+        "hour": 6,
+        "minute": 0
+    }
+    """
+    hour = payload.get("hour")
+    minute = payload.get("minute", 0)
+    
+    if hour is None:
+        raise HTTPException(status_code=400, detail="hour requerido")
+    
+    if not (0 <= hour <= 23):
+        raise HTTPException(status_code=400, detail="hour debe estar entre 0 y 23")
+    
+    if not (0 <= minute <= 59):
+        raise HTTPException(status_code=400, detail="minute debe estar entre 0 y 59")
+    
+    try:
+        from app.modules.administracion.piezas_scheduler import get_piezas_scheduler
+        scheduler = get_piezas_scheduler()
+        scheduler.set_schedule(hour, minute)
+        return {
+            "success": True,
+            "message": f"Horario actualizado a {hour:02d}:{minute:02d}",
+            "schedule_time": f"{hour:02d}:{minute:02d}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error actualizando horario: {str(e)}")

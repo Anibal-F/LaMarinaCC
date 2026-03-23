@@ -42,8 +42,10 @@ class TaskStatus(str, Enum):
 class TaskType(str, Enum):
     QUALITAS_LOGIN = "qualitas_login"
     QUALITAS_EXTRACT = "qualitas_extract"
+    QUALITAS_PIEZAS = "qualitas_piezas"
     CHUBB_LOGIN = "chubb_login"
     CHUBB_EXTRACT = "chubb_extract"
+    CHUBB_PIEZAS = "chubb_piezas"
 
 
 @dataclass
@@ -557,8 +559,12 @@ def worker_loop():
                 
                 if task_type == TaskType.QUALITAS_LOGIN.value or task_type == TaskType.QUALITAS_EXTRACT.value:
                     run_qualitas_task(task_id, params)
+                elif task_type == TaskType.QUALITAS_PIEZAS.value:
+                    run_qualitas_piezas_task(task_id, params)
                 elif task_type == TaskType.CHUBB_LOGIN.value or task_type == TaskType.CHUBB_EXTRACT.value:
                     run_chubb_task(task_id, params)
+                elif task_type == TaskType.CHUBB_PIEZAS.value:
+                    run_chubb_piezas_task(task_id, params)
                 else:
                     logger.warning(f"[Worker] Tipo de tarea desconocido: {task_type}")
                     update_task(
@@ -991,6 +997,173 @@ def run_chubb_task(task_id: str, params: Dict[str, Any]):
             status=TaskStatus.FAILED.value,
             completed_at=datetime.now(),
             error="Timeout: El proceso tardó más de 10 minutos",
+            logs="\n".join(logs),
+            retry_count=get_task(task_id)['retry_count'] + 1
+        )
+    except Exception as e:
+        log(f"✗ Error: {str(e)}")
+        update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            completed_at=datetime.now(),
+            error=str(e),
+            logs="\n".join(logs),
+            retry_count=get_task(task_id)['retry_count'] + 1
+        )
+
+
+def run_qualitas_piezas_task(task_id: str, params: Dict[str, Any]):
+    """Ejecuta una tarea de extracción de piezas de Qualitas."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    backend_dir = Path(__file__).resolve().parents[3]
+    logs = []
+    
+    def log(msg):
+        logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+        logger.info(f"[Task {task_id}] {msg}")
+    
+    try:
+        log("Iniciando extracción de piezas de Qualitas")
+        update_task(task_id, status=TaskStatus.RUNNING.value, started_at=datetime.now())
+        
+        # Comando para ejecutar el extractor de piezas
+        cmd = [
+            "python3", "-m", "app.rpa.qualitas_piezas_workflow",
+            "--headless",
+            "--use-db"
+        ]
+        
+        # Agregar parámetros opcionales
+        if params.get('max_ordenes'):
+            cmd.extend(["--max-ordenes", str(params['max_ordenes'])])
+        
+        if params.get('reset_checkpoint'):
+            cmd.append("--reset-checkpoint")
+        
+        returncode, stdout, stderr = _execute_rpa_command_realtime(
+            cmd, backend_dir, task_id, logs, log, timeout=3600  # 1 hora timeout
+        )
+        
+        log(f"RPA terminó con código: {returncode}")
+        
+        if returncode != 0:
+            raise RuntimeError(f"RPA falló con código {returncode}")
+        
+        # Contar piezas extraídas (buscar en los logs)
+        piezas_count = 0
+        for line in stdout.split('\n'):
+            if 'piezas extraídas' in line.lower() or 'piezas guardadas' in line.lower():
+                try:
+                    # Extraer número de la línea
+                    import re
+                    match = re.search(r'(\d+)\s*piezas', line)
+                    if match:
+                        piezas_count = int(match.group(1))
+                except:
+                    pass
+        
+        log(f"✓ Extracción completada - {piezas_count} piezas procesadas")
+        
+        update_task(
+            task_id,
+            status=TaskStatus.COMPLETED.value,
+            completed_at=datetime.now(),
+            result=json.dumps({"piezas_extraidas": piezas_count, "success": True}),
+            logs="\n".join(logs)
+        )
+        
+    except subprocess.TimeoutExpired:
+        log("✗ Timeout - El RPA tardó más de 1 hora")
+        update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            completed_at=datetime.now(),
+            error="Timeout: El proceso tardó más de 1 hora",
+            logs="\n".join(logs),
+            retry_count=get_task(task_id)['retry_count'] + 1
+        )
+    except Exception as e:
+        log(f"✗ Error: {str(e)}")
+        update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            completed_at=datetime.now(),
+            error=str(e),
+            logs="\n".join(logs),
+            retry_count=get_task(task_id)['retry_count'] + 1
+        )
+
+
+def run_chubb_piezas_task(task_id: str, params: Dict[str, Any]):
+    """Ejecuta una tarea de extracción de piezas de CHUBB."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    backend_dir = Path(__file__).resolve().parents[3]
+    logs = []
+    
+    def log(msg):
+        logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+        logger.info(f"[Task {task_id}] {msg}")
+    
+    try:
+        log("Iniciando extracción de piezas de CHUBB")
+        update_task(task_id, status=TaskStatus.RUNNING.value, started_at=datetime.now())
+        
+        # Comando para ejecutar el extractor de piezas
+        cmd = [
+            "python3", "-m", "app.rpa.chubb_piezas_extractor",
+            "--headless",
+            "--use-db"
+        ]
+        
+        # Agregar parámetros opcionales
+        if params.get('max_expedientes'):
+            cmd.extend(["--max-expedientes", str(params['max_expedientes'])])
+        
+        if params.get('fecha_desde'):
+            cmd.extend(["--fecha-desde", params['fecha_desde']])
+        
+        returncode, stdout, stderr = _execute_rpa_command_realtime(
+            cmd, backend_dir, task_id, logs, log, timeout=3600  # 1 hora timeout
+        )
+        
+        log(f"RPA terminó con código: {returncode}")
+        
+        if returncode != 0:
+            raise RuntimeError(f"RPA falló con código {returncode}")
+        
+        # Contar piezas extraídas (buscar en los logs)
+        piezas_count = 0
+        for line in stdout.split('\n'):
+            if 'piezas extraídas' in line.lower() or 'piezas guardadas' in line.lower():
+                try:
+                    import re
+                    match = re.search(r'(\d+)\s*piezas', line)
+                    if match:
+                        piezas_count = int(match.group(1))
+                except:
+                    pass
+        
+        log(f"✓ Extracción completada - {piezas_count} piezas procesadas")
+        
+        update_task(
+            task_id,
+            status=TaskStatus.COMPLETED.value,
+            completed_at=datetime.now(),
+            result=json.dumps({"piezas_extraidas": piezas_count, "success": True}),
+            logs="\n".join(logs)
+        )
+        
+    except subprocess.TimeoutExpired:
+        log("✗ Timeout - El RPA tardó más de 1 hora")
+        update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            completed_at=datetime.now(),
+            error="Timeout: El proceso tardó más de 1 hora",
             logs="\n".join(logs),
             retry_count=get_task(task_id)['retry_count'] + 1
         )

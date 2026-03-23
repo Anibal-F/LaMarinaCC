@@ -36,6 +36,32 @@ def _now_mazatlan() -> datetime:
     return datetime.now(MAZATLAN_TZ)
 
 
+def _get_fecha_desde_piezas() -> str:
+    """
+    Calcula la fecha inicial para extracción de piezas.
+    Retorna el primer día de hace 2 meses (sin contar el mes actual).
+    
+    Ejemplo: Hoy es 23 de Marzo 2026 → Retorna '2026-01-01'
+             Hoy es 15 de Enero 2026 → Retorna '2025-11-01'
+    """
+    now = _now_mazatlan()
+    
+    # Restar 2 meses
+    mes_target = now.month - 2
+    año_target = now.year
+    
+    # Ajustar si nos pasamos de enero
+    if mes_target <= 0:
+        mes_target += 12
+        año_target -= 1
+    
+    # Formatear como YYYY-MM-DD del primer día de ese mes
+    fecha_desde = f"{año_target}-{mes_target:02d}-01"
+    
+    logger.info(f"[PiezasScheduler] Fecha inicial calculada: {fecha_desde} (hoy: {now.strftime('%Y-%m-%d')})")
+    return fecha_desde
+
+
 def _get_schedule_time_from_db() -> Tuple[int, int]:
     """
     Lee la hora de ejecución desde la base de datos.
@@ -202,7 +228,7 @@ class PiezasScheduler:
                     "scheduled": True,
                     "scheduled_at": _now_mazatlan().isoformat(),
                     "auto_retry": True,
-                    "fecha_desde": (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")  # Últimos 7 días
+                    "fecha_desde": _get_fecha_desde_piezas()  # Primer día de hace 2 meses
                 }
             )
             logger.info(f"[PiezasScheduler] Tarea CHUBB creada: {task_id_chubb}")

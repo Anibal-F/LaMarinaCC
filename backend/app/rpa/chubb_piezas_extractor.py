@@ -235,26 +235,117 @@ async def handle_billing_modal(page: Page) -> bool:
 
 
 async def navigate_to_advanced_search(page: Page) -> bool:
-    """Navega directamente a la Búsqueda Avanzada de expedientes."""
+    """Navega a la Búsqueda Avanzada de expedientes."""
     try:
         print("[Navigate] Navegando a Búsqueda Avanzada...")
         
-        # Navegar directamente a la URL de AdvancedSearch
-        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
+        # OPCIÓN 1: Intentar navegación directa primero
+        print("[Navigate] Intentando navegación directa...")
+        try:
+            response = await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
+                           timeout=30000, wait_until='domcontentloaded')
+            await asyncio.sleep(3)
+            
+            # Verificar si cargó correctamente
+            exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+            if exp_input > 0:
+                print("[Navigate] ✓ Búsqueda Avanzada cargada (navegación directa)")
+                return True
+        except Exception as e:
+            print(f"[Navigate] Navegación directa falló: {e}")
+        
+        # OPCIÓN 2: Navegar por el menú
+        print("[Navigate] Intentando navegación por menú...")
+        
+        # Primero ir a la página principal
+        await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/Home', 
                        timeout=30000, wait_until='domcontentloaded')
-        await asyncio.sleep(4)
+        await asyncio.sleep(3)
         
-        # Verificar que el campo de número de expediente esté visible
-        exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
-        if exp_input > 0:
-            print("[Navigate] ✓ Búsqueda Avanzada cargada correctamente")
-            return True
+        # Buscar y hacer clic en el menú "Buscar"
+        menu_buscar_selectors = [
+            'a:has-text("BUSCAR")',
+            'a:has-text("Buscar")',
+            'a.dropdown-toggle:has-text("BUSCAR")',
+            '#menuBuscar',
+            '[data-toggle="dropdown"]:has-text("BUSCAR")'
+        ]
         
-        print("[Navigate] ⚠ No se pudo cargar Búsqueda Avanzada")
+        menu_clicked = False
+        for selector in menu_buscar_selectors:
+            try:
+                menu = page.locator(selector).first
+                if await menu.count() > 0 and await menu.is_visible():
+                    await menu.click()
+                    print(f"[Navigate] ✓ Menú BUSCAR clickeado ({selector})")
+                    await asyncio.sleep(2)
+                    menu_clicked = True
+                    break
+            except Exception as e:
+                continue
+        
+        if not menu_clicked:
+            print("[Navigate] ⚠ No se pudo clickear el menú BUSCAR")
+            # Intentar con JavaScript
+            js_result = await page.evaluate("""() => {
+                // Buscar links que contengan "Buscar" o "BUSCAR"
+                const links = Array.from(document.querySelectorAll('a'));
+                const buscarLink = links.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
+                if (buscarLink) {
+                    buscarLink.click();
+                    return {success: true, text: buscarLink.textContent};
+                }
+                return {success: false};
+            }""")
+            print(f"[Navigate] Resultado JS para menú: {js_result}")
+            if js_result.get('success'):
+                await asyncio.sleep(2)
+                menu_clicked = True
+        
+        if menu_clicked:
+            # Buscar opción "Expedientes" o "Búsqueda de Expedientes"
+            opcion_selectors = [
+                'a:has-text("Expedientes")',
+                'a:has-text("BÚSQUEDA DE TICKETS")',
+                'a:has-text("Búsqueda de Tickets")',
+                'a[href*="AdvancedSearch"]',
+                'a[href*="Search"]'
+            ]
+            
+            for selector in opcion_selectors:
+                try:
+                    opcion = page.locator(selector).first
+                    if await opcion.count() > 0 and await opcion.is_visible():
+                        await opcion.click()
+                        print(f"[Navigate] ✓ Opción clickeada ({selector})")
+                        await asyncio.sleep(4)
+                        
+                        # Verificar si estamos en AdvancedSearch
+                        exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+                        if exp_input > 0:
+                            print("[Navigate] ✓ Búsqueda Avanzada cargada (vía menú)")
+                            return True
+                        break
+                except:
+                    continue
+        
+        # Si todo falla, verificar estado actual
+        current_url = page.url
+        print(f"[Navigate] URL actual: {current_url}")
+        
+        # Hacer screenshot para debug
+        try:
+            await page.screenshot(path="/tmp/chubb_navigate_error.png")
+            print("[Navigate] Screenshot guardado: /tmp/chubb_navigate_error.png")
+        except:
+            pass
+        
         return False
         
     except Exception as e:
         print(f"[Navigate] Error navegando a Búsqueda Avanzada: {e}")
+        import traceback
+        print(f"[Navigate] Traceback: {traceback.format_exc()}")
         return False
 
 

@@ -750,47 +750,84 @@ async def open_expediente_details(page: Page) -> bool:
     try:
         print("[Open] Abriendo detalle del expediente...")
         
+        # Esperar a que la tabla esté cargada
+        await asyncio.sleep(2)
+        
         # Click en el icono de la lupa (img.buttonView con onclick)
         lupa_selectors = [
             '#gridAssesmentAdvanced img.buttonView',
             '#gridAssesmentAdvanced img[title="Visualizar"]',
+            '#gridAssesmentAdvanced .buttonView',
             'img.buttonView',
-            'img[title="Visualizar"]',
-            'img.imageButtonGrid.buttonView'
+            'img[title="Visualizar"]'
         ]
         
         lupa_clicked = False
         for selector in lupa_selectors:
             try:
                 lupa = page.locator(selector).first
-                if await lupa.count() > 0 and await lupa.is_visible():
-                    await lupa.click()
-                    print(f"[Open] ✓ Lupa clickeada ({selector})")
-                    await asyncio.sleep(3)
-                    lupa_clicked = True
-                    break
+                if await lupa.count() > 0:
+                    # Esperar a que sea visible
+                    try:
+                        await lupa.wait_for(state='visible', timeout=5000)
+                        await lupa.click()
+                        print(f"[Open] ✓ Lupa clickeada ({selector})")
+                        await asyncio.sleep(4)  # Más tiempo para cargar
+                        lupa_clicked = True
+                        break
+                    except:
+                        continue
             except Exception as e:
                 print(f"[Open] Selector {selector} falló: {e}")
                 continue
         
         if not lupa_clicked:
             print("[Open] ✗ No se encontró el botón de visualizar")
+            # Screenshot para debug
+            try:
+                await page.screenshot(path="/tmp/chubb_no_lupa.png")
+                print("[Open] Screenshot guardado: /tmp/chubb_no_lupa.png")
+            except:
+                pass
             return False
+        
+        # Esperar a que cargue la página del expediente
+        await asyncio.sleep(3)
         
         # Manejar modal de confirmación "Sí" (si aparece)
         try:
-            btn_si = page.locator('button:has-text("Si")').first
-            if await btn_si.count() > 0 and await btn_si.is_visible():
-                await btn_si.click()
-                print("[Open] ✓ Modal confirmación aceptado")
-                await asyncio.sleep(3)
-        except:
-            pass
+            # Esperar un momento a que aparezca el modal
+            await asyncio.sleep(2)
+            
+            btn_si_selectors = [
+                'button:has-text("Si")',
+                'button:has-text("Sí")',
+                '.ui-button:has-text("Si")',
+                'button.ui-button:has-text("Si")'
+            ]
+            
+            for selector in btn_si_selectors:
+                try:
+                    btn_si = page.locator(selector).first
+                    if await btn_si.count() > 0 and await btn_si.is_visible():
+                        await btn_si.click()
+                        print("[Open] ✓ Modal confirmación aceptado")
+                        await asyncio.sleep(4)
+                        break
+                except:
+                    continue
+        except Exception as e:
+            print(f"[Open] Nota: No se detectó modal de confirmación: {e}")
+        
+        # Esperar a que cargue completamente
+        await asyncio.sleep(3)
         
         return True
             
     except Exception as e:
         print(f"[Open] Error: {e}")
+        import traceback
+        print(f"[Open] Traceback: {traceback.format_exc()}")
         return False
 
 
@@ -799,15 +836,42 @@ async def navigate_to_inpart(page: Page) -> bool:
     try:
         print("[Inpart] Navegando a pestaña Inpart...")
         
-        tab_inpart = page.locator('#tabAsmtInpartInt')
-        if await tab_inpart.count() > 0:
-            await tab_inpart.click()
-            await asyncio.sleep(3)
-            print("[Inpart] ✓ Tab Inpart seleccionado")
-            return True
-        else:
-            print("[Inpart] ✗ Tab Inpart no encontrado")
-            return False
+        # Esperar un momento para que carguen las tabs
+        await asyncio.sleep(2)
+        
+        # Buscar la tab con varios selectores
+        tab_selectors = [
+            '#tabAsmtInpartInt',
+            'a:has-text("Inpart")',
+            'li:has-text("Inpart")',
+            '[id*="Inpart"]'
+        ]
+        
+        for selector in tab_selectors:
+            try:
+                tab = page.locator(selector).first
+                if await tab.count() > 0:
+                    # Verificar si es visible
+                    is_visible = await tab.is_visible()
+                    if is_visible:
+                        await tab.click()
+                        await asyncio.sleep(4)  # Dar más tiempo para cargar
+                        print(f"[Inpart] ✓ Tab Inpart seleccionado ({selector})")
+                        return True
+            except:
+                continue
+        
+        # Si no encontramos la tab, puede que no haya Inpart para este expediente
+        print("[Inpart] ⚠ Tab Inpart no encontrada (puede que no haya piezas para este expediente)")
+        
+        # Screenshot para debug
+        try:
+            await page.screenshot(path="/tmp/chubb_no_inpart.png")
+            print("[Inpart] Screenshot guardado: /tmp/chubb_no_inpart.png")
+        except:
+            pass
+        
+        return False
             
     except Exception as e:
         print(f"[Inpart] Error: {e}")
@@ -893,25 +957,51 @@ async def close_expediente_and_return(page: Page) -> bool:
         print("[Close] Cerrando expediente...")
         
         # Click en botón Cerrar
-        btn_cerrar = page.locator('button:has-text("Cerrar")').first
-        if await btn_cerrar.count() > 0:
-            await btn_cerrar.click()
-            await asyncio.sleep(2)
+        btn_cerrar_selectors = [
+            'button:has-text("Cerrar")',
+            'button:has-text("Close")',
+            '.ui-button:has-text("Cerrar")',
+            'input[value="Cerrar"]'
+        ]
         
-        # Navegar a Buscar -> Expedientes
-        menu_buscar = page.locator('a.dropdown-toggle:has-text("Buscar")')
-        if await menu_buscar.count() > 0:
-            await menu_buscar.click()
-            await asyncio.sleep(1)
+        for selector in btn_cerrar_selectors:
+            try:
+                btn_cerrar = page.locator(selector).first
+                if await btn_cerrar.count() > 0 and await btn_cerrar.is_visible():
+                    await btn_cerrar.click()
+                    print("[Close] Botón Cerrar clickeado")
+                    await asyncio.sleep(3)
+                    break
+            except:
+                continue
+        
+        # En lugar de navegar por menú, ir directo a AdvancedSearch
+        # Esto es más confiable
+        await asyncio.sleep(2)
+        
+        # Verificar si ya estamos en AdvancedSearch
+        exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+        if exp_input > 0:
+            print("[Close] ✓ Ya estamos en pantalla de búsqueda")
+            return True
+        
+        # Si no, navegar directo
+        print("[Close] Navegando directo a AdvancedSearch...")
+        try:
+            await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
+                          timeout=30000, wait_until='domcontentloaded')
+            await asyncio.sleep(3)
             
-            # Click en Expedientes
-            link_expedientes = page.locator('a:has-text("Expedientes")')
-            if await link_expedientes.count() > 0:
-                await link_expedientes.click()
-                await asyncio.sleep(3)
+            # Verificar
+            exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+            if exp_input > 0:
+                print("[Close] ✓ Vuelto a pantalla de búsqueda")
+                return True
+        except Exception as e:
+            print(f"[Close] Error navegando: {e}")
         
-        print("[Close] ✓ Vuelto a pantalla de búsqueda")
-        return True
+        print("[Close] ⚠ No se pudo confirmar regreso a búsqueda")
+        return False
         
     except Exception as e:
         print(f"[Close] Error: {e}")

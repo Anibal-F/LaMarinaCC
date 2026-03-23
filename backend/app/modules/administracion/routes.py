@@ -220,11 +220,21 @@ def list_credenciales():
     """Lista todas las credenciales de aseguradoras para RPA."""
     with get_connection() as conn:
         conn.row_factory = dict_row
+        # Asegurar que las columnas existan
+        conn.execute("""
+            ALTER TABLE aseguradora_credenciales 
+            ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+        """)
+        conn.commit()
+        
         rows = conn.execute(
             """
             SELECT id, seguro, plataforma_url, usuario, password, taller_id, activo, 
                    COALESCE(autosync, false) as autosync,
                    COALESCE(synctime, 2) as synctime,
+                   COALESCE(autosync_piezas, false) as autosync_piezas,
+                   COALESCE(synctime_piezas, '06:00') as synctime_piezas,
                    created_at, updated_at
             FROM aseguradora_credenciales
             ORDER BY id ASC
@@ -244,6 +254,8 @@ def create_credencial(payload: dict):
     activo = payload.get("activo", True)
     autosync = payload.get("autosync", False)
     synctime = payload.get("synctime", 2)
+    autosync_piezas = payload.get("autosync_piezas", False)
+    synctime_piezas = payload.get("synctime_piezas", "06:00")
 
     if not seguro:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seguro requerido")
@@ -255,13 +267,22 @@ def create_credencial(payload: dict):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="password requerido")
 
     with get_connection() as conn:
+        # Asegurar que las columnas existan
+        conn.execute("""
+            ALTER TABLE aseguradora_credenciales 
+            ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+        """)
+        
         row = conn.execute(
             """
-            INSERT INTO aseguradora_credenciales (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, created_at
+            INSERT INTO aseguradora_credenciales 
+            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, autosync_piezas, synctime_piezas)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, 
+                      autosync, synctime, autosync_piezas, synctime_piezas, created_at
             """,
-            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime),
+            (seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, autosync_piezas, synctime_piezas),
         ).fetchone()
 
     return {
@@ -274,7 +295,9 @@ def create_credencial(payload: dict):
         "activo": row[6],
         "autosync": row[7],
         "synctime": row[8],
-        "created_at": row[9],
+        "autosync_piezas": row[9],
+        "synctime_piezas": row[10],
+        "created_at": row[11],
     }
 
 
@@ -295,12 +318,20 @@ def update_credencial(credencial_id: int, payload: dict):
     values = list(updates.values()) + [credencial_id]
 
     with get_connection() as conn:
+        # Asegurar que las columnas existan
+        conn.execute("""
+            ALTER TABLE aseguradora_credenciales 
+            ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+        """)
+        
         row = conn.execute(
             f"""
             UPDATE aseguradora_credenciales
             SET {fields}, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, autosync, synctime, created_at, updated_at
+            RETURNING id, seguro, plataforma_url, usuario, password, taller_id, activo, 
+                      autosync, synctime, autosync_piezas, synctime_piezas, created_at, updated_at
             """,
             values,
         ).fetchone()
@@ -318,8 +349,10 @@ def update_credencial(credencial_id: int, payload: dict):
         "activo": row[6],
         "autosync": row[7],
         "synctime": row[8],
-        "created_at": row[9],
-        "updated_at": row[10],
+        "autosync_piezas": row[9],
+        "synctime_piezas": row[10],
+        "created_at": row[11],
+        "updated_at": row[12],
     }
 
 

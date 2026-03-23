@@ -191,6 +191,47 @@ async def handle_multiple_session_modal(page) -> bool:
         return False
 
 
+async def handle_session_alert(page) -> bool:
+    """
+    Maneja el alert/dialog de 'sesión iniciada en otro terminal'.
+    Este es un alert del navegador (JavaScript), no un modal HTML.
+    Retorna True si se manejó el alert.
+    """
+    print("[SessionAlert] Configurando handler para alert de sesión...")
+    
+    alert_accepted = False
+    
+    def handle_dialog(dialog):
+        nonlocal alert_accepted
+        print(f"[SessionAlert] Dialog detectado: {dialog.type} - {dialog.message[:100]}...")
+        
+        # Si el mensaje contiene palabras clave de sesión previa
+        if any(keyword in dialog.message.lower() for keyword in ['sesión', 'terminal', 'otro equipo', 'continuar', 'sesion']):
+            print("[SessionAlert] ✓ Detectado alert de sesión previa - Aceptando...")
+            asyncio.create_task(dialog.accept())
+            alert_accepted = True
+        else:
+            # Para otros dialogs, también aceptar por defecto
+            asyncio.create_task(dialog.accept())
+    
+    # Registrar el handler
+    page.on('dialog', handle_dialog)
+    
+    # Esperar un momento por si aparece el alert
+    await asyncio.sleep(3)
+    
+    if alert_accepted:
+        print("[SessionAlert] ✓ Alert de sesión manejado")
+        await asyncio.sleep(2)
+    else:
+        print("[SessionAlert] No se detectó alert de sesión")
+    
+    # Remover el handler después de usarlo
+    page.remove_listener('dialog', handle_dialog)
+    
+    return alert_accepted
+
+
 async def do_logout(page) -> bool:
     """
     Realiza logout para liberar la sesión.
@@ -347,6 +388,27 @@ async def do_login(page, use_db: bool = True) -> bool:
     print("[Login] Verificando banner de cookies...")
     await handle_cookie_banner(page)
     await asyncio.sleep(1)
+    
+    # PASO 0.5: Configurar handler para alert de sesión previa (antes del login)
+    print("[Login] Configurando detector de sesión previa...")
+    
+    # Handler permanente durante todo el proceso de login
+    session_alert_handled = False
+    
+    def handle_session_dialog(dialog):
+        nonlocal session_alert_handled
+        print(f"[SessionDialog] {dialog.type}: {dialog.message[:80]}...")
+        if any(keyword in dialog.message.lower() for keyword in ['sesión', 'terminal', 'otro equipo', 'sesion']):
+            print("[SessionDialog] ✓ Alert de sesión previa - Aceptando")
+            asyncio.create_task(dialog.accept())
+            session_alert_handled = True
+        else:
+            asyncio.create_task(dialog.accept())
+    
+    page.on('dialog', handle_session_dialog)
+    
+    # Intentar manejar alert inmediatamente (por si ya apareció)
+    await asyncio.sleep(2)
     
     # ============================================
     # PASO 1: Primera pantalla - Usuario
@@ -553,6 +615,16 @@ async def do_login(page, use_db: bool = True) -> bool:
         # Esperar un poco más si hubo error de navegación
         await asyncio.sleep(5)
     
+    # PASO 3.5: Manejar alert de sesión del navegador (si aparece)
+    # Este es diferente del modal HTML, es un alert nativo del navegador
+    print("[Login] Verificando alert de sesión del navegador...")
+    try:
+        alert_handled = await handle_session_alert(page)
+        if alert_handled:
+            print("[Login] ✓ Alert de sesión manejado")
+    except Exception as e:
+        print(f"[Login] Error manejando alert de sesión: {e}")
+    
     # ============================================
     # PASO 4: Esperar navegación post-login
     # ============================================
@@ -719,6 +791,14 @@ async def do_login(page, use_db: bool = True) -> bool:
             print(f"[Login] URL final: {page.url}")
         except:
             pass
+    
+    # Remover el handler de dialog de sesión al finalizar
+    try:
+        page.remove_listener('dialog', handle_session_dialog)
+        if session_alert_handled:
+            print("[Login] Se manejó alert de sesión durante el proceso")
+    except:
+        pass
     
     return login_success
 

@@ -281,7 +281,7 @@ def create_credencial(payload: dict):
 @router.put("/credenciales/{credencial_id}")
 def update_credencial(credencial_id: int, payload: dict):
     """Actualiza una credencial existente."""
-    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo", "autosync", "synctime"}
+    allowed = {"seguro", "plataforma_url", "usuario", "password", "taller_id", "activo", "autosync", "synctime", "autosync_piezas", "synctime_piezas"}
     updates = {key: value for key, value in payload.items() if key in allowed}
 
     if not updates:

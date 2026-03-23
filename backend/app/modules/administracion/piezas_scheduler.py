@@ -1,7 +1,8 @@
 """
 Scheduler automático para extracción de piezas de Qualitas y CHUBB.
 
-Ejecuta extracción de piezas diariamente a las 6:00 AM (configurable).
+Ejecuta extracción de piezas diariamente a la hora configurada en la DB.
+Zona horaria: America/Mazatlan (Mazatlán, Sinaloa)
 """
 
 import asyncio
@@ -9,27 +10,83 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
+import pytz
 from app.modules.administracion.rpa_queue import (
     create_task, TaskType
 )
+from app.core.db import get_connection
 
 logger = logging.getLogger(__name__)
 
-# Configuración del scheduler de piezas
-DEFAULT_PIEZAS_HOUR = 6  # 6:00 AM
-DEFAULT_PIEZAS_MINUTE = 0
+# Zona horaria de Mazatlán
+MAZATLAN_TZ = pytz.timezone('America/Mazatlan')
+
+# Configuración por defecto
+DEFAULT_PIEZAS_TIME = "06:00"  # Formato "HH:MM"
 
 # Estado del scheduler
 _piezas_scheduler = None
 _scheduler_lock = threading.Lock()
 
 
+def _now_mazatlan() -> datetime:
+    """Retorna la fecha/hora actual en zona horaria de Mazatlán."""
+    return datetime.now(MAZATLAN_TZ)
+
+
+def _get_schedule_time_from_db() -> Tuple[int, int]:
+    """
+    Lee la hora de ejecución desde la base de datos.
+    Busca la primera credencial con autosync_piezas = true.
+    Retorna (hora, minuto) como enteros en hora de Mazatlán.
+    """
+    try:
+        with get_connection() as conn:
+            # Asegurar que las columnas existan
+            conn.execute("""
+                ALTER TABLE aseguradora_credenciales 
+                ADD COLUMN IF NOT EXISTS autosync_piezas BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS synctime_piezas VARCHAR(5) DEFAULT '06:00'
+            """)
+            
+            row = conn.execute(
+                """
+                SELECT synctime_piezas 
+                FROM aseguradora_credenciales 
+                WHERE autosync_piezas = TRUE 
+                ORDER BY id 
+                LIMIT 1
+                """
+            ).fetchone()
+            
+            if row and row[0]:
+                time_str = row[0]
+                # Parsear "HH:MM"
+                parts = time_str.split(':')
+                if len(parts) == 2:
+                    hour = int(parts[0])
+                    minute = int(parts[1])
+                    # Validar rango
+                    if 0 <= hour <= 23 and 0 <= minute <= 59:
+                        logger.info(f"[PiezasScheduler] Hora leída desde DB (Mazatlán): {hour:02d}:{minute:02d}")
+                        return (hour, minute)
+    except Exception as e:
+        logger.error(f"[PiezasScheduler] Error leyendo hora de DB: {e}")
+    
+    # Valor por defecto (6:00 AM Mazatlán)
+    return (6, 0)
+
+
 class PiezasScheduler:
     """Scheduler para ejecutar extracción de piezas diariamente a una hora específica."""
     
-    def __init__(self, hour: int = DEFAULT_PIEZAS_HOUR, minute: int = DEFAULT_PIEZAS_MINUTE):
+    def __init__(self, hour: int = None, minute: int = None):
+        # Si no se proporciona hora, leer desde DB
+        if hour is None or minute is None:
+            hour, minute = _get_schedule_time_from_db()
+        
         self.hour = hour
         self.minute = minute
         self._stop_event = threading.Event()
@@ -58,8 +115,8 @@ class PiezasScheduler:
         logger.info("[PiezasScheduler] Deteniendo...")
     
     def _calculate_next_run(self) -> datetime:
-        """Calcula la próxima hora de ejecución (hoy o mañana)."""
-        now = datetime.now()
+        """Calcula la próxima hora de ejecución (hoy o mañana) en hora de Mazatlán."""
+        now = _now_mazatlan()
         next_run = now.replace(hour=self.hour, minute=self.minute, second=0, microsecond=0)
         
         # Si ya pasó la hora hoy, programar para mañana
@@ -81,15 +138,29 @@ class PiezasScheduler:
                         break
                     continue
                 
+                # Recargar hora desde DB (permite cambios en caliente)
+                new_hour, new_minute = _get_schedule_time_from_db()
+                if new_hour != self.hour or new_minute != self.minute:
+                    logger.info(f"[PiezasScheduler] Hora actualizada (Mazatlán): {self.hour:02d}:{self.minute:02d} -> {new_hour:02d}:{new_minute:02d}")
+                    self.hour = new_hour
+                    self.minute = new_minute
+                
                 # Calcular próxima ejecución
                 self._next_run = self._calculate_next_run()
-                seconds_until_next = (self._next_run - datetime.now()).total_seconds()
+                seconds_until_next = (self._next_run - _now_mazatlan()).total_seconds()
                 
                 logger.info(f"[PiezasScheduler] Próxima ejecución: {self._next_run.strftime('%Y-%m-%d %H:%M:%S')} "
                           f"(en {seconds_until_next/3600:.1f} horas)")
                 
-                # Esperar hasta la próxima ejecución
-                if self._stop_event.wait(seconds_until_next):
+                # Esperar hasta la próxima ejecución (verificar cada minuto si hay cambios)
+                wait_interval = min(seconds_until_next, 60)  # Verificar cada minuto máximo
+                elapsed = 0
+                while elapsed < seconds_until_next and not self._stop_event.is_set():
+                    if self._stop_event.wait(wait_interval):
+                        return
+                    elapsed += wait_interval
+                
+                if self._stop_event.is_set():
                     break
                 
                 # Ejecutar extracción de piezas
@@ -103,8 +174,8 @@ class PiezasScheduler:
     
     def _execute_piezas_extraction(self):
         """Ejecuta la extracción de piezas para Qualitas y CHUBB."""
-        self._last_run = datetime.now()
-        logger.info("[PiezasScheduler] Iniciando extracción de piezas programada")
+        self._last_run = _now_mazatlan()
+        logger.info(f"[PiezasScheduler] Iniciando extracción de piezas programada (Mazatlán: {self._last_run.strftime('%Y-%m-%d %H:%M:%S')})")
         
         # Crear tarea para Qualitas piezas
         try:
@@ -112,7 +183,7 @@ class PiezasScheduler:
                 TaskType.QUALITAS_PIEZAS,
                 {
                     "scheduled": True,
-                    "scheduled_at": datetime.now().isoformat(),
+                    "scheduled_at": _now_mazatlan().isoformat(),
                     "auto_retry": True
                 }
             )
@@ -129,7 +200,7 @@ class PiezasScheduler:
                 TaskType.CHUBB_PIEZAS,
                 {
                     "scheduled": True,
-                    "scheduled_at": datetime.now().isoformat(),
+                    "scheduled_at": _now_mazatlan().isoformat(),
                     "auto_retry": True,
                     "fecha_desde": (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")  # Últimos 7 días
                 }
@@ -168,14 +239,16 @@ class PiezasScheduler:
     
     def get_status(self) -> Dict[str, Any]:
         """Retorna el estado actual del scheduler."""
+        now = _now_mazatlan()
         return {
             "running": self._running,
             "enabled": self._enabled,
             "schedule_time": f"{self.hour:02d}:{self.minute:02d}",
+            "timezone": "America/Mazatlan",
             "last_run": self._last_run.isoformat() if self._last_run else None,
             "next_run": self._next_run.isoformat() if self._next_run else None,
             "time_until_next_run": (
-                (self._next_run - datetime.now()).total_seconds()
+                (self._next_run - now).total_seconds()
                 if self._next_run else None
             )
         }

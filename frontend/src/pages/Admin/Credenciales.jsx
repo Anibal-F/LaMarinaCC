@@ -23,7 +23,9 @@ export default function AdminCredenciales() {
     taller_id: "",
     activo: true,
     autosync: false,
-    synctime: 2
+    synctime: 2,
+    autosync_piezas: false,
+    synctime_piezas: "06:00"
   });
 
   const fetchCredenciales = async () => {
@@ -212,7 +214,9 @@ export default function AdminCredenciales() {
                     taller_id: "",
                     activo: true,
                     autosync: false,
-                    synctime: 2
+                    synctime: 2,
+                    autosync_piezas: false,
+                    synctime_piezas: "06:00"
                   });
                 }}
               >
@@ -358,6 +362,47 @@ export default function AdminCredenciales() {
                   </div>
                 </div>
 
+                {/* Configuración de Extracción de Piezas (Diaria) */}
+                <div className="md:col-span-2 border-t border-border-dark pt-4 mt-2">
+                  <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-green-500">inventory_2</span>
+                    Extracción de Piezas (Ejecución Diaria)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between bg-background-dark rounded-lg px-4 py-3">
+                      <div>
+                        <label className="text-sm text-white font-medium block">Extracción Automática de Piezas</label>
+                        <span className="text-xs text-slate-400">Ejecutar RPA de piezas diariamente a la hora configurada</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, autosync_piezas: !form.autosync_piezas })}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          form.autosync_piezas ? 'bg-green-600' : 'bg-slate-600'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          form.autosync_piezas ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Hora de Ejecución (24h) · Mazatlán</label>
+                      <input
+                        type="time"
+                        className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
+                        value={form.synctime_piezas}
+                        onChange={(event) => setForm({ ...form, synctime_piezas: event.target.value })}
+                        disabled={!form.autosync_piezas}
+                      />
+                      <span className="text-xs text-slate-500 mt-1 block">
+                        Hora de Mazatlán (UTC-7) · Ej: 06:00 = 6:00 AM, 14:30 = 2:30 PM
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="md:col-span-2 flex justify-end gap-3 mt-2">
                   <button
                     type="button"
@@ -422,6 +467,12 @@ export default function AdminCredenciales() {
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
                       Intervalo
+                    </th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
+                      Piezas Auto
+                    </th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark text-center">
+                      Hora Piezas
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
                       Estado
@@ -488,6 +539,25 @@ export default function AdminCredenciales() {
                           <span className="text-xs text-slate-500">-</span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          cred.autosync_piezas
+                            ? "bg-green-500/20 text-green-400"
+                            : "bg-slate-500/20 text-slate-400"
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${cred.autosync_piezas ? 'bg-green-400' : 'bg-slate-400'}`}></span>
+                          {cred.autosync_piezas ? "ON" : "OFF"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {cred.autosync_piezas ? (
+                          <span className="text-xs text-slate-300 font-mono">
+                            {cred.synctime_piezas || "06:00"}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -516,7 +586,9 @@ export default function AdminCredenciales() {
                                 taller_id: cred.taller_id || "",
                                 activo: Boolean(cred.activo),
                                 autosync: Boolean(cred.autosync),
-                                synctime: cred.synctime || 2
+                                synctime: cred.synctime || 2,
+                                autosync_piezas: Boolean(cred.autosync_piezas),
+                                synctime_piezas: cred.synctime_piezas || "06:00"
                               });
                             }}
                           >
@@ -536,7 +608,7 @@ export default function AdminCredenciales() {
                   ))}
                   {filteredCredenciales.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={9}>
+                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
                         No hay credenciales para mostrar.
                       </td>
                     </tr>

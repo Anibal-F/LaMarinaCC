@@ -213,63 +213,44 @@ async def do_login(page: Page, use_db: bool = True) -> bool:
         return False
 
 
-async def handle_session_modal(page: Page) -> bool:
+async def handle_session_alert(page: Page) -> bool:
     """
-    Maneja el modal de 'sesión iniciada en otro terminal'.
-    Aparece cuando hay una sesión previa activa.
+    Maneja el alert/dialog de 'sesión iniciada en otro terminal'.
+    Este es un alert del navegador, no un modal HTML.
     """
-    try:
-        print("[SessionModal] Verificando modal de sesión previa...")
+    print("[SessionAlert] Configurando handler para alert de sesión...")
+    
+    alert_accepted = False
+    
+    def handle_dialog(dialog):
+        nonlocal alert_accepted
+        print(f"[SessionAlert] Dialog detectado: {dialog.type} - {dialog.message[:100]}...")
         
-        # Esperar un momento a que aparezca el modal
-        await asyncio.sleep(2)
-        
-        # Buscar el texto del modal
-        modal_text = await page.locator('text=ya ha iniciado sesión en otro terminal').count()
-        if modal_text > 0:
-            print("[SessionModal] Modal detectado - sesión previa encontrada")
-            
-            # Buscar botón Aceptar/Continuar
-            btn_selectors = [
-                'button:has-text("Aceptar")',
-                'button:has-text("Continuar")',
-                '.ui-button:has-text("Aceptar")',
-                'button.ui-button'
-            ]
-            
-            for selector in btn_selectors:
-                try:
-                    btn = page.locator(selector).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.click()
-                        print("[SessionModal] ✓ Botón Aceptar clickeado")
-                        await asyncio.sleep(3)
-                        return True
-                except:
-                    continue
-            
-            # Fallback: usar JavaScript
-            js_result = await page.evaluate("""() => {
-                const buttons = Array.from(document.querySelectorAll('button'));
-                const btn = buttons.find(b => b.textContent.includes('Aceptar') || b.textContent.includes('Continuar'));
-                if (btn) {
-                    btn.click();
-                    return {success: true};
-                }
-                return {success: false};
-            }""")
-            if js_result.get('success'):
-                print("[SessionModal] ✓ Botón clickeado vía JS")
-                await asyncio.sleep(3)
-                return True
+        # Si el mensaje contiene palabras clave de sesión previa
+        if any(keyword in dialog.message.lower() for keyword in ['sesión', 'terminal', 'otro equipo', 'continuar']):
+            print("[SessionAlert] ✓ Detectado alert de sesión previa - Aceptando...")
+            asyncio.create_task(dialog.accept())
+            alert_accepted = True
         else:
-            print("[SessionModal] No se detectó modal de sesión previa")
-        
-        return False
-        
-    except Exception as e:
-        print(f"[SessionModal] Error: {e}")
-        return False
+            # Para otros dialogs, también aceptar por defecto
+            asyncio.create_task(dialog.accept())
+    
+    # Registrar el handler
+    page.on('dialog', handle_dialog)
+    
+    # Esperar un momento por si aparece el alert
+    await asyncio.sleep(3)
+    
+    if alert_accepted:
+        print("[SessionAlert] ✓ Alert de sesión manejado")
+        await asyncio.sleep(2)
+    else:
+        print("[SessionAlert] No se detectó alert de sesión")
+    
+    # Remover el handler después de usarlo
+    page.remove_listener('dialog', handle_dialog)
+    
+    return alert_accepted
 
 
 async def set_fecha_desde(page: Page, fecha_str: str) -> bool:
@@ -444,33 +425,55 @@ async def navigate_to_advanced_search(page: Page) -> bool:
         
         if not menu_clicked:
             print("[Navigate] ⚠ No se pudo clickear el menú BUSCAR con selectores estándar")
-            # Intentar con JavaScript
+            # Intentar con JavaScript más específico
             js_result = await page.evaluate("""() => {
-                // Buscar links que contengan exactamente "BUSCAR"
-                const links = Array.from(document.querySelectorAll('a'));
-                const buscarLink = links.find(a => a.textContent.trim() === 'BUSCAR');
+                // Buscar en el navbar/header
+                const nav = document.querySelector('.navbar') || document.querySelector('header') || document.body;
+                const links = Array.from(nav.querySelectorAll('a'));
+                
+                // Primero: buscar exacto
+                let buscarLink = links.find(a => a.textContent.trim() === 'BUSCAR');
+                
+                // Segundo: buscar que incluya BUSCAR
+                if (!buscarLink) {
+                    buscarLink = links.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
+                }
+                
+                // Tercero: buscar por href que contenga Search o Buscar
+                if (!buscarLink) {
+                    buscarLink = links.find(a => {
+                        const href = (a.getAttribute('href') || '').toLowerCase();
+                        return href.includes('search') || href.includes('buscar');
+                    });
+                }
+                
                 if (buscarLink) {
-                    buscarLink.click();
-                    return {success: true, text: buscarLink.textContent};
+                    // Hacer hover primero (para menús dropdown)
+                    buscarLink.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                    setTimeout(() => buscarLink.click(), 100);
+                    return {success: true, text: buscarLink.textContent, href: buscarLink.getAttribute('href')};
                 }
-                // Fallback: buscar que contenga BUSCAR
-                const buscarLink2 = links.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
-                if (buscarLink2) {
-                    buscarLink2.click();
-                    return {success: true, text: buscarLink2.textContent};
-                }
-                return {success: false, available: links.slice(0,10).map(a => a.textContent.trim())};
+                
+                return {success: false, available: links.slice(0,15).map(a => ({
+                    text: a.textContent.trim(),
+                    href: a.getAttribute('href')
+                }))};
             }""")
             print(f"[Navigate] Resultado JS para menú: {js_result}")
             if js_result.get('success'):
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
                 menu_clicked = True
         
         if menu_clicked:
+            # Esperar a que aparezca el dropdown
+            await asyncio.sleep(2)
+            
             # Buscar opción "EXPEDIENTES" (mayúsculas según la imagen)
             opcion_selectors = [
                 'a:has-text("EXPEDIENTES")',
                 'a:has-text("Expedientes")',
+                '.dropdown-menu a:has-text("EXPEDIENTE")',
+                '.dropdown-menu a:has-text("Expediente")',
                 'a[href*="AdvancedSearch"]',
                 '.dropdown-menu a'
             ]
@@ -494,6 +497,30 @@ async def navigate_to_advanced_search(page: Page) -> bool:
                 except Exception as e:
                     print(f"[Navigate] Error con selector {selector}: {e}")
                     continue
+            
+            # Fallback: usar JavaScript para encontrar y clickar EXPEDIENTES
+            if not await page.locator('#ListFilters_0__ParameterValue').count() > 0:
+                print("[Navigate] Intentando clic en EXPEDIENTES vía JS...")
+                js_result = await page.evaluate("""() => {
+                    const links = Array.from(document.querySelectorAll('a'));
+                    const expLink = links.find(a => 
+                        a.textContent.trim() === 'EXPEDIENTES' || 
+                        a.textContent.trim().toUpperCase() === 'EXPEDIENTE' ||
+                        a.textContent.toUpperCase().includes('EXPEDIENTE')
+                    );
+                    if (expLink) {
+                        expLink.click();
+                        return {success: true, text: expLink.textContent};
+                    }
+                    return {success: false};
+                }""")
+                print(f"[Navigate] Resultado JS EXPEDIENTES: {js_result}")
+                if js_result.get('success'):
+                    await asyncio.sleep(4)
+                    exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+                    if exp_input > 0:
+                        print("[Navigate] ✓ Búsqueda Avanzada cargada (vía JS)")
+                        return True
         
         # Si todo falla, verificar estado actual
         current_url = page.url
@@ -1123,12 +1150,28 @@ async def run_piezas_extraction(headless: bool = True, use_db: bool = True, fech
         # Stealth no disponible en este entorno
         
         try:
+            # Configurar handler para alert de sesión ANTES del login
+            session_alert_handler = None
+            
+            def handle_dialog(dialog):
+                print(f"[DialogHandler] {dialog.type}: {dialog.message[:80]}...")
+                if any(keyword in dialog.message.lower() for keyword in ['sesión', 'terminal', 'otro equipo']):
+                    print("[DialogHandler] ✓ Alert de sesión previa - Aceptando")
+                    asyncio.create_task(dialog.accept())
+                else:
+                    asyncio.create_task(dialog.accept())
+            
+            page.on('dialog', handle_dialog)
+            
             # Login
             if not await do_login(page, use_db=use_db):
                 raise RuntimeError("Login fallido")
             
-            # Manejar modal de sesión previa (si aparece)
-            await handle_session_modal(page)
+            # Esperar un momento por si aparece alert de sesión
+            await asyncio.sleep(3)
+            
+            # Remover handler temporal
+            page.remove_listener('dialog', handle_dialog)
             
             # Manejar modal post-login (billing)
             await handle_billing_modal(page)

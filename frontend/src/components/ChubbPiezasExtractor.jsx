@@ -197,7 +197,7 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
                 ? 'bg-slate-700 text-slate-400 cursor-wait'
                 : expedientesPendientes === 0
                   ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-500 text-white'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white'
             }`}
           >
             {isExtracting ? (
@@ -263,7 +263,7 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
         {(logs.length > 0 || isExtracting) && (
           <button
             onClick={() => setShowLogs(!showLogs)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-400 text-xs font-medium transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-medium transition-colors"
           >
             <span className="material-symbols-outlined text-sm">
               {showLogs ? 'expand_less' : 'expand_more'}
@@ -275,7 +275,7 @@ export default function ChubbPiezasExtractor({ onExtractionComplete }) {
 
       {/* Logs en tiempo real - Expandible */}
       {showLogs && logs.length > 0 && (
-        <div className="bg-black/70 border border-green-500/20 rounded-lg p-3">
+        <div className="bg-black/70 border border-blue-500/20 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-bold text-green-400 uppercase tracking-wider">
               Logs de ejecución (tiempo real)

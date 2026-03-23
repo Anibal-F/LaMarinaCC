@@ -175,7 +175,7 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
               isExtracting
                 ? 'bg-slate-700 text-slate-400 cursor-wait'
-                : 'bg-blue-600 hover:bg-blue-500 text-white'
+                : 'bg-purple-600 hover:bg-purple-500 text-white'
             }`}
           >
             {isExtracting ? (
@@ -224,7 +224,7 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
             checked={resetCheckpoint}
             onChange={(e) => setResetCheckpoint(e.target.checked)}
             disabled={isExtracting}
-            className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+            className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500 focus:ring-offset-0"
           />
           <span className="text-xs text-slate-400">Reiniciar desde inicio</span>
         </label>
@@ -233,7 +233,7 @@ export default function QualitasPiezasExtractor({ onExtractionComplete }) {
         {(logs.length > 0 || isExtracting) && (
           <button
             onClick={() => setShowLogs(!showLogs)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-medium transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 text-xs font-medium transition-colors"
           >
             <span className="material-symbols-outlined text-sm">
               {showLogs ? 'expand_less' : 'expand_more'}

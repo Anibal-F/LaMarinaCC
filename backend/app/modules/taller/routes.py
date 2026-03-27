@@ -1720,9 +1720,33 @@ def get_autos_en_sitio_dashboard():
             if not _is_workshop_status(recepcion.get("estatus")):
                 continue
             stages = _sync_ot_stages(conn, recepcion["id"])
-            current_stage = next((row for row in stages if str(row.get("estatus") or "").upper() == "EN_PROCESO"), None)
-            if current_stage is None:
+            
+            # Determinar etapa actual con lógica similar al frontend
+            # Recepción está completada si tiene folio_seguro y folio_ot
+            recepcion_completada = bool(
+                str(recepcion.get("folio_seguro") or "").strip() and 
+                str(recepcion.get("folio_ot") or "").strip()
+            )
+            
+            # Buscar etapas EN_PROCESO
+            etapas_en_proceso = [row for row in stages if str(row.get("estatus") or "").upper() == "EN_PROCESO"]
+            
+            if etapas_en_proceso:
+                # Si hay múltiples etapas EN_PROCESO, filtrar recepcionado si está completada
+                if recepcion_completada:
+                    etapas_filtradas = [row for row in etapas_en_proceso if row.get("clave") != "recepcionado"]
+                    if etapas_filtradas:
+                        current_stage = etapas_filtradas[0]
+                    else:
+                        # Solo queda recepcionado, tomar la primera
+                        current_stage = etapas_en_proceso[0]
+                else:
+                    # Recepción no completada, tomar la primera EN_PROCESO (normalmente recepcionado)
+                    current_stage = etapas_en_proceso[0]
+            else:
+                # No hay etapas EN_PROCESO, buscar PENDIENTE
                 current_stage = next((row for row in stages if str(row.get("estatus") or "").upper() == "PENDIENTE"), None)
+            
             if current_stage is None and stages:
                 current_stage = stages[-1]
 

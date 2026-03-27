@@ -204,15 +204,17 @@ export default function AsignarModal({ record, isOpen, onClose, onSaved }) {
     }
   };
 
-  if (!isOpen) return null;
-
+  // Calcular título del vehículo ANTES de cualquier return condicional
   const vehicleTitle = useMemo(() => {
+    if (!record) return "Vehiculo";
     return (
-      [record?.vehiculo_marca, record?.vehiculo_modelo, record?.vehiculo_anio].filter(Boolean).join(" ") ||
-      record?.vehiculo ||
+      [record.vehiculo_marca, record.vehiculo_modelo, record.vehiculo_anio].filter(Boolean).join(" ") ||
+      record.vehiculo ||
       "Vehiculo"
     );
   }, [record]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">

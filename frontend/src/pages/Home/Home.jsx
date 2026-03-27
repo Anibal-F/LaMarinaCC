@@ -5,30 +5,58 @@ import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import QualitasIndicators from "../../components/QualitasIndicators.jsx";
 import ChubbIndicators from "../../components/ChubbIndicators.jsx";
+import { getVehicleTitle } from "../Taller/tallerShared.js";
 
-// Configuración de las columnas del Kanban
-const KANBAN_COLUMNS = [
-  { id: "recepcion", label: "Recepción", color: "bg-slate-500", key: "recepcion" },
-  { id: "valuacion", label: "Valuación", color: "bg-blue-500", key: "valuacion" },
-  { id: "taller", label: "Taller", color: "bg-primary", key: "taller" },
-  { id: "pintura", label: "Pintura", color: "bg-purple-500", key: "pintura" },
-  { id: "control_calidad", label: "Control Calidad", color: "bg-orange-500", key: "control" },
-  { id: "listas", label: "Listas", color: "bg-alert-green", key: "listo" },
+// Configuración base de las columnas del Kanban (se complementará con etapas dinámicas)
+const BASE_KANBAN_COLUMNS = [
+  { id: "recepcionado", label: "Recepción", color: "bg-slate-500" },
+  { id: "valuacion", label: "Valuación", color: "bg-blue-500" },
+  { id: "carroceria", label: "Taller", color: "bg-primary" },
+  { id: "pintura", label: "Pintura", color: "bg-purple-500" },
+  { id: "pulido", label: "Pulido", color: "bg-pink-500" },
+  { id: "armado", label: "Armado", color: "bg-indigo-500" },
+  { id: "lavado", label: "Lavado", color: "bg-cyan-500" },
+  { id: "control_calidad", label: "Control Calidad", color: "bg-orange-500" },
+  { id: "entrega", label: "Listas", color: "bg-alert-green" },
 ];
 
-// Función para determinar la columna de un vehículo basado en su etapa
-function getColumnForStage(etapaNombre = "") {
-  const etapa = etapaNombre.toLowerCase().trim();
+// Mapeo de claves a columnas del kanban
+const ETAPA_TO_COLUMN = {
+  recepcionado: "recepcionado",
+  recepcion: "recepcionado",
+  valuacion: "valuacion",
+  presupuesto: "valuacion",
+  autorizacion: "valuacion",
+  carroceria: "carroceria",
+  taller: "carroceria",
+  mecanica: "carroceria",
+  enderezado: "carroceria",
+  pintura: "pintura",
+  pulido: "pulido",
+  armado: "armado",
+  montaje: "armado",
+  lavado: "lavado",
+  control: "control_calidad",
+  calidad: "control_calidad",
+  qc: "control_calidad",
+  entrega: "entrega",
+  listo: "entrega",
+  terminado: "entrega",
+};
+
+// Función para determinar la columna de un vehículo basado en su etapa (clave)
+function getColumnForStage(etapaClave = "") {
+  const etapa = etapaClave.toLowerCase().trim();
   
-  if (etapa.includes("recepcion") || etapa === "recepcionado") return "recepcion";
-  if (etapa.includes("valuacion") || etapa.includes("presupuesto")) return "valuacion";
-  if (etapa.includes("pintura")) return "pintura";
-  if (etapa.includes("control") || etapa.includes("calidad") || etapa.includes("qc")) return "control_calidad";
-  if (etapa.includes("listo") || etapa.includes("entrega") || etapa.includes("terminado")) return "listas";
-  if (etapa.includes("carroceria") || etapa.includes("taller") || etapa.includes("mecanica") || etapa.includes("pulido") || etapa.includes("armado") || etapa.includes("lavado")) return "taller";
+  // Buscar coincidencia exacta o parcial
+  for (const [key, column] of Object.entries(ETAPA_TO_COLUMN)) {
+    if (etapa === key || etapa.includes(key)) {
+      return column;
+    }
+  }
   
   // Por defecto, si tiene etapa va a taller, si no a recepción
-  return etapa ? "taller" : "recepcion";
+  return etapa ? "carroceria" : "recepcionado";
 }
 
 // Función para calcular días en taller
@@ -64,7 +92,9 @@ function relativeTime(dateValue) {
 // Componente de tarjeta Kanban
 function KanbanCard({ record, onClick }) {
   const days = daysInShop(record.fecha_recep);
-  const etapa = record.etapa_actual_nombre || "Sin etapa";
+  const etapaNombre = record.etapa_actual_nombre || "Sin etapa";
+  const etapaClave = record.etapa_actual || "";
+  const vehicleName = getVehicleTitle(record);
   
   // Determinar color del estado
   const getStatusColor = () => {
@@ -77,14 +107,17 @@ function KanbanCard({ record, onClick }) {
   
   // Determinar estado a mostrar
   const getStatusLabel = () => {
-    const etapaLower = etapa.toLowerCase();
-    if (etapaLower.includes("pendiente")) return { label: "PRESUPUESTO PENDIENTE", color: "text-alert-amber bg-alert-amber/10" };
+    const etapaLower = etapaClave.toLowerCase();
+    const estatus = (record.taller_estatus || "").toLowerCase();
+    
+    if (etapaLower.includes("pendiente") || estatus.includes("pendiente")) return { label: "PRESUPUESTO PENDIENTE", color: "text-alert-amber bg-alert-amber/10" };
     if (etapaLower.includes("retraso") || days >= 5) return { label: "RETRASO: REFACCIONES", color: "text-alert-red bg-alert-red/10" };
     if (etapaLower.includes("acabado")) return { label: "ACABADO", color: "text-slate-500 bg-background-dark" };
-    if (etapaLower.includes("proceso")) return { label: "EN PROCESO", color: "text-slate-500 bg-background-dark" };
+    if (etapaLower.includes("proceso") || estatus.includes("proceso")) return { label: "EN PROCESO", color: "text-slate-500 bg-background-dark" };
     if (etapaLower.includes("reproceso")) return { label: "REPROCESO REQ", color: "text-alert-amber bg-alert-amber/10" };
     if (etapaLower.includes("listo") || etapaLower.includes("entrega")) return { label: "LISTO ENTREGA", color: "text-alert-green bg-alert-green/10" };
-    return { label: etapa.toUpperCase(), color: "text-slate-500 bg-background-dark" };
+    if (etapaLower.includes("completado") || estatus.includes("completado")) return { label: "COMPLETADO", color: "text-alert-green bg-alert-green/10" };
+    return { label: etapaNombre.toUpperCase(), color: "text-slate-500 bg-background-dark" };
   };
   
   const statusLabel = getStatusLabel();
@@ -103,8 +136,8 @@ function KanbanCard({ record, onClick }) {
           {relativeTime(record.fecha_recep)}
         </span>
       </div>
-      <p className="text-sm font-bold text-white mb-1 line-clamp-1">
-        {record.vehiculo || "Vehículo no especificado"}
+      <p className="text-sm font-bold text-white mb-1 line-clamp-1" title={vehicleName}>
+        {vehicleName}
       </p>
       <p className="text-[11px] text-slate-400 mb-3 line-clamp-1">
         Cliente: {record.nb_cliente || "-"}
@@ -129,11 +162,25 @@ export default function Home() {
   
   // Estado para datos dinámicos
   const [records, setRecords] = useState([]);
+  const [etapas, setEtapas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
   const navigate = useNavigate();
   const { openNotifications } = useNotifications();
+
+  // Cargar etapas dinámicas desde el catálogo
+  const loadEtapas = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/taller/catalogos/etapas`);
+      if (!response.ok) return;
+      const payload = await response.json();
+      const etapasList = Array.isArray(payload) ? payload.filter(e => e.activo !== false).sort((a, b) => (a.orden || 0) - (b.orden || 0)) : [];
+      setEtapas(etapasList);
+    } catch (err) {
+      console.error("Error cargando etapas:", err);
+    }
+  };
 
   // Cargar vehículos activos
   const loadRecords = async () => {
@@ -187,17 +234,40 @@ export default function Home() {
   };
 
   useEffect(() => {
+    loadEtapas();
     loadRecords();
     fetchPiezasVencidasCount();
   }, []);
+
+  // Construir columnas dinámicas basadas en etapas del catálogo
+  const kanbanColumns = useMemo(() => {
+    if (etapas.length === 0) return BASE_KANBAN_COLUMNS;
+    
+    // Mapear etapas del catálogo a columnas del kanban
+    return etapas.map(etapa => {
+      const clave = etapa.clave?.toLowerCase() || "";
+      
+      // Buscar color base predefinido
+      const baseColumn = BASE_KANBAN_COLUMNS.find(col => 
+        col.id === clave || clave.includes(col.id) || col.id.includes(clave)
+      );
+      
+      return {
+        id: clave,
+        label: etapa.nb_etapa || etapa.clave,
+        color: baseColumn?.color || "bg-primary",
+        etapa_id: etapa.id
+      };
+    });
+  }, [etapas]);
 
   // Calcular métricas para los indicadores
   const metrics = useMemo(() => {
     const total = records.length;
     const atrasadas = records.filter(r => daysInShop(r.fecha_recep) >= 4).length;
     const listas = records.filter(r => {
-      const etapa = (r.etapa_actual_nombre || "").toLowerCase();
-      return etapa.includes("listo") || etapa.includes("entrega");
+      const etapa = (r.etapa_actual || "").toLowerCase();
+      return etapa.includes("entrega") || etapa.includes("listo");
     }).length;
     
     // Calcular tiempo promedio
@@ -207,7 +277,7 @@ export default function Home() {
     // Alertas críticas (más de 5 días o con problemas)
     const criticas = records.filter(r => {
       const days = daysInShop(r.fecha_recep);
-      const etapa = (r.etapa_actual_nombre || "").toLowerCase();
+      const etapa = (r.etapa_actual || "").toLowerCase();
       return days >= 5 || etapa.includes("retraso") || etapa.includes("reproceso");
     }).length;
     
@@ -217,19 +287,42 @@ export default function Home() {
   // Agrupar vehículos por columna del kanban
   const kanbanData = useMemo(() => {
     const grouped = {};
-    KANBAN_COLUMNS.forEach(col => {
+    
+    // Inicializar todas las columnas
+    kanbanColumns.forEach(col => {
       grouped[col.id] = [];
     });
     
+    // Si no hay columnas, usar las base
+    if (kanbanColumns.length === 0) {
+      BASE_KANBAN_COLUMNS.forEach(col => {
+        grouped[col.id] = [];
+      });
+    }
+    
+    // Agrupar registros
     records.forEach(record => {
-      const columnId = getColumnForStage(record.etapa_actual_nombre);
+      const etapaClave = (record.etapa_actual || "").toLowerCase().trim();
+      
+      // Buscar coincidencia exacta primero
+      if (grouped[etapaClave]) {
+        grouped[etapaClave].push(record);
+        return;
+      }
+      
+      // Si no, usar el mapeo
+      const columnId = getColumnForStage(etapaClave);
       if (grouped[columnId]) {
         grouped[columnId].push(record);
+      } else {
+        // Fallback a recepcionado si no encuentra
+        grouped["recepcionado"] = grouped["recepcionado"] || [];
+        grouped["recepcionado"].push(record);
       }
     });
     
     return grouped;
-  }, [records]);
+  }, [records, kanbanColumns]);
 
   // Manejar clic en tarjeta
   const handleCardClick = (recordId) => {
@@ -393,7 +486,7 @@ export default function Home() {
                     </h2>
                     <div className="flex gap-2">
                       <button 
-                        onClick={loadRecords}
+                        onClick={() => { loadRecords(); loadEtapas(); }}
                         className="text-xs font-bold bg-surface-dark text-slate-300 px-3 py-1.5 rounded border border-border-dark hover:text-white transition-colors flex items-center gap-1"
                       >
                         <span className="material-symbols-outlined text-sm">refresh</span>
@@ -417,7 +510,7 @@ export default function Home() {
                     </div>
                   ) : (
                     <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                      {KANBAN_COLUMNS.map((column) => (
+                      {kanbanColumns.map((column) => (
                         <div key={column.id} className="kanban-column flex flex-col gap-3 min-w-[280px]">
                           <div className="flex items-center justify-between px-2">
                             <span className="text-xs font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -505,7 +598,7 @@ export default function Home() {
                             </div>
                             <div>
                               <p className="text-sm font-bold text-white">
-                                OT #{record.folio_recep || record.id} - {record.vehiculo || "Vehículo"}
+                                OT #{record.folio_recep || record.id} - {getVehicleTitle(record)}
                               </p>
                               <p className="text-xs text-slate-400">
                                 {daysInShop(record.fecha_recep)} días en taller | {record.nb_cliente || "Sin cliente"}
@@ -535,7 +628,7 @@ export default function Home() {
                                 Pendiente de asignación - OT #{record.folio_recep || record.id}
                               </p>
                               <p className="text-xs text-slate-400">
-                                {record.vehiculo || "Vehículo"} | {record.nb_cliente || "Sin cliente"}
+                                {getVehicleTitle(record)} | {record.nb_cliente || "Sin cliente"}
                               </p>
                             </div>
                           </div>

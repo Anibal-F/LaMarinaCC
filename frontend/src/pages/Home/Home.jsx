@@ -44,11 +44,37 @@ const ETAPA_TO_COLUMN = {
   terminado: "entrega",
 };
 
+// Opciones de filtros
+const TIEMPO_FILTERS = [
+  { id: "hoy", label: "Hoy", daysMax: 0 },
+  { id: "1-3", label: "1-3 días", daysMin: 1, daysMax: 3 },
+  { id: "4-7", label: "4-7 días", daysMin: 4, daysMax: 7 },
+  { id: "8-15", label: "8-15 días", daysMin: 8, daysMax: 15 },
+  { id: "critico", label: "+15 días (Crítico)", daysMin: 16 },
+];
+
+const ALERTA_FILTERS = [
+  { id: "retraso_refacciones", label: "Retraso: Refacciones", color: "bg-alert-red" },
+  { id: "reproceso", label: "Reproceso Requerido", color: "bg-alert-amber" },
+  { id: "sin_asignar", label: "Sin Asignar", color: "bg-slate-500" },
+  { id: "listo_entrega", label: "Listo Entrega", color: "bg-alert-green" },
+  { id: "presupuesto_pendiente", label: "Presupuesto Pendiente", color: "bg-blue-500" },
+];
+
+const ASEGURADORA_COLORS = {
+  qualitas: "bg-violet-500",
+  axa: "bg-blue-500",
+  mapfre: "bg-red-500",
+  hdi: "bg-emerald-500",
+  chubb: "bg-purple-500",
+  gnp: "bg-orange-500",
+};
+
 // Función para determinar la columna de un vehículo basado en su etapa (clave)
 function getColumnForStage(etapaClave = "") {
   const etapa = etapaClave.toLowerCase().trim();
   
-  // Buscar coincidencia exacta o parcial
+  // Buscar coincidencia exacta primero
   for (const [key, column] of Object.entries(ETAPA_TO_COLUMN)) {
     if (etapa === key || etapa.includes(key)) {
       return column;
@@ -154,6 +180,21 @@ function KanbanCard({ record, onClick }) {
   );
 }
 
+// Componente de Chip de Filtro Activo
+function FilterChip({ label, onRemove, color = "bg-primary" }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white ${color} bg-opacity-80`}>
+      {label}
+      <button 
+        onClick={onRemove}
+        className="hover:bg-white/20 rounded p-0.5 transition-colors"
+      >
+        <span className="material-symbols-outlined text-[14px]">close</span>
+      </button>
+    </span>
+  );
+}
+
 export default function Home() {
   const [activeView, setActiveView] = useState("local");
   const [isUpdating, setIsUpdating] = useState(false);
@@ -165,6 +206,17 @@ export default function Home() {
   const [etapas, setEtapas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  // Estado de filtros
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    tiempo: [],
+    alerta: [],
+    aseguradora: [],
+    etapa: [],
+    soloSinAsignar: false,
+  });
+  const [searchQuery, setSearchQuery] = useState("");
   
   const navigate = useNavigate();
   const { openNotifications } = useNotifications();
@@ -239,15 +291,18 @@ export default function Home() {
     fetchPiezasVencidasCount();
   }, []);
 
+  // Obtener lista única de aseguradoras
+  const aseguradoras = useMemo(() => {
+    const unique = [...new Set(records.map(r => r.seguro).filter(Boolean))];
+    return unique.sort();
+  }, [records]);
+
   // Construir columnas dinámicas basadas en etapas del catálogo
   const kanbanColumns = useMemo(() => {
     if (etapas.length === 0) return BASE_KANBAN_COLUMNS;
     
-    // Mapear etapas del catálogo a columnas del kanban
     return etapas.map(etapa => {
       const clave = etapa.clave?.toLowerCase() || "";
-      
-      // Buscar color base predefinido
       const baseColumn = BASE_KANBAN_COLUMNS.find(col => 
         col.id === clave || clave.includes(col.id) || col.id.includes(clave)
       );
@@ -261,68 +316,156 @@ export default function Home() {
     });
   }, [etapas]);
 
+  // Aplicar filtros a los registros
+  const filteredRecords = useMemo(() => {
+    let result = [...records];
+    
+    // Filtro de búsqueda
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(r => 
+        (r.folio_recep || "").toString().includes(query) ||
+        getVehicleTitle(r).toLowerCase().includes(query) ||
+        (r.nb_cliente || "").toLowerCase().includes(query) ||
+        (r.placas || "").toLowerCase().includes(query)
+      );
+    }
+    
+    // Filtro por tiempo
+    if (filters.tiempo.length > 0) {
+      result = result.filter(r => {
+        const days = daysInShop(r.fecha_recep);
+        return filters.tiempo.some(t => {
+          const opt = TIEMPO_FILTERS.find(f => f.id === t);
+          if (!opt) return false;
+          const minOk = opt.daysMin === undefined || days >= opt.daysMin;
+          const maxOk = opt.daysMax === undefined || days <= opt.daysMax;
+          return minOk && maxOk;
+        });
+      });
+    }
+    
+    // Filtro por alerta
+    if (filters.alerta.length > 0) {
+      result = result.filter(r => {
+        const days = daysInShop(r.fecha_recep);
+        const etapa = (r.etapa_actual || "").toLowerCase();
+        const estatus = (r.taller_estatus || "").toLowerCase();
+        const sinAsignar = !r.personal_responsable || !r.estacion_actual;
+        
+        return filters.alerta.some(a => {
+          switch(a) {
+            case "retraso_refacciones": return days >= 5 || etapa.includes("retraso");
+            case "reproceso": return etapa.includes("reproceso");
+            case "sin_asignar": return sinAsignar;
+            case "listo_entrega": return etapa.includes("entrega") || etapa.includes("listo");
+            case "presupuesto_pendiente": return etapa.includes("pendiente") || estatus.includes("pendiente");
+            default: return false;
+          }
+        });
+      });
+    }
+    
+    // Filtro por aseguradora
+    if (filters.aseguradora.length > 0) {
+      result = result.filter(r => {
+        const seguro = (r.seguro || "").toLowerCase();
+        return filters.aseguradora.some(a => seguro.includes(a.toLowerCase()));
+      });
+    }
+    
+    // Filtro por etapa específica
+    if (filters.etapa.length > 0) {
+      result = result.filter(r => filters.etapa.includes(r.etapa_actual));
+    }
+    
+    // Filtro solo sin asignar
+    if (filters.soloSinAsignar) {
+      result = result.filter(r => !r.personal_responsable || !r.estacion_actual);
+    }
+    
+    return result;
+  }, [records, filters, searchQuery]);
+
   // Calcular métricas para los indicadores
   const metrics = useMemo(() => {
-    const total = records.length;
-    const atrasadas = records.filter(r => daysInShop(r.fecha_recep) >= 4).length;
-    const listas = records.filter(r => {
+    const total = filteredRecords.length;
+    const atrasadas = filteredRecords.filter(r => daysInShop(r.fecha_recep) >= 4).length;
+    const listas = filteredRecords.filter(r => {
       const etapa = (r.etapa_actual || "").toLowerCase();
       return etapa.includes("entrega") || etapa.includes("listo");
     }).length;
     
-    // Calcular tiempo promedio
-    const totalDays = records.reduce((sum, r) => sum + daysInShop(r.fecha_recep), 0);
+    const totalDays = filteredRecords.reduce((sum, r) => sum + daysInShop(r.fecha_recep), 0);
     const promedio = total > 0 ? (totalDays / total).toFixed(1) : "0";
     
-    // Alertas críticas (más de 5 días o con problemas)
-    const criticas = records.filter(r => {
+    const criticas = filteredRecords.filter(r => {
       const days = daysInShop(r.fecha_recep);
       const etapa = (r.etapa_actual || "").toLowerCase();
       return days >= 5 || etapa.includes("retraso") || etapa.includes("reproceso");
     }).length;
     
     return { total, atrasadas, listas, promedio, criticas };
-  }, [records]);
+  }, [filteredRecords]);
 
   // Agrupar vehículos por columna del kanban
   const kanbanData = useMemo(() => {
     const grouped = {};
     
-    // Inicializar todas las columnas
     kanbanColumns.forEach(col => {
       grouped[col.id] = [];
     });
     
-    // Si no hay columnas, usar las base
     if (kanbanColumns.length === 0) {
       BASE_KANBAN_COLUMNS.forEach(col => {
         grouped[col.id] = [];
       });
     }
     
-    // Agrupar registros
-    records.forEach(record => {
+    filteredRecords.forEach(record => {
       const etapaClave = (record.etapa_actual || "").toLowerCase().trim();
       
-      // Buscar coincidencia exacta primero
       if (grouped[etapaClave]) {
         grouped[etapaClave].push(record);
         return;
       }
       
-      // Si no, usar el mapeo
       const columnId = getColumnForStage(etapaClave);
       if (grouped[columnId]) {
         grouped[columnId].push(record);
       } else {
-        // Fallback a recepcionado si no encuentra
         grouped["recepcionado"] = grouped["recepcionado"] || [];
         grouped["recepcionado"].push(record);
       }
     });
     
     return grouped;
-  }, [records, kanbanColumns]);
+  }, [filteredRecords, kanbanColumns]);
+
+  // Manejadores de filtros
+  const toggleFilter = (category, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [category]: prev[category].includes(value)
+        ? prev[category].filter(v => v !== value)
+        : [...prev[category], value]
+    }));
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      tiempo: [],
+      alerta: [],
+      aseguradora: [],
+      etapa: [],
+      soloSinAsignar: false,
+    });
+    setSearchQuery("");
+  };
+
+  const hasActiveFilters = filters.tiempo.length > 0 || filters.alerta.length > 0 || 
+                          filters.aseguradora.length > 0 || filters.etapa.length > 0 ||
+                          filters.soloSinAsignar || searchQuery.trim();
 
   // Manejar clic en tarjeta
   const handleCardClick = (recordId) => {
@@ -337,6 +480,8 @@ export default function Home() {
           <AppHeader
             showSearch
             searchPlaceholder="Buscar OT, Vehículo o Cliente..."
+            searchValue={searchQuery}
+            onSearchChange={setSearchQuery}
             actions={
               <>
                 <button 
@@ -479,23 +624,115 @@ export default function Home() {
             {activeView === "local" && (
               <>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary">view_kanban</span>
-                      Flujo Operativo
-                    </h2>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => { loadRecords(); loadEtapas(); }}
-                        className="text-xs font-bold bg-surface-dark text-slate-300 px-3 py-1.5 rounded border border-border-dark hover:text-white transition-colors flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-sm">refresh</span>
-                        Actualizar
-                      </button>
-                      <button className="text-xs font-bold bg-surface-dark text-slate-300 px-3 py-1.5 rounded border border-border-dark hover:text-white transition-colors">
-                        Filtros
-                      </button>
+                  {/* Header con filtros y chips */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary">view_kanban</span>
+                        Flujo Operativo
+                      </h2>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => { loadRecords(); loadEtapas(); }}
+                          className="text-xs font-bold bg-surface-dark text-slate-300 px-3 py-1.5 rounded border border-border-dark hover:text-white transition-colors flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-sm">refresh</span>
+                          Actualizar
+                        </button>
+                        <button 
+                          onClick={() => setShowFilters(true)}
+                          className={`text-xs font-bold px-3 py-1.5 rounded border transition-colors flex items-center gap-1 ${
+                            hasActiveFilters 
+                              ? "bg-primary/20 border-primary text-primary" 
+                              : "bg-surface-dark border-border-dark text-slate-300 hover:text-white"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-sm">tune</span>
+                          Filtros
+                          {hasActiveFilters && (
+                            <span className="ml-1 bg-primary text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                              {[filters.tiempo, filters.alerta, filters.aseguradora, filters.etapa]
+                                .flat().length + (filters.soloSinAsignar ? 1 : 0) + (searchQuery ? 1 : 0)}
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     </div>
+                    
+                    {/* Chips de filtros activos */}
+                    {hasActiveFilters && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-slate-400">Filtros activos:</span>
+                        
+                        {searchQuery && (
+                          <FilterChip 
+                            label={`Búsqueda: "${searchQuery}"`} 
+                            onRemove={() => setSearchQuery("")}
+                            color="bg-blue-500"
+                          />
+                        )}
+                        
+                        {filters.tiempo.map(t => {
+                          const opt = TIEMPO_FILTERS.find(f => f.id === t);
+                          return (
+                            <FilterChip 
+                              key={t}
+                              label={opt?.label || t}
+                              onRemove={() => toggleFilter('tiempo', t)}
+                              color="bg-cyan-500"
+                            />
+                          );
+                        })}
+                        
+                        {filters.alerta.map(a => {
+                          const opt = ALERTA_FILTERS.find(f => f.id === a);
+                          return (
+                            <FilterChip 
+                              key={a}
+                              label={opt?.label || a}
+                              onRemove={() => toggleFilter('alerta', a)}
+                              color={opt?.color || "bg-amber-500"}
+                            />
+                          );
+                        })}
+                        
+                        {filters.aseguradora.map(a => (
+                          <FilterChip 
+                            key={a}
+                            label={a}
+                            onRemove={() => toggleFilter('aseguradora', a)}
+                            color={ASEGURADORA_COLORS[a.toLowerCase()] || "bg-slate-500"}
+                          />
+                        ))}
+                        
+                        {filters.etapa.map(e => {
+                          const etapa = etapas.find(et => et.clave === e);
+                          return (
+                            <FilterChip 
+                              key={e}
+                              label={etapa?.nb_etapa || e}
+                              onRemove={() => toggleFilter('etapa', e)}
+                              color="bg-indigo-500"
+                            />
+                          );
+                        })}
+                        
+                        {filters.soloSinAsignar && (
+                          <FilterChip 
+                            label="Sin Asignar"
+                            onRemove={() => setFilters(prev => ({ ...prev, soloSinAsignar: false }))}
+                            color="bg-slate-500"
+                          />
+                        )}
+                        
+                        <button 
+                          onClick={clearFilters}
+                          className="text-xs text-slate-400 hover:text-white underline ml-2"
+                        >
+                          Limpiar todo
+                        </button>
+                      </div>
+                    )}
                   </div>
                   
                   {loading ? (
@@ -732,6 +969,169 @@ export default function Home() {
           </div>
         </main>
       </div>
+
+      {/* Drawer de Filtros */}
+      {showFilters && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Overlay oscuro */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowFilters(false)}
+          />
+          
+          {/* Panel lateral */}
+          <div className="relative w-full max-w-md bg-surface-dark border-l border-border-dark h-full overflow-y-auto custom-scrollbar animate-slide-in-right">
+            {/* Header */}
+            <div className="sticky top-0 bg-surface-dark border-b border-border-dark p-4 flex items-center justify-between z-10">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">tune</span>
+                <h3 className="text-lg font-bold text-white">Filtros</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {hasActiveFilters && (
+                  <button 
+                    onClick={clearFilters}
+                    className="text-xs text-slate-400 hover:text-white px-2 py-1"
+                  >
+                    Limpiar
+                  </button>
+                )}
+                <button 
+                  onClick={() => setShowFilters(false)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-6">
+              {/* Filtro: Solo sin asignar */}
+              <section>
+                <label className="flex items-center gap-3 p-3 rounded-lg border border-border-dark bg-background-dark/50 cursor-pointer hover:bg-background-dark transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={filters.soloSinAsignar}
+                    onChange={(e) => setFilters(prev => ({ ...prev, soloSinAsignar: e.target.checked }))}
+                    className="h-4 w-4 rounded border-border-dark bg-background-dark text-primary"
+                  />
+                  <span className="flex items-center gap-2 text-sm text-white">
+                    <span className="material-symbols-outlined text-alert-amber">person_off</span>
+                    Solo vehículos sin asignar
+                  </span>
+                </label>
+              </section>
+
+              {/* Filtro: Tiempo en taller */}
+              <section>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">schedule</span>
+                  Tiempo en Taller
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {TIEMPO_FILTERS.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => toggleFilter('tiempo', opt.id)}
+                      className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                        filters.tiempo.includes(opt.id)
+                          ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/50"
+                          : "bg-background-dark border border-border-dark text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* Filtro: Alertas */}
+              <section>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">warning</span>
+                  Alertas y Estados
+                </h4>
+                <div className="space-y-2">
+                  {ALERTA_FILTERS.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => toggleFilter('alerta', opt.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left ${
+                        filters.alerta.includes(opt.id)
+                          ? `${opt.color}/20 text-white border ${opt.color}/50`
+                          : "bg-background-dark border border-border-dark text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <span className={`size-2 rounded-full ${opt.color}`}></span>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* Filtro: Aseguradoras */}
+              {aseguradoras.length > 0 && (
+                <section>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">verified</span>
+                    Aseguradoras
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {aseguradoras.map(aseg => (
+                      <button
+                        key={aseg}
+                        onClick={() => toggleFilter('aseguradora', aseg)}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium transition-all capitalize ${
+                          filters.aseguradora.includes(aseg)
+                            ? `${ASEGURADORA_COLORS[aseg.toLowerCase()] || "bg-slate-500"}/20 text-white border ${ASEGURADORA_COLORS[aseg.toLowerCase()] || "bg-slate-500"}/50`
+                            : "bg-background-dark border border-border-dark text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {aseg}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Filtro: Etapas específicas */}
+              {etapas.length > 0 && (
+                <section>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">view_kanban</span>
+                    Etapas Específicas
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {etapas.map(etapa => (
+                      <button
+                        key={etapa.id}
+                        onClick={() => toggleFilter('etapa', etapa.clave)}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          filters.etapa.includes(etapa.clave)
+                            ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/50"
+                            : "bg-background-dark border border-border-dark text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {etapa.nb_etapa}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            {/* Footer con contador */}
+            <div className="sticky bottom-0 bg-surface-dark border-t border-border-dark p-4">
+              <button
+                onClick={() => setShowFilters(false)}
+                className="w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-lg text-sm font-bold transition-all"
+              >
+                Mostrar {filteredRecords.length} vehículo{filteredRecords.length !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

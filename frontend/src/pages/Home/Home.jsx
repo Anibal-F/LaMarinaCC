@@ -5,6 +5,7 @@ import Sidebar from "../../components/Sidebar.jsx";
 import AppHeader from "../../components/AppHeader.jsx";
 import QualitasIndicators from "../../components/QualitasIndicators.jsx";
 import ChubbIndicators from "../../components/ChubbIndicators.jsx";
+import AsignarModal from "../../components/AsignarModal.jsx";
 import { getVehicleTitle } from "../Taller/tallerShared.js";
 
 // Configuración base de las columnas del Kanban (se complementará con etapas dinámicas)
@@ -217,6 +218,10 @@ export default function Home() {
     soloSinAsignar: false,
   });
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Estado para modal de asignación
+  const [asignarModalOpen, setAsignarModalOpen] = useState(false);
+  const [asignarRecord, setAsignarRecord] = useState(null);
   
   const navigate = useNavigate();
   const { openNotifications } = useNotifications();
@@ -871,7 +876,10 @@ export default function Home() {
                           </div>
                           <div className="flex gap-2">
                             <button 
-                              onClick={() => navigate('/taller/autos-en-sitio')}
+                              onClick={() => {
+                                setAsignarRecord(record);
+                                setAsignarModalOpen(true);
+                              }}
                               className="px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded uppercase tracking-wider"
                             >
                               Asignar
@@ -891,6 +899,21 @@ export default function Home() {
                       )}
                     </div>
                   </div>
+                  
+                  {/* Modal de Asignación */}
+                  <AsignarModal
+                    record={asignarRecord}
+                    isOpen={asignarModalOpen}
+                    onClose={() => {
+                      setAsignarModalOpen(false);
+                      setAsignarRecord(null);
+                    }}
+                    onSaved={() => {
+                      loadRecords();
+                      setAsignarRecord(null);
+                      setAsignarModalOpen(false);
+                    }}
+                  />
                   <div className="space-y-4">
                     <h2 className="text-lg font-bold text-white flex items-center gap-2">
                       <span className="material-symbols-outlined text-primary">analytics</span>

@@ -853,69 +853,15 @@ def _parse_orden_fields(
             return False
         return True
     
-    nb_cliente = (
-        from_kv("nb_cliente", [
-            ["NOMBRE", "RAZON", "CLIENTE"],
-            ["CUSTOMER", "NAME"],
-            ["NOMBRE", "CLIENTE"],
-            ["CLIENTE"],
-        ])
-        or from_flexible_kv("nb_cliente", [
-            "NOMBRE", "NOMBRE CLIENTE", "CLIENTE", "CUSTOMER NAME", "NOMBRE O RAZON SOCIAL",
-            "RAZON SOCIAL", "NOMBRE DEL CLIENTE", "Asegurado", "CONTRATANTE", "TITULAR"
-        ])
-    )
+    # ========== ESTRATEGIAS ESPECÍFICAS POR ASEGURADORA PRIMERO ==========
     
-    # Validar el nombre extraído
-    if nb_cliente and not is_valid_name(nb_cliente):
-        nb_cliente = ""
-    
-    # Si no se encontró o no es válido, intentar regex
-    if not nb_cliente:
-        nb_cliente = from_regex(
-            "nb_cliente",
-            [
-                r"NOMBRE O RAZ[ÓO]N SOCIAL DEL CLIENTE[^\n\r]*[\r\n]+([^\r\n]+)",
-                r"CUSTOMER NAME[^\n\r]*[\r\n]+([^\r\n]+)",
-                r"NOMBRE\s*(?:DEL?)?\s*CLIENTE[^\n\r:]*[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
-                r"CLIENTE[\s:]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
-                r"^\s*Asegurado:\s*([A-Z][A-Z\s]{3,40})$",
-            ],
-        )
-        if nb_cliente and not is_valid_name(nb_cliente):
-            nb_cliente = ""
-    
-    # Búsqueda por proximidad con validación
-    if not nb_cliente:
-        candidate = from_proximity(
-            "nb_cliente",
-            ["NOMBRE", "CLIENTE", "ASEGURADO", "CONTRATANTE", "ASEGURADO:"],
-            max_lines_after=2,
-            value_pattern=r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
-            exclude_patterns=["TELEFONO", "EMAIL", "DIRECCION", "POLIZA", "CHUBB", "TALLER"]
-        )
-        if candidate and is_valid_name(candidate):
-            nb_cliente = candidate
-    
-    # CHUBB ticket vertical: buscar "Asegurado:" seguido de nombre en línea siguiente
-    if not nb_cliente and aseguradora == "CHUBB" and normalized_lines:
-        for idx, line in enumerate(normalized_lines):
-            if re.search(r"^\s*Asegurado\s*:\s*$", line, re.IGNORECASE):
-                # El nombre debería estar en la siguiente línea
-                if idx + 1 < len(normalized_lines):
-                    candidate = normalized_lines[idx + 1].strip()
-                    if is_valid_name(candidate):
-                        nb_cliente = candidate
-                        field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
-                        break
-    
-    # Qualitas Ajuste Express: buscar nombre del asegurado
+    # Qualitas Ajuste Express: buscar nombre del asegurado PRIMERO (antes de estrategias genéricas)
     # Basado en la estructura exacta del OCR:
     #   EVELIN DOMINGUEZ          <- Línea N (asegurado)
     #   CAMACHO LEYVA JOB EDUARDO <- Línea N+1 (ajustador)
     #   FIRMA DEL CONDUCTOR ASEGURADO <- Línea N+2 (etiqueta)
     #   FIRMA DEL AJUSTADOR EXPRESS     <- Línea N+3 (etiqueta)
-    
+    nb_cliente = ""
     if aseguradora == "QUALITAS" and normalized_lines:
         # Buscar el patrón exacto: dos líneas con nombres seguidas de las etiquetas de firma
         for idx in range(len(normalized_lines) - 3):
@@ -968,6 +914,64 @@ def _parse_orden_fields(
                     nb_cliente = candidate
                     field_debug["nb_cliente"] = "qualitas_last_lines"
                     break
+    
+    # CHUBB ticket vertical: buscar "Asegurado:" seguido de nombre en línea siguiente
+    if not nb_cliente and aseguradora == "CHUBB" and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            if re.search(r"^\s*Asegurado\s*:\s*$", line, re.IGNORECASE):
+                # El nombre debería estar en la siguiente línea
+                if idx + 1 < len(normalized_lines):
+                    candidate = normalized_lines[idx + 1].strip()
+                    if is_valid_name(candidate):
+                        nb_cliente = candidate
+                        field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
+                        break
+    
+    # ========== ESTRATEGIAS GENÉRICAS (solo si no se encontró en específicas) ==========
+    if not nb_cliente:
+        nb_cliente = (
+            from_kv("nb_cliente", [
+                ["NOMBRE", "RAZON", "CLIENTE"],
+                ["CUSTOMER", "NAME"],
+                ["NOMBRE", "CLIENTE"],
+                ["CLIENTE"],
+            ])
+            or from_flexible_kv("nb_cliente", [
+                "NOMBRE", "NOMBRE CLIENTE", "CLIENTE", "CUSTOMER NAME", "NOMBRE O RAZON SOCIAL",
+                "RAZON SOCIAL", "NOMBRE DEL CLIENTE", "Asegurado", "CONTRATANTE", "TITULAR"
+            ])
+        )
+        
+        # Validar el nombre extraído
+        if nb_cliente and not is_valid_name(nb_cliente):
+            nb_cliente = ""
+    
+    # Si no se encontró, intentar regex
+    if not nb_cliente:
+        nb_cliente = from_regex(
+            "nb_cliente",
+            [
+                r"NOMBRE O RAZ[ÓO]N SOCIAL DEL CLIENTE[^\n\r]*[\r\n]+([^\r\n]+)",
+                r"CUSTOMER NAME[^\n\r]*[\r\n]+([^\r\n]+)",
+                r"NOMBRE\s*(?:DEL?)?\s*CLIENTE[^\n\r:]*[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+                r"CLIENTE[\s:]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+                r"^\s*Asegurado:\s*([A-Z][A-Z\s]{3,40})$",
+            ],
+        )
+        if nb_cliente and not is_valid_name(nb_cliente):
+            nb_cliente = ""
+    
+    # Búsqueda por proximidad con validación
+    if not nb_cliente:
+        candidate = from_proximity(
+            "nb_cliente",
+            ["NOMBRE", "CLIENTE", "ASEGURADO", "CONTRATANTE", "ASEGURADO:"],
+            max_lines_after=2,
+            value_pattern=r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+            exclude_patterns=["TELEFONO", "EMAIL", "DIRECCION", "POLIZA", "CHUBB", "TALLER"]
+        )
+        if candidate and is_valid_name(candidate):
+            nb_cliente = candidate
 
     # ========== TELÉFONO ==========
     # Patrones para detectar teléfonos de taller/aseguradora (no del cliente)
@@ -1239,80 +1243,15 @@ def _parse_orden_fields(
                 return str(year)
         return ""
     
-    modelo_anio = (
-        from_kv("modelo_anio", [["MODELO", "ANO"], ["MODEL", "YEAR"], ["ANO"], ["YEAR"]])
-        or from_flexible_kv("modelo_anio", [
-            "MODELO", "ANO", "MODEL YEAR", "AÑO MODELO", "ANO MODELO", "MODELO AÑO"
-        ])
-    )
-    
-    # Extraer solo el año válido
-    if modelo_anio:
-        year_str = extract_year_from_text(modelo_anio)
-        if year_str:
-            modelo_anio = year_str
-        else:
-            modelo_anio = ""  # No es un año válido
-    
-    # Si no se encontró, buscar con regex específico
-    if not modelo_anio:
-        modelo_anio = from_regex(
-            "modelo_anio",
-            [
-                r"MODELO\s*\(A[ÑN]O\)[^\n\r]*[\r\n]+([0-9]{4})",
-                r"MODEL\s*/?\s*YEAR[^\n\r]*[\r\n]+([0-9]{4})",
-                r"A[ÑN]O\s*[:\-]?\s*(\d{4})",
-                r"YEAR\s*[:\-]?\s*(\d{4})",
-                r"^\s*Modelo:\s*(\d{4})$",
-                r"MODELO\s*[:\-]?\s*(\d{4})",
-            ],
-        )
-        if modelo_anio:
-            year_str = extract_year_from_text(modelo_anio)
-            if year_str:
-                modelo_anio = year_str
-            else:
-                modelo_anio = ""
-    
-    # Búsqueda por proximidad - buscar números de 4 dígitos que sean años válidos
-    if not modelo_anio:
-        candidate = from_proximity(
-            "modelo_anio",
-            ["MODELO", "ANO", "YEAR", "AÑO"],
-            max_lines_after=1,
-            value_pattern=r"(\d{4})",
-            exclude_patterns=["MARCA", "TIPO", "COLOR", "SERIE", "PLACAS"]
-        )
-        if candidate:
-            year_str = extract_year_from_text(candidate)
-            if year_str:
-                modelo_anio = year_str
-    
-    # CHUBB ticket
-    if not modelo_anio and aseguradora == "CHUBB":
-        ticket_modelo = extract_ticket_field(["Modelo", "MODELO"])
-        if ticket_modelo:
-            year_str = extract_year_from_text(ticket_modelo)
-            if year_str:
-                modelo_anio = year_str
-    
-    # Fallback específico para CHUBB ticket
-    if not modelo_anio and aseguradora == "CHUBB" and normalized_lines:
-        for idx, line in enumerate(normalized_lines):
-            line_upper = line.upper().strip()
-            if line_upper in ["MODELO", "AÑO", "ANO"] or line_upper == "MODELO:":
-                for next_line in normalized_lines[idx + 1 : idx + 4]:
-                    year_str = extract_year_from_text(next_line)
-                    if year_str:
-                        modelo_anio = year_str
-                        field_debug["modelo_anio"] = "line_after_modelo_chubb"
-                        break
-                if modelo_anio:
-                    break
-    
-    # ========== EXTRACCIÓN ESPECÍFICA PARA QUALITAS AJUSTE EXPRESS ==========
+    # ========== EXTRACCIÓN ESPECÍFICA PARA QUALITAS AJUSTE EXPRESS (PRIMERO) ==========
     # Basado en la estructura exacta de las líneas del OCR
+    # Las líneas del OCR muestran:
+    #   Línea N: NISSAN
+    #   Línea N+1: NISSAN X-TRAIL ADVANCE  
+    #   Línea N+2: 2017
+    #   Línea N+3: 0
     
+    modelo_anio = ""
     if aseguradora == "QUALITAS" and normalized_lines:
         # Buscar el patrón específico de la tabla:
         # Línea N: NISSAN
@@ -1350,6 +1289,43 @@ def _parse_orden_fields(
                             modelo_anio = line_stripped
                             field_debug["modelo_anio"] = "qualitas_year_in_context"
                             break
+
+    # ========== ESTRATEGIAS GENÉRICAS PARA AÑO (solo si no se encontró en específicas) ==========
+    if not modelo_anio:
+        modelo_anio = (
+            from_kv("modelo_anio", [["MODELO"], ["AÑO"], ["ANIO"], ["YEAR"]])
+            or from_flexible_kv("modelo_anio", [
+                "MODELO", "MODELO/AÑO", "MODELO/ANIO", "AÑO MODELO", "ANIO MODELO", 
+                "YEAR", "MODEL YEAR"
+            ])
+            or from_regex(
+                "modelo_anio",
+                [
+                    r"MODELO\s*/?\s*AÑO?\s*[:\-]?\s*(20\d{2})",
+                    r"AÑO\s*[:\-]?\s*(20\d{2})",
+                    r"\b(20\d{2})\b",  # Cualquier año 20XX
+                ],
+            )
+            or from_proximity(
+                "modelo_anio",
+                ["MODELO", "AÑO", "ANIO"],
+                max_lines_after=1,
+                value_pattern=r"(20\d{2})",
+                exclude_patterns=["REPORTE", "SINIESTRO", "FECHA"]
+            )
+        )
+        
+        # Validar que sea un año razonable (1990-2030)
+        if modelo_anio:
+            year_match = re.search(r"(20\d{2})", str(modelo_anio))
+            if year_match:
+                year = int(year_match.group(1))
+                if 1990 <= year <= 2030:
+                    modelo_anio = str(year)
+                else:
+                    modelo_anio = ""
+            else:
+                modelo_anio = ""
 
     # ========== COLOR ==========
     color_vehiculo = (

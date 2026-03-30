@@ -862,7 +862,7 @@ def _parse_orden_fields(
     #   FIRMA DEL CONDUCTOR ASEGURADO <- Línea N+2 (etiqueta)
     #   FIRMA DEL AJUSTADOR EXPRESS     <- Línea N+3 (etiqueta)
     nb_cliente = ""
-    if aseguradora == "QUALITAS" and normalized_lines:
+    if aseguradora == "Qualitas" and normalized_lines:
         # Buscar el patrón exacto: dos líneas con nombres seguidas de las etiquetas de firma
         for idx in range(len(normalized_lines) - 3):
             line1 = normalized_lines[idx].strip()      # EVELIN DOMINGUEZ
@@ -1252,7 +1252,7 @@ def _parse_orden_fields(
     #   Línea N+3: 0
     
     modelo_anio = ""
-    if aseguradora == "QUALITAS" and normalized_lines:
+    if aseguradora == "Qualitas" and normalized_lines:
         # Buscar el patrón específico de la tabla:
         # Línea N: NISSAN
         # Línea N+1: NISSAN X-TRAIL ADVANCE  
@@ -1669,7 +1669,7 @@ def _parse_orden_fields(
                     field_debug["descripcion_siniestro"] = "chubb_piezas_danadas"
 
     # Fallback específico para Qualitas Ajuste Express
-    if not descripcion_siniestro and aseguradora == "QUALITAS" and normalized_lines:
+    if not descripcion_siniestro and aseguradora == "Qualitas" and normalized_lines:
         # Buscar sección "Descripción de daños" o "Descripción de daños a reparar"
         desc_idx = -1
         for idx, line in enumerate(normalized_lines):
@@ -1715,7 +1715,7 @@ def _parse_orden_fields(
                 field_debug["descripcion_siniestro"] = "qualitas_ajuste_express"
     
     # Fallback general para Qualitas
-    if not descripcion_siniestro and aseguradora == "QUALITAS" and normalized_lines:
+    if not descripcion_siniestro and aseguradora == "Qualitas" and normalized_lines:
         desc_idx = -1
         for idx, line in enumerate(normalized_lines):
             up = line.upper()

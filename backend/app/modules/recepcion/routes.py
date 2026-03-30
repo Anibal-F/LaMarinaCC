@@ -909,65 +909,65 @@ def _parse_orden_fields(
                         field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
                         break
     
-    # Qualitas Ajuste Express: buscar "FIRMA DEL CONDUCTOR ASEGURADO" 
-    # El documento tiene:
-    #   EVELIN DOMINGUEZ          <- Asegurado (línea N)
-    #   CAMACHO LEYVA JOB EDUARDO <- Ajustador (línea N+1)
-    #   FIRMA DEL CONDUCTOR ASEGURADO <- Etiqueta (línea N+2)
-    #   FIRMA DEL AJUSTADOR EXPRESS     <- Etiqueta (línea N+3)
-    if not nb_cliente and aseguradora == "QUALITAS" and normalized_lines:
-        for idx, line in enumerate(normalized_lines):
-            line_upper = line.upper()
-            # Buscar etiqueta de firma del conductor asegurado
-            if "FIRMA DEL CONDUCTOR ASEGURADO" in line_upper:
-                # El asegurado está 2 líneas arriba (hay una línea con el nombre del ajustador en medio)
-                for j in range(2, min(5, idx + 1)):
-                    candidate = normalized_lines[idx - j].strip()
-                    if candidate and is_valid_name(candidate):
-                        # Verificar que NO sea el ajustador (que está en la línea justo anterior)
-                        if "CAMACHO" not in candidate.upper() and "AJUSTADOR" not in candidate.upper():
-                            nb_cliente = candidate
-                            field_debug["nb_cliente"] = "qualitas_firma_conductor_v2"
-                            break
-                if nb_cliente:
+    # Qualitas Ajuste Express: buscar nombre del asegurado
+    # Basado en la estructura exacta del OCR:
+    #   EVELIN DOMINGUEZ          <- Línea N (asegurado)
+    #   CAMACHO LEYVA JOB EDUARDO <- Línea N+1 (ajustador)
+    #   FIRMA DEL CONDUCTOR ASEGURADO <- Línea N+2 (etiqueta)
+    #   FIRMA DEL AJUSTADOR EXPRESS     <- Línea N+3 (etiqueta)
+    
+    if aseguradora == "QUALITAS" and normalized_lines:
+        # Buscar el patrón exacto: dos líneas con nombres seguidas de las etiquetas de firma
+        for idx in range(len(normalized_lines) - 3):
+            line1 = normalized_lines[idx].strip()      # EVELIN DOMINGUEZ
+            line2 = normalized_lines[idx + 1].strip()  # CAMACHO LEYVA JOB EDUARDO
+            line3 = normalized_lines[idx + 2].strip().upper()  # FIRMA DEL CONDUCTOR ASEGURADO
+            line4 = normalized_lines[idx + 3].strip().upper()  # FIRMA DEL AJUSTADOR EXPRESS
+            
+            # Verificar si es el patrón de firmas
+            if (
+                "FIRMA DEL CONDUCTOR" in line3
+                and "FIRMA DEL AJUSTADOR" in line4
+                and len(line1) > 3
+                and len(line2) > 3
+            ):
+                # line1 es el asegurado, line2 es el ajustador
+                # Validar que line1 parezca un nombre
+                if is_valid_name(line1):
+                    nb_cliente = line1
+                    field_debug["nb_cliente"] = "qualitas_firma_pattern_exact"
                     break
         
-        # Estrategia alternativa: buscar en la sección de firmas del documento
-        # Buscar desde el 70% del documento hacia abajo (donde están las firmas)
-        if not nb_cliente:
-            start_idx = int(len(normalized_lines) * 0.7)
-            for idx in range(start_idx, len(normalized_lines)):
-                line = normalized_lines[idx].strip()
-                # Buscar línea que parezca nombre (2-4 palabras, todas mayúsculas o capitalizadas)
-                if line and is_valid_name(line):
-                    # Verificar que no sea el ajustador
-                    if "CAMACHO" not in line.upper() and "JOB" not in line.upper() and "LEYVA" not in line.upper():
-                        # Verificar que la siguiente o siguientes líneas contengan "FIRMA DEL CONDUCTOR"
-                        for j in range(1, min(4, len(normalized_lines) - idx)):
-                            next_line = normalized_lines[idx + j].upper()
-                            if "FIRMA" in next_line and "CONDUCTOR" in next_line:
-                                nb_cliente = line
-                                field_debug["nb_cliente"] = "qualitas_signature_section"
-                                break
-                        if nb_cliente:
-                            break
-        
-        # Estrategia 3: Buscar específicamente "EVELIN DOMINGUEZ" o similar
+        # Si no se encontró, buscar línea con "FIRMA DEL CONDUCTOR ASEGURADO" y subir 2 líneas
         if not nb_cliente:
             for idx, line in enumerate(normalized_lines):
-                # Buscar nombres que parezcan de persona (2 palabras, mayúsculas)
-                if re.match(r"^[A-ZÁÉÍÓÚÑ]+\s+[A-ZÁÉÍÓÚÑ]+$", line.strip()):
-                    # Verificar que la siguiente línea tenga la etiqueta de firma del conductor
-                    for j in range(1, min(4, len(normalized_lines) - idx)):
-                        next_line = normalized_lines[idx + j].upper()
-                        if "FIRMA" in next_line and "CONDUCTOR" in next_line:
-                            candidate = line.strip()
-                            if is_valid_name(candidate):
-                                nb_cliente = candidate
-                                field_debug["nb_cliente"] = "qualitas_name_before_firma"
-                                break
-                    if nb_cliente:
-                        break
+                if "FIRMA DEL CONDUCTOR ASEGURADO" in line.upper():
+                    # Subir 2 líneas (hay una línea con el ajustador en medio)
+                    if idx >= 2:
+                        candidate = normalized_lines[idx - 2].strip()
+                        if is_valid_name(candidate):
+                            nb_cliente = candidate
+                            field_debug["nb_cliente"] = "qualitas_firma_2lines_up"
+                            break
+        
+        # Último recurso: buscar en la sección inferior del documento (últimas 10 líneas)
+        if not nb_cliente:
+            last_lines = normalized_lines[-10:] if len(normalized_lines) >= 10 else normalized_lines
+            for idx, line in enumerate(last_lines):
+                candidate = line.strip()
+                # Buscar nombre que parezca de persona (2 palabras, mayúsculas, sin números)
+                if (
+                    len(candidate) > 5
+                    and re.match(r"^[A-ZÁÉÍÓÚÑ]+\s+[A-ZÁÉÍÓÚÑ]+$", candidate)
+                    and not re.search(r"\d", candidate)
+                    and "CAMACHO" not in candidate.upper()
+                    and "JOB" not in candidate.upper()
+                    and "LEYVA" not in candidate.upper()
+                    and is_valid_name(candidate)
+                ):
+                    nb_cliente = candidate
+                    field_debug["nb_cliente"] = "qualitas_last_lines"
+                    break
 
     # ========== TELÉFONO ==========
     # Patrones para detectar teléfonos de taller/aseguradora (no del cliente)
@@ -1310,50 +1310,45 @@ def _parse_orden_fields(
                 if modelo_anio:
                     break
     
-    # Para Qualitas Ajuste Express: el año viene en la columna MODELO de la tabla
-    # Las líneas del OCR muestran la estructura de la tabla
-    if not modelo_anio and aseguradora == "QUALITAS" and normalized_lines:
-        # Estrategia 1: Buscar directamente la línea que tiene el año después del tipo
-        # En el OCR vemos: línea 24=NISSAN, línea 25=NISSAN X-TRAIL ADVANCE, línea 26=2017, línea 27=0
-        for idx, line in enumerate(normalized_lines):
-            line_upper = line.upper()
-            # Buscar línea que contenga marca y tipo (ej: NISSAN X-TRAIL)
-            if re.search(r"\b(NISSAN|TOYOTA|HONDA|VW|VOLKSWAGEN|CHEVROLET|FORD|CHRYSLER|KIA|HYUNDAI|MAZDA)\b", line, re.IGNORECASE):
-                # Verificar si la siguiente línea es un año (4 dígitos)
-                if idx + 1 < len(normalized_lines):
-                    next_line = normalized_lines[idx + 1].strip()
-                    if re.match(r"^(20\d{2})$", next_line):
-                        modelo_anio = next_line
-                        field_debug["modelo_anio"] = "qualitas_year_after_type"
-                        break
+    # ========== EXTRACCIÓN ESPECÍFICA PARA QUALITAS AJUSTE EXPRESS ==========
+    # Basado en la estructura exacta de las líneas del OCR
+    
+    if aseguradora == "QUALITAS" and normalized_lines:
+        # Buscar el patrón específico de la tabla:
+        # Línea N: NISSAN
+        # Línea N+1: NISSAN X-TRAIL ADVANCE  
+        # Línea N+2: 2017
+        # Línea N+3: 0
         
-        # Estrategia 2: Buscar línea que sea exactamente un año (20XX) y esté cerca de datos del vehículo
+        for idx in range(len(normalized_lines) - 3):
+            line1 = normalized_lines[idx].strip()      # NISSAN
+            line2 = normalized_lines[idx + 1].strip()  # NISSAN X-TRAIL ADVANCE
+            line3 = normalized_lines[idx + 2].strip()  # 2017
+            line4 = normalized_lines[idx + 3].strip()  # 0
+            
+            # Verificar si es el patrón de la tabla de vehículo
+            if (
+                re.search(r"^(NISSAN|TOYOTA|HONDA|VW|VOLKSWAGEN|CHEVROLET|FORD|CHRYSLER|KIA|HYUNDAI|MAZDA|HONDA|JEEP)$", line1, re.IGNORECASE)
+                and len(line2) > 5  # Tipo/modelo
+                and re.match(r"^(20\d{2})$", line3)  # Año
+                and re.match(r"^(\d+|KILOMETRAJE)$", line4, re.IGNORECASE)  # Kilometraje o etiqueta
+            ):
+                modelo_anio = line3
+                field_debug["modelo_anio"] = "qualitas_table_pattern"
+                break
+        
+        # Si no se encontró, buscar cualquier línea que sea solo un año y esté cerca de marca
         if not modelo_anio:
             for idx, line in enumerate(normalized_lines):
                 line_stripped = line.strip()
-                # Buscar línea que sea exactamente un año (ej: "2017")
                 if re.match(r"^(20\d{2})$", line_stripped):
                     year = int(line_stripped)
                     if 2010 <= year <= 2030:
-                        # Verificar que las líneas anteriores tengan datos del vehículo
-                        if idx > 0:
-                            prev_line = normalized_lines[idx - 1].upper()
-                            if any(marker in prev_line for marker in ["NISSAN", "TOYOTA", "HONDA", "X-TRAIL", "ADVANCE", "SENTRA", "VERSA"]):
-                                modelo_anio = line_stripped
-                                field_debug["modelo_anio"] = "qualitas_isolated_year"
-                                break
-        
-        # Estrategia 3: Buscar después de la etiqueta MODELO
-        if not modelo_anio:
-            for idx, line in enumerate(normalized_lines):
-                if line.upper().strip() == "MODELO":
-                    # La siguiente línea debería ser el año
-                    if idx + 1 < len(normalized_lines):
-                        candidate = normalized_lines[idx + 1].strip()
-                        year_match = re.search(r"\b(20\d{2})\b", candidate)
-                        if year_match:
-                            modelo_anio = year_match.group(1)
-                            field_debug["modelo_anio"] = "qualitas_after_modelo_label"
+                        # Verificar contexto: líneas anteriores deben tener datos del vehículo
+                        context = " ".join(normalized_lines[max(0, idx-3):idx]).upper()
+                        if any(marker in context for marker in ["NISSAN", "TOYOTA", "HONDA", "MARCA", "TIPO", "MODELO"]):
+                            modelo_anio = line_stripped
+                            field_debug["modelo_anio"] = "qualitas_year_in_context"
                             break
 
     # ========== COLOR ==========

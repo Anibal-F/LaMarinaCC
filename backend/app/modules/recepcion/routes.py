@@ -1437,26 +1437,64 @@ def _parse_orden_fields(
     ]
     
     # Correcciones OCR comunes para colores
+    # Basado en errores típicos de OCR: K↔R, O↔0, I↔1, etc.
     color_ocr_fixes = {
+        # Rojo y variantes
         "KAO": "ROJO",
         "KAJO": "ROJO",
         "ROJ": "ROJO",
+        "ROJ0": "ROJO",
+        "R0J0": "ROJO",
+        # Azul y variantes
         "AZUI": "AZUL",
         "AZULI": "AZUL",
+        "AZU1": "AZUL",
+        "4ZUL": "AZUL",
+        # Negro y variantes
         "NEGR": "NEGRO",
+        "NEGR0": "NEGRO",
+        "N3GR0": "NEGRO",
+        # Blanco y variantes
         "BLANC": "BLANCO",
+        "BLANC0": "BLANCO",
+        "BL4NC0": "BLANCO",
+        # Gris y variantes
         "GRS": "GRIS",
         "GRI": "GRIS",
+        "GR1S": "GRIS",
+        # Plata y variantes
         "PLAT": "PLATA",
+        "PLAT4": "PLATA",
+        "PL4TA": "PLATA",
+        # Verde y variantes
         "VERD": "VERDE",
+        "VERD3": "VERDE",
+        # Otros
+        "AMARILL": "AMARILLO",
+        "AMAR1LL0": "AMARILLO",
     }
     
     if color_vehiculo:
         color_upper = color_vehiculo.upper().strip()
-        # Aplicar correcciones OCR
-        if color_upper in color_ocr_fixes:
-            color_vehiculo = color_ocr_fixes[color_upper]
+        # Limpiar caracteres especiales
+        color_upper_clean = re.sub(r"[^A-Z0-9]", "", color_upper)
+        
+        # Aplicar correcciones OCR exactas
+        if color_upper_clean in color_ocr_fixes:
+            color_vehiculo = color_ocr_fixes[color_upper_clean]
             color_upper = color_vehiculo
+        else:
+            # Corrección fonética/similitud: si empieza con K y suena como color
+            if color_upper_clean.startswith("K") and len(color_upper_clean) <= 5:
+                # KAO, KA, KO suelen ser ROJO mal leído
+                if color_upper_clean in ["K", "KA", "KO", "KAO", "KA0"]:
+                    color_vehiculo = "ROJO"
+                    color_upper = "ROJO"
+            # Si termina en vocal + O, podría ser ROJO (KAO→ROJO, RAO→ROJO)
+            if re.match(r"^[KR][A-Z0-9]*O$", color_upper_clean) and len(color_upper_clean) <= 5:
+                color_vehiculo = "ROJO"
+                color_upper = "ROJO"
+        
         # Verificar si es un color válido o contiene uno
         es_valido = any(valido in color_upper or color_upper in valido for valido in colores_validos)
         if not es_valido and len(color_vehiculo) < 3:
@@ -1525,15 +1563,36 @@ def _parse_orden_fields(
     # Limpiar y validar placas
     if placas:
         placas_upper = placas.upper().strip()
-        # Rechazar si es claramente transmisión u otro campo
-        invalid_placas = ["AUTOM", "AUTOMATICA", "AUTOMÁTICA", "MANUAL", "TRANSMISION", "TRANSMISIÓN"]
-        if any(inv in placas_upper for inv in invalid_placas):
-            placas = ""  # Es transmisión, no placas
+        # Rechazar si es claramente transmisión, estado o cualquier otro campo que no sea placa
+        # Patrones típicos de campos que NO son placas
+        invalid_placas = [
+            # Transmisión
+            "AUTOM", "AUTOMATICA", "AUTOMÁTICA", "MANUAL", "TRANSMISION", "TRANSMISIÓN",
+            # Estados/Municipios
+            "NUEVO", "USADO", "ESTADO", "CIUDAD", "MUNICIPIO",
+            # Coberturas
+            "AMPLIA", "LIMITADA", "DAÑOS", "MATERIALES", "ROBO",
+            # Otros campos del formulario
+            "ORIGINAL", "COPIA", "FOLIO", "REPORTE", "SINIESTRO",
+            # Marcas comunes (si se confunden)
+            "CHEVROLET", "NISSAN", "TOYOTA", "FORD", "HONDA", "VW", "VOLKSWAGEN",
+            # Valores booleanos o estados
+            "SI", "NO", "SÍ", "YES", "TRUE", "FALSE",
+        ]
+        # También rechazar si parece una palabra común muy larga sin números
+        parece_palabra = len(placas_upper) > 6 and not re.search(r"\d", placas_upper)
+        
+        if any(inv in placas_upper for inv in invalid_placas) or parece_palabra:
+            placas = ""  # No es una placa válida
         else:
             placas = re.sub(r"\s+", "", placas_upper)  # Quitar espacios
             # Validar longitud mínima
-            if len(re.sub(r"[^A-Z0-9]", "", placas)) < 5:
+            placas_limpia = re.sub(r"[^A-Z0-9]", "", placas)
+            if len(placas_limpia) < 5:
                 placas = ""  # Descartar si es muy corta
+            # Validar que tenga al menos un número (placas mexicanas típicas)
+            elif not re.search(r"\d", placas_limpia) and len(placas_limpia) < 6:
+                placas = ""  # Placas sin números son sospechosas
 
     # ========== KILOMETRAJE ==========
     if not kilometraje:
@@ -1572,11 +1631,18 @@ def _parse_orden_fields(
                 km_num = int(kilometraje_clean)
                 # Validar rango razonable (0 - 999999)
                 # 0 es válido (vehículo nuevo)
-                # Rechazar si parece una suma asegurada (números muy grandes o con patrón específico)
-                if 0 <= km_num <= 999999 and km_num != 258234:  # 258234 es la suma asegurada del ejemplo
+                # Rechazar si parece una suma asegurada (números muy grandes tipo 258234, 150000, etc.)
+                # Patrón típico de sumas aseguradas: números > 100000 sin contexto de kilometraje
+                # o númerres con formato de moneda implícito (terminan en .00 o .63)
+                km_str = str(kilometraje).replace(",", "")
+                parece_monto = (
+                    km_num > 200000 and len(kilometraje_clean) >= 6  # Números muy grandes
+                    or re.search(r"\.\d{2}$", str(kilometraje))  # Termina en centavos
+                )
+                if 0 <= km_num <= 999999 and not parece_monto:
                     kilometraje = str(km_num)
                 else:
-                    kilometraje = ""  # Descartar si está fuera de rango
+                    kilometraje = ""  # Descartar si está fuera de rango o parece monto
             else:
                 kilometraje = ""
 

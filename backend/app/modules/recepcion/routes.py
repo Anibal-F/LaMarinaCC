@@ -1858,13 +1858,10 @@ def _parse_orden_fields(
                     break
 
     # For some insurer templates, TIPO contains "MARCA ... MODELO", while MARCA may contain dealer name.
-    marca_vehiculo = marca_raw
-    tipo_vehiculo = tipo_raw
-    
     # Qualitas Ajuste Express: Marca puede ser "REGULARIZADO" y Tipo contiene "Nissan Sedan..."
     # Detectar si marca parece un valor de sistema y tipo contiene marca real
-    if tipo_raw:
-        tipo_clean = _normalize_ocr_text(tipo_raw)
+    if tipo_vehiculo:
+        tipo_clean = _normalize_ocr_text(tipo_vehiculo)
         
         # Patrón: "Marca Tipo Modelo" en el campo tipo (ej: "Nissan Sedan 4D S 1.8L I4 2018")
         brand_model_match = re.match(r"^([A-Z][A-Z0-9]{1,15})(?:\s+([A-Z][A-Z0-9\s]{2,30}))?\s*(\d{4})?$", tipo_clean, re.IGNORECASE)
@@ -1883,7 +1880,7 @@ def _parse_orden_fields(
                     remaining = re.sub(r"\s+\d{4}$", "", remaining).strip()
                     tipo_vehiculo = remaining
                     field_debug["tipo_vehiculo"] = "cleaned_from_ajuste_express"
-        elif tipo_raw and aseguradora != "CHUBB":
+        elif tipo_vehiculo and aseguradora != "CHUBB":
             # Heurística original para otros casos
             brand_model_match = re.match(r"^([A-Z0-9]{2,})(?:\s*\([A-Z0-9]{1,4}\))?\s+(.+)$", tipo_clean)
             if brand_model_match:

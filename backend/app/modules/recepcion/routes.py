@@ -228,12 +228,164 @@ def _pick_from_kv(
 
 
 def _detect_aseguradora(ocr_text: str) -> str:
+    """Detecta la aseguradora con variaciones comunes de OCR."""
     upper = (ocr_text or "").upper()
-    if "QUALITAS" in upper:
-        return "Qualitas"
-    if "CHUBB" in upper:
-        return "CHUBB"
+    
+    # Qualitas con variaciones comunes de OCR
+    qualitas_variants = ["QUALITAS", "QUALITA", "QUALIT", "QU4LITAS", "QUAL1TAS", 
+                         "CUALITAS", "CUALITA", "QUALITÁS"]
+    for variant in qualitas_variants:
+        if variant in upper:
+            return "Qualitas"
+    
+    # CHUBB con variaciones
+    chubb_variants = ["CHUBB", "CHUB", "CHUBBB", "CHUBBE", "CHÜBB"]
+    for variant in chubb_variants:
+        if variant in upper:
+            return "CHUBB"
     return ""
+
+
+def _find_value_near_label(
+    lines: list[str],
+    label_patterns: list[str],
+    max_lines_after: int = 3,
+    value_pattern: str = r"([^\n\r]{2,50})",
+    exclude_patterns: list[str] | None = None,
+) -> str:
+    """
+    Busca un valor cerca de una etiqueta en las líneas del OCR.
+    Útil cuando KV pairs no funcionan correctamente.
+    """
+    if not lines:
+        return ""
+    
+    exclude = exclude_patterns or []
+    normalized_lines = [_normalize_ocr_text(line) for line in lines if _normalize_ocr_text(line)]
+    
+    for idx, line in enumerate(normalized_lines):
+        line_upper = line.upper()
+        
+        # Buscar si la línea contiene alguno de los patrones de etiqueta
+        label_found = False
+        for pattern in label_patterns:
+            if pattern.upper() in line_upper:
+                label_found = True
+                break
+        
+        if not label_found:
+            continue
+        
+        # Buscar en las siguientes líneas
+        for next_idx in range(idx + 1, min(idx + 1 + max_lines_after, len(normalized_lines))):
+            candidate = normalized_lines[next_idx].strip()
+            
+            # Saltar líneas vacías o muy cortas
+            if len(candidate) < 2:
+                continue
+            
+            # Verificar exclusiones
+            skip = False
+            candidate_upper = candidate.upper()
+            for exclude_pattern in exclude:
+                if exclude_pattern.upper() in candidate_upper:
+                    skip = True
+                    break
+            if skip:
+                continue
+            
+            # Verificar que coincida con el patrón de valor
+            match = re.search(value_pattern, candidate)
+            if match:
+                return match.group(1).strip()
+    
+    return ""
+
+
+def _extract_from_line_context(
+    lines: list[str],
+    context_keywords: list[str],
+    value_pattern: str,
+    window_size: int = 5,
+) -> str:
+    """
+    Extrae un valor buscando en el contexto de ciertas palabras clave.
+    Busca en una ventana de líneas alrededor de las palabras clave.
+    """
+    if not lines:
+        return ""
+    
+    normalized_lines = [_normalize_ocr_text(line) for line in lines if _normalize_ocr_text(line)]
+    
+    for idx, line in enumerate(normalized_lines):
+        line_upper = line.upper()
+        
+        # Verificar si la línea contiene alguna palabra clave
+        has_keyword = any(kw.upper() in line_upper for kw in context_keywords)
+        
+        if has_keyword:
+            # Buscar en la ventana de líneas
+            start = max(0, idx)
+            end = min(len(normalized_lines), idx + window_size)
+            
+            for window_idx in range(start, end):
+                candidate = normalized_lines[window_idx]
+                match = re.search(value_pattern, candidate, re.IGNORECASE)
+                if match:
+                    return match.group(1).strip()
+    
+    return ""
+
+
+def _flexible_kv_search(
+    kv_pairs: dict[str, dict[str, str]],
+    possible_labels: list[str],
+    min_match_score: float = 0.6,
+) -> tuple[str, str]:
+    """
+    Búsqueda flexible en KV pairs que tolera variaciones en las etiquetas.
+    Usa coincidencia parcial y scoring.
+    """
+    if not kv_pairs:
+        return "", ""
+    
+    best_match = ""
+    best_key = ""
+    best_score = 0.0
+    
+    for normalized_key, entry in kv_pairs.items():
+        key_upper = normalized_key.upper()
+        
+        for label in possible_labels:
+            label_upper = label.upper()
+            
+            # Calcular score de coincidencia
+            score = 0.0
+            
+            # Coincidencia exacta
+            if label_upper == key_upper:
+                score = 1.0
+            # Contiene la etiqueta completa
+            elif label_upper in key_upper:
+                score = 0.9
+            # La etiqueta contiene la clave
+            elif key_upper in label_upper:
+                score = 0.8
+            # Coincidencia de palabras
+            else:
+                label_words = set(label_upper.split())
+                key_words = set(key_upper.split())
+                if label_words and key_words:
+                    intersection = label_words.intersection(key_words)
+                    if intersection:
+                        score = len(intersection) / max(len(label_words), len(key_words))
+            
+            if score > best_score and score >= min_match_score:
+                best_score = score
+                best_match = _normalize_ocr_text(entry.get("value", ""))
+                best_key = entry.get("key", normalized_key)
+    
+    return best_match, best_key
 
 
 def _parse_orden_fields(
@@ -258,6 +410,27 @@ def _parse_orden_fields(
         value = _extract_with_regex(ocr_text, patterns)
         if value:
             field_debug[field_name] = "regex"
+        return value
+    
+    def from_flexible_kv(field_name: str, possible_labels: list[str]) -> str:
+        """Usa búsqueda flexible en KV pairs."""
+        value, source = _flexible_kv_search(kv, possible_labels)
+        if value:
+            field_debug[field_name] = f"flexible_kv:{source}"
+        return value
+    
+    def from_proximity(field_name: str, label_patterns: list[str], **kwargs) -> str:
+        """Busca valor cerca de una etiqueta en líneas OCR."""
+        value = _find_value_near_label(normalized_lines, label_patterns, **kwargs)
+        if value:
+            field_debug[field_name] = "proximity"
+        return value
+    
+    def from_context(field_name: str, context_keywords: list[str], value_pattern: str, **kwargs) -> str:
+        """Extrae valor del contexto de palabras clave."""
+        value = _extract_from_line_context(normalized_lines, context_keywords, value_pattern, **kwargs)
+        if value:
+            field_debug[field_name] = "context"
         return value
 
     def detect_transmision() -> str:
@@ -347,6 +520,12 @@ def _parse_orden_fields(
                 return datetime.strptime(candidate, fmt).date().isoformat()
             except ValueError:
                 continue
+        
+        # ISO format: 2026-03-26
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            pass
 
         # Formats with month names, e.g. 12/dic/2025.
         month_map = {
@@ -380,36 +559,83 @@ def _parse_orden_fields(
                     return datetime(year=year, month=int(month), day=day).date().isoformat()
                 except ValueError:
                     return ""
+        
+        # Qualitas format with date fields separated: 21 | 03 | 2026 or 21 03 2026
+        separated_match = re.search(r"\b(\d{2})\s*[|\s]\s*(\d{2})\s*[|\s]\s*(\d{4})\b", raw)
+        if separated_match:
+            day = separated_match.group(1)
+            month = separated_match.group(2)
+            year = separated_match.group(3)
+            try:
+                return datetime(year=int(year), month=int(month), day=int(day)).date().isoformat()
+            except ValueError:
+                return ""
+        
         return ""
 
-    raw_fecha = from_kv(
-        "fecha_adm",
-        [
-            ["FECHA", "DATE"],
-            ["FECHA"],
-        ],
-    ) or from_regex(
-        "fecha_adm",
-        [
-            r"FECHA\s*/?\s*DATE[^\n\r]*?(\d{2}/\d{2}/\d{4})",
-            r"FECHA[^\n\r]*?(\d{2}/\d{2}/\d{4})",
-        ],
+    # ========== FECHA ==========
+    # Intentar múltiples estrategias para extraer la fecha
+    raw_fecha = (
+        from_kv("fecha_adm", [["FECHA", "DATE"], ["FECHA"], ["FECHA", "ADMISION"], ["FECHA", "INGRESO"]])
+        or from_flexible_kv("fecha_adm", ["FECHA", "DATE", "FECHA ADMISION", "FECHA INGRESO", "Fecha"])
+        or from_regex(
+            "fecha_adm",
+            [
+                r"FECHA\s*/?\s*DATE[^\n\r]*?(\d{2}/\d{2}/\d{4})",
+                r"FECHA[^\n\r]*?(\d{2}/\d{2}/\d{4})",
+                r"FECHA\s*[:\-]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4})",
+                r"(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s*FECHA",
+                r"FECHA\s+DE\s+\w+[^\n\r]*?(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})",
+                r"FECHA[\s:]+(\d{1,2}[\/\s]+[A-Z]{3,9}[\/\s]+\d{4})",
+                r"FECHA\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})",  # ISO format: 2026-03-26
+            ],
+        )
+        or from_proximity(
+            "fecha_adm",
+            ["FECHA", "DATE", "FECHA ADMISION"],
+            max_lines_after=2,
+            value_pattern=r"(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{1,2}[\/\s]+[A-Z]{3,9}[\/\s]+\d{4}|\d{4}-\d{2}-\d{2})",
+            exclude_patterns=["HORA", "TIME", "REPORTE", "SINIESTRO"]
+        )
     )
+    
+    # Fallback para Qualitas con campos separados: 21 | 03 | 2026
+    if not raw_fecha and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            if "FECHA" in line.upper():
+                # Buscar patrón de campos separados en las siguientes líneas
+                for next_line in normalized_lines[idx:idx+3]:
+                    separated_match = re.search(r"\b(\d{2})\s*[|\s]\s*(\d{2})\s*[|\s]\s*(\d{4})\b", next_line)
+                    if separated_match:
+                        raw_fecha = f"{separated_match.group(1)}/{separated_match.group(2)}/{separated_match.group(3)}"
+                        field_debug["fecha_adm"] = "qualitas_separated_fields"
+                        break
+                if raw_fecha:
+                    break
 
     fecha_iso = normalize_date(raw_fecha)
 
-    raw_hora = from_kv(
-        "hr_adm",
-        [
-            ["HORA", "TIME"],
-            ["HORA"],
-        ],
-    ) or from_regex(
-        "hr_adm",
-        [
-            r"HORA\s*/?\s*TIME[^\n\r]*?(\d{1,2}[:.]\d{2})",
-            r"\b(\d{1,2}[:.]\d{2})\s*HRS?\b",
-        ],
+    # ========== HORA ==========
+    raw_hora = (
+        from_kv("hr_adm", [["HORA", "TIME"], ["HORA"], ["HORA", "ADMISION"], ["HORA", "INGRESO"]])
+        or from_flexible_kv("hr_adm", ["HORA", "TIME", "HORA ADMISION", "HORA INGRESO"])
+        or from_regex(
+            "hr_adm",
+            [
+                r"HORA\s*/?\s*TIME[^\n\r]*?(\d{1,2}[:.]\d{2})",
+                r"\b(\d{1,2}[:.]\d{2})\s*HRS?\b",
+                r"HORA\s*[:\-]?\s*(\d{1,2}[:.]\d{2})",
+                r"(\d{1,2}[:.]\d{2})\s*HORA",
+                r"HORA\s+DE\s+\w+[^\n\r]*?(\d{1,2}[:.]\d{2})",
+            ],
+        )
+        or from_proximity(
+            "hr_adm",
+            ["HORA", "TIME", "HORA ADMISION"],
+            max_lines_after=2,
+            value_pattern=r"(\d{1,2}[:.]\d{2})",
+            exclude_patterns=["FECHA", "DATE", "REPORTE", "SINIESTRO"]
+        )
     )
     hora = normalize_time(raw_hora)
 
@@ -420,6 +646,7 @@ def _parse_orden_fields(
             [
                 r"OCURRENCIA[^\n\r]*?(\d{1,2}[\/\-][A-Z]{3}[\/\-]\d{4})",
                 r"OCURRENCIA[^\n\r]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})",
+                r"OCURRENCIA[\s:]+(\d{4}-\d{2}-\d{2})",  # ISO: 2026-03-20
             ],
         )
         ocurrencia_iso = normalize_date(raw_ocurrencia_fecha)
@@ -432,6 +659,7 @@ def _parse_orden_fields(
             [
                 r"OCURRENCIA[^\n\r]*?(\d{1,2}[:.]\d{2})(?::\d{2})?",
                 r"\b(\d{1,2}[:.]\d{2})(?::\d{2})\b",
+                r"OCURRENCIA[\s:]+\d{4}-\d{2}-\d{2}[\sT]+(\d{2}:\d{2})",  # ISO datetime
             ],
         )
         if not raw_ocurrencia_hora:
@@ -456,6 +684,32 @@ def _parse_orden_fields(
         if ocurrencia_hora:
             hora = ocurrencia_hora
             field_debug["hr_adm"] = "ocurrencia_datetime"
+        
+        # Fallback específico para CHUBB ticket vertical: buscar línea que empiece con fecha tipo "20/mar/2026"
+        if not fecha_iso and normalized_lines:
+            for line in normalized_lines:
+                # Patrón: 20/mar/2026 o 20/marzo/2026
+                match = re.search(r"\b(\d{1,2}/[a-z]{3,9}/\d{4})\b", line, re.IGNORECASE)
+                if match:
+                    fecha_iso = normalize_date(match.group(1))
+                    if fecha_iso:
+                        field_debug["fecha_adm"] = "chubb_ticket_date_line"
+                        break
+        
+        # Buscar hora en formato HH:MM:SS o HH:MM cerca de Ocurrencia
+        if not hora and normalized_lines:
+            for idx, line in enumerate(normalized_lines):
+                if "OCURRENCIA" in line.upper():
+                    # Buscar en la misma línea o siguiente
+                    for j in range(idx, min(idx + 2, len(normalized_lines))):
+                        time_match = re.search(r"\b(\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\b", normalized_lines[j])
+                        if time_match:
+                            hora = normalize_time(time_match.group(1))
+                            if hora:
+                                field_debug["hr_adm"] = "chubb_ticket_time"
+                                break
+                    if hora:
+                        break
 
     if not hora and normalized_lines:
         # Last-resort for documents where HORA/Ocurrencia keys are split by OCR.
@@ -467,47 +721,157 @@ def _parse_orden_fields(
                     field_debug["hr_adm"] = "line_time_fallback"
                     break
 
-    reporte = from_kv(
-        "reporte_siniestro",
-        [
-            ["REPORTE"],
-            ["REPORT"],
-            ["SINIESTRO"],
-        ],
-    ) or from_regex(
-        "reporte_siniestro",
-        [
-            r"N[°º]?\s*REPORTE[^\n\r:]*[:\s]+([A-Z0-9-]{6,})",
-            r"REPORT\s*N[°º]?[^\n\r:]*[:\s]+([A-Z0-9-]{6,})",
-            r"N[°º]?\s*SINIESTRO[^\n\r:]*[:\s]+([A-Z0-9-]{6,})",
-        ],
+    # ========== REPORTE/SINIESTRO ==========
+    # Este campo es crítico - usar múltiples estrategias
+    # Qualitas Ajuste Express tiene: N° REPORTE y N° SINIESTRO separados
+    # Preferir REPORTE sobre SINIESTRO cuando ambos existen
+    
+    reporte = (
+        from_kv("reporte_siniestro", [
+            ["REPORTE"], ["REPORT"], ["SINIESTRO"], 
+            ["NUMERO", "REPORTE"], ["NO", "REPORTE"], ["N", "REPORTE"],
+            ["NUMERO", "DE", "REPORTE"], ["NO", "DE", "REPORTE"],
+            ["N", "DE", "REPORTE"]
+        ])
+        or from_flexible_kv("reporte_siniestro", [
+            "REPORTE", "REPORT", "SINIESTRO", 
+            "NUMERO REPORTE", "NO REPORTE", "N REPORTE",
+            "NUMERO DE REPORTE", "NO DE REPORTE", "N DE REPORTE",
+            "NUMERO SINIESTRO", "NO SINIESTRO", "N SINIESTRO",
+            "FOLIO", "NUMERO DE SINIESTRO"
+        ])
+        or from_regex(
+            "reporte_siniestro",
+            [
+                r"N[°º#]?\s*(?:DE\s+)?REPORTE[^\n\r:]*[:\s]+([A-Z0-9-]{5,20})",
+                r"REPORT\s*N[°º#]?[^\n\r:]*[:\s]+([A-Z0-9-]{5,20})",
+                r"N[°º#]?\s*(?:DE\s+)?SINIESTRO[^\n\r:]*[:\s]+([A-Z0-9-]{5,20})",
+                r"SINIESTRO[^\n\r:]*[:\s]+([A-Z0-9-]{5,20})",
+                r"REPORTE\s*[:\-]?\s*([A-Z0-9-]{5,20})",
+                r"REPORTE\s*NUMERO\s*[:\-]?\s*([A-Z0-9-]{5,20})",
+                r"FOLIO\s*[:\-]?\s*([A-Z0-9-]{5,20})",
+                r"\b(\d{3,}-\d{3,})\b",  # Formato común: 123-456789
+                r"\b(\d{6,12})\b",  # Números largos que podrían ser reportes
+            ],
+        )
+        or from_proximity(
+            "reporte_siniestro",
+            ["REPORTE", "REPORT", "SINIESTRO", "FOLIO"],
+            max_lines_after=2,
+            value_pattern=r"([A-Z0-9-]{5,20})",
+            exclude_patterns=["FECHA", "HORA", "TELEFONO", "EMAIL", "FOLIO ELECTRONICO"]
+        )
+        or from_context(
+            "reporte_siniestro",
+            ["REPORTE", "SINIESTRO", "FOLIO"],
+            value_pattern=r"\b([A-Z0-9-]{5,20})\b",
+            window_size=3
+        )
     )
+    
+    # Para Qualitas Ajuste Express: si no se encontró reporte pero hay siniestro, usar siniestro
+    if not reporte:
+        siniestro_fallback = from_regex(
+            "reporte_siniestro",
+            [r"SINIESTRO\s*[:\-]?\s*([A-Z0-9-]{5,20})"]
+        )
+        if siniestro_fallback:
+            reporte = siniestro_fallback
+            field_debug["reporte_siniestro"] = "fallback_from_siniestro"
+    
+    # Limpiar el reporte - quitar prefijos comunes
+    if reporte:
+        reporte = re.sub(r"^(REPORTE|REPORT|SINIESTRO|FOLIO)\s*[:\-]?\s*", "", reporte, flags=re.IGNORECASE).strip()
 
-    nb_cliente = from_kv(
-        "nb_cliente",
-        [
+    # ========== NOMBRE DEL CLIENTE ==========
+    nb_cliente = (
+        from_kv("nb_cliente", [
             ["NOMBRE", "RAZON", "CLIENTE"],
             ["CUSTOMER", "NAME"],
-        ],
-    ) or from_regex(
-        "nb_cliente",
-        [
-            r"NOMBRE O RAZ[ÓO]N SOCIAL DEL CLIENTE[^\n\r]*[\r\n]+([^\r\n]+)",
-            r"CUSTOMER NAME[^\n\r]*[\r\n]+([^\r\n]+)",
-        ],
+            ["NOMBRE", "CLIENTE"],
+            ["CLIENTE"],
+        ])
+        or from_flexible_kv("nb_cliente", [
+            "NOMBRE", "NOMBRE CLIENTE", "CLIENTE", "CUSTOMER NAME", "NOMBRE O RAZON SOCIAL",
+            "RAZON SOCIAL", "NOMBRE DEL CLIENTE", "Asegurado", "CONTRATANTE", "TITULAR"
+        ])
+        or from_regex(
+            "nb_cliente",
+            [
+                r"NOMBRE O RAZ[ÓO]N SOCIAL DEL CLIENTE[^\n\r]*[\r\n]+([^\r\n]+)",
+                r"CUSTOMER NAME[^\n\r]*[\r\n]+([^\r\n]+)",
+                r"NOMBRE\s*(?:DEL?)?\s*CLIENTE[^\n\r:]*[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+                r"CLIENTE[\s:]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+                r"ASEGURADO[\s:]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+                r"CONTRATANTE[\s:]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+                # CHUBB ticket: "Asegurado:" en línea seguida del nombre
+                r"^\s*Asegurado:\s*([A-Z][A-Z\s]{3,40})$",
+            ],
+        )
+        or from_proximity(
+            "nb_cliente",
+            ["NOMBRE", "CLIENTE", "ASEGURADO", "CONTRATANTE"],
+            max_lines_after=2,
+            value_pattern=r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,40})",
+            exclude_patterns=["TELEFONO", "EMAIL", "DIRECCION", "POLIZA", "CHUBB"]
+        )
     )
+    
+    # CHUBB ticket vertical: buscar "Asegurado:" seguido de nombre en línea siguiente
+    if not nb_cliente and aseguradora == "CHUBB" and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            if re.search(r"^\s*Asegurado\s*:\s*$", line, re.IGNORECASE):
+                # El nombre debería estar en la siguiente línea
+                if idx + 1 < len(normalized_lines):
+                    candidate = normalized_lines[idx + 1].strip()
+                    # Validar que parezca un nombre
+                    if (
+                        len(candidate) > 5 
+                        and re.search(r"[A-ZÁÉÍÓÚÑ]", candidate)
+                        and not re.search(r"\d", candidate)
+                        and "CHUBB" not in candidate.upper()
+                    ):
+                        nb_cliente = candidate
+                        field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
+                        break
 
-    tel_cliente = from_kv(
-        "tel_cliente",
-        [
+    # ========== TELÉFONO ==========
+    tel_cliente = (
+        from_kv("tel_cliente", [
             ["TELEFONO", "PHONE"],
             ["TELEFONO"],
-        ],
-    ) or from_regex(
-        "tel_cliente",
-        [
-            r"TEL[ÉE]FONO\s*/?\s*PHONE\s*N[°º]?[^\n\r]*[:\s]+([0-9][0-9 \-]{7,})",
-        ],
+            ["TEL", "CLIENTE"],
+            ["CELULAR"],
+        ])
+        or from_flexible_kv("tel_cliente", [
+            "TELEFONO", "PHONE", "TEL", "CELULAR", "TELEFONO CLIENTE", "TELEFONO DEL CLIENTE",
+            "TEL CLIENTE", "CELULAR CLIENTE"
+        ])
+        or from_regex(
+            "tel_cliente",
+            [
+                r"TEL[ÉE]FONO\s*/?\s*PHONE\s*N[°º#]?[^\n\r]*[:\s]+([0-9][0-9 \-\(\)]{7,})",
+                r"TEL[ÉE]FONO\s*[:\-]?\s*([0-9\s\-\(\)]{8,15})",
+                r"TEL\s*[:\-]?\s*([0-9\s\-\(\)]{8,15})",
+                r"CELULAR\s*[:\-]?\s*([0-9\s\-\(\)]{8,15})",
+                r"\b(\d{3}[-\s]\d{3}[-\s]\d{4})\b",  # Formato: 669-164-5258
+                r"\b(\d{10})\b",  # Formato: 6691645258
+                r"\(\d{3}\)\s*\d{3}[-\s]?\d{4}",  # Formato: (669) 164-5258
+            ],
+        )
+        or from_proximity(
+            "tel_cliente",
+            ["TELEFONO", "PHONE", "TEL", "CELULAR"],
+            max_lines_after=2,
+            value_pattern=r"([0-9\s\-\(\)]{8,15})",
+            exclude_patterns=["FECHA", "HORA", "REPORTE", "EMAIL"]
+        )
+        or from_context(
+            "tel_cliente",
+            ["TELEFONO", "PHONE", "TEL", "CONTACTO"],
+            value_pattern=r"\b(\d{10}|\d{3}[-\s]\d{3}[-\s]\d{4})\b",
+            window_size=3
+        )
     )
 
     # Qualitas OCR often has multiple phone labels; prioritize the phone tied to the customer block.
@@ -541,22 +905,27 @@ def _parse_orden_fields(
     if len(tel_cliente) > 10:
         tel_cliente = tel_cliente[-10:]
 
-    email_cliente = from_kv(
-        "email_cliente",
-        [
-            ["E", "MAIL"],
-        ],
+    # ========== EMAIL ==========
+    email_cliente = (
+        from_kv("email_cliente", [["E", "MAIL"], ["EMAIL"], ["CORREO"], ["E-MAIL"]])
+        or from_flexible_kv("email_cliente", [
+            "EMAIL", "E-MAIL", "E MAIL", "CORREO", "CORREO ELECTRONICO", "EMAIL CLIENTE"
+        ])
     )
+    
+    # Buscar cualquier email en el texto si no se encontró por KV
     if not email_cliente:
         email_match = re.search(r"([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", upper_text, flags=re.IGNORECASE)
         email_cliente = (email_match.group(1) if email_match else "").lower()
         if email_cliente:
-            field_debug["email_cliente"] = "regex"
-    if normalized_lines:
+            field_debug["email_cliente"] = "regex_global"
+    
+    # Buscar email cerca de la etiqueta
+    if not email_cliente and normalized_lines:
         email_idx = -1
         for idx, line in enumerate(normalized_lines):
             up = line.upper()
-            if "E MAIL" in up or "EMAIL" in up:
+            if "E MAIL" in up or "EMAIL" in up or "CORREO" in up or "E-MAIL" in up:
                 email_idx = idx
                 break
         if email_idx >= 0:
@@ -567,136 +936,390 @@ def _parse_orden_fields(
                         email_cliente = possible
                         field_debug["email_cliente"] = "line_after_email_label"
                         break
+    
+    # Buscar email en el contexto del cliente
+    if not email_cliente and normalized_lines and nb_cliente:
+        for idx, line in enumerate(normalized_lines):
+            if nb_cliente.upper() in line.upper():
+                # Buscar email en las siguientes líneas
+                for next_line in normalized_lines[idx:idx+5]:
+                    email_match = re.search(r"([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})", next_line.lower())
+                    if email_match:
+                        email_cliente = email_match.group(1)
+                        field_debug["email_cliente"] = "context_after_name"
+                        break
+                if email_cliente:
+                    break
+    
     email_cliente = email_cliente.lower()
 
-    marca_raw = from_kv(
-        "marca_vehiculo",
-        [
-            ["MARCA", "BRAND"],
-            ["MARCA"],
-        ],
-    ) or from_regex(
-        "marca_vehiculo",
-        [
-            r"MARCA\s*/?\s*BRAND[^\n\r]*[\r\n]+([^\r\n]+)",
-            r"MARCA[^\n\r:]*[:\s]+([^\r\n]+)",
-        ],
-    )
-
-    tipo_raw = from_kv(
-        "tipo_vehiculo",
-        [
-            ["TIPO", "TYPE"],
-            ["TIPO"],
-        ],
-    ) or from_regex(
-        "tipo_vehiculo",
-        [
-            r"TIPO\s*/?\s*TYPE[^\n\r]*[\r\n]+([^\r\n]+)",
-            r"TIPO[^\n\r:]*[:\s]+([^\r\n]+)",
-        ],
-    )
-
-    modelo_anio = from_kv(
-        "modelo_anio",
-        [
-            ["MODELO", "ANO"],
-            ["MODEL", "YEAR"],
-        ],
-    ) or from_regex(
-        "modelo_anio",
-        [
-            r"MODELO\s*\(A[ÑN]O\)[^\n\r]*[\r\n]+([0-9]{4})",
-            r"MODEL\s*/?\s*YEAR[^\n\r]*[\r\n]+([0-9]{4})",
-            r"\b((?:19|20)\d{2})\b",
-        ],
-    )
-    model_year_match = re.search(r"\b((?:19|20)\d{2})\b", modelo_anio or "")
-    modelo_anio = model_year_match.group(1) if model_year_match else ""
-
-    if aseguradora == "CHUBB" and normalized_lines:
-        # In CHUBB, "Modelo" is a dedicated field (often just the year).
+    # ========== INFORMACIÓN DEL VEHÍCULO ==========
+    
+    # Función auxiliar para extraer campo en formato ticket vertical (CHUBB)
+    def extract_ticket_field(label_patterns: list[str], max_lines: int = 2) -> str:
+        if not normalized_lines:
+            return ""
         for idx, line in enumerate(normalized_lines):
-            if line.upper().strip() == "MODELO":
+            line_upper = line.upper().strip()
+            # Buscar si la línea termina con alguno de los patrones de etiqueta
+            for pattern in label_patterns:
+                pattern_upper = pattern.upper()
+                # Formato: "Marca:" o "Marca" al final de la línea
+                if line_upper.rstrip(":").endswith(pattern_upper) or line_upper == pattern_upper:
+                    # El valor está en la siguiente línea
+                    for j in range(1, min(max_lines + 1, len(normalized_lines) - idx)):
+                        candidate = normalized_lines[idx + j].strip()
+                        # Evitar líneas vacías o que sean otras etiquetas
+                        if candidate and not any(
+                            candidate.upper().startswith(p) for p in 
+                            ["MARCA", "TIPO", "MODELO", "COLOR", "PLACAS", "SERIE", "ASEGURADO", "CHUBB"]
+                        ):
+                            return candidate
+        return ""
+    
+    # MARCA
+    marca_raw = (
+        from_kv("marca_vehiculo", [["MARCA", "BRAND"], ["MARCA"], ["MARCA", "VEHICULO"]])
+        or from_flexible_kv("marca_vehiculo", [
+            "MARCA", "BRAND", "MARCA VEHICULO", "MARCA DEL VEHICULO", "MARCA AUTO"
+        ])
+        or from_regex(
+            "marca_vehiculo",
+            [
+                r"MARCA\s*/?\s*BRAND[^\n\r]*[\r\n]+([^\r\n]+)",
+                r"MARCA[^\n\r:]*[:\s]+([A-Z0-9][A-Z0-9\s]{1,20})",
+                r"MARCA\s*[:\-]?\s*([A-Z][A-Z\s]{1,15})",
+                r"^\s*Marca:\s*([A-Z][A-Z\s]{1,15})$",
+            ],
+        )
+        or from_proximity(
+            "marca_vehiculo",
+            ["MARCA", "BRAND"],
+            max_lines_after=1,
+            value_pattern=r"([A-Z][A-Z\s]{1,15})",
+            exclude_patterns=["TIPO", "MODELO", "COLOR", "SERIE"]
+        )
+        or (aseguradora == "CHUBB" and extract_ticket_field(["Marca", "MARCA"]))
+    )
+
+    # TIPO
+    tipo_raw = (
+        from_kv("tipo_vehiculo", [["TIPO", "TYPE"], ["TIPO"], ["TIPO", "VEHICULO"], ["MODELO", "TIPO"]])
+        or from_flexible_kv("tipo_vehiculo", [
+            "TIPO", "TYPE", "TIPO VEHICULO", "TIPO DE VEHICULO", "MODELO", "SUBMARCA",
+            "LINEA", "VERSION"
+        ])
+        or from_regex(
+            "tipo_vehiculo",
+            [
+                r"TIPO\s*/?\s*TYPE[^\n\r]*[\r\n]+([^\r\n]+)",
+                r"TIPO[^\n\r:]*[:\s]+([A-Z0-9][A-Z0-9\s]{1,25})",
+                r"TIPO\s*[:\-]?\s*([A-Z][A-Z0-9\s]{1,20})",
+                r"LINEA\s*[:\-]?\s*([A-Z][A-Z0-9\s]{1,20})",
+                r"^\s*Tipo:\s*([A-Z][A-Z0-9\s\.]{5,50})$",
+            ],
+        )
+        or from_proximity(
+            "tipo_vehiculo",
+            ["TIPO", "TYPE", "LINEA", "SUBMARCA"],
+            max_lines_after=1,
+            value_pattern=r"([A-Z][A-Z0-9\s]{1,25})",
+            exclude_patterns=["MARCA", "MODELO", "COLOR", "SERIE", "PLACAS"]
+        )
+        or (aseguradora == "CHUBB" and extract_ticket_field(["Tipo", "TIPO"]))
+    )
+
+    # ========== AÑO/MODELO ==========
+    modelo_anio = (
+        from_kv("modelo_anio", [["MODELO", "ANO"], ["MODEL", "YEAR"], ["ANO"], ["YEAR"]])
+        or from_flexible_kv("modelo_anio", [
+            "MODELO", "ANO", "MODEL YEAR", "AÑO MODELO", "ANO MODELO", "MODELO AÑO"
+        ])
+        or from_regex(
+            "modelo_anio",
+            [
+                r"MODELO\s*\(A[ÑN]O\)[^\n\r]*[\r\n]+([0-9]{4})",
+                r"MODEL\s*/?\s*YEAR[^\n\r]*[\r\n]+([0-9]{4})",
+                r"A[ÑN]O\s*[:\-]?\s*([0-9]{4})",
+                r"YEAR\s*[:\-]?\s*([0-9]{4})",
+                r"^\s*Modelo:\s*(\d{4})$",
+                r"\b((?:19|20)\d{2})\b",
+            ],
+        )
+        or from_proximity(
+            "modelo_anio",
+            ["MODELO", "ANO", "YEAR", "AÑO"],
+            max_lines_after=1,
+            value_pattern=r"((?:19|20)\d{2})",
+            exclude_patterns=["MARCA", "TIPO", "COLOR"]
+        )
+        or (aseguradora == "CHUBB" and extract_ticket_field(["Modelo", "MODELO"]))
+    )
+    
+    # Extraer solo el año de 4 dígitos o 2 dígitos válido
+    if modelo_anio:
+        year_match = re.search(r"\b((?:19|20)?\d{2})\b", modelo_anio)
+        if year_match:
+            year_str = year_match.group(1)
+            if len(year_str) == 2:
+                year_num = int(year_str)
+                # Asumir 20xx para años >= 50, 19xx para años < 50
+                if year_num >= 50:
+                    modelo_anio = f"19{year_str}"
+                else:
+                    modelo_anio = f"20{year_str}"
+            else:
+                modelo_anio = year_str
+    
+    # Fallback específico para CHUBB ticket
+    if not modelo_anio and aseguradora == "CHUBB" and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            line_upper = line.upper().strip()
+            if line_upper in ["MODELO", "AÑO", "ANO"] or line_upper == "MODELO:":
                 for next_line in normalized_lines[idx + 1 : idx + 4]:
                     year_match = re.search(r"\b((?:19|20)\d{2})\b", next_line)
                     if year_match:
                         modelo_anio = year_match.group(1)
-                        field_debug["modelo_anio"] = "line_after_modelo"
+                        field_debug["modelo_anio"] = "line_after_modelo_chubb"
                         break
                 if modelo_anio:
                     break
 
-    color_vehiculo = from_kv(
-        "color_vehiculo",
-        [
-            ["COLOR", "COLOUR"],
+    # ========== COLOR ==========
+    color_vehiculo = (
+        from_kv("color_vehiculo", [["COLOR", "COLOUR"], ["COLOR"]])
+        or from_flexible_kv("color_vehiculo", [
+            "COLOR", "COLOUR", "COLOR VEHICULO", "COLOR DEL VEHICULO"
+        ])
+        or from_regex(
+            "color_vehiculo",
+            [
+                r"COLOR\s*/?\s*COLOUR?[^\n\r]*[\r\n]+([A-Z][A-Z\s]{2,15})",
+                r"COLOR[^\n\r:]*[:\s]+([A-Z][A-Z\s]{2,15})",
+                r"COLOR\s*[:\-]?\s*([A-Z][A-Z\s]{2,15})",
+                r"^\s*Color:\s*([A-Z][A-Z\s]{2,15})$",
+            ],
+        )
+        or from_proximity(
+            "color_vehiculo",
             ["COLOR"],
-        ],
-    ) or from_regex(
-        "color_vehiculo",
-        [
-            r"COLOR\s*/?\s*COLOUR?[^\n\r]*[\r\n]+([^\r\n]+)",
-            r"COLOR[^\n\r:]*[:\s]+([^\r\n]+)",
-        ],
+            max_lines_after=1,
+            value_pattern=r"([A-Z][A-Z\s]{2,15})",
+            exclude_patterns=["MARCA", "TIPO", "MODELO", "SERIE", "PLACAS"]
+        )
+        or (aseguradora == "CHUBB" and extract_ticket_field(["Color", "COLOR"]))
     )
+    
+    # Validar que el color sea un color válido común
+    colores_validos = [
+        "NEGRO", "BLANCO", "GRIS", "PLATA", "ROJO", "AZUL", "VERDE", "AMARILLO",
+        "NARANJA", "CAFE", "MARRON", "BEIGE", "DORADO", "VINO", "TINTO", "GRAFITO",
+        "ACERO", "ARENA", "BLANCO PERLA", "AZUL MARINO", "GRIS OSCURO", "PLATA METALICO"
+    ]
+    if color_vehiculo:
+        color_upper = color_vehiculo.upper()
+        # Verificar si es un color válido o contiene uno
+        es_valido = any(valido in color_upper or color_upper in valido for valido in colores_validos)
+        if not es_valido and len(color_vehiculo) < 3:
+            color_vehiculo = ""  # Descartar si parece inválido
 
-    serie_auto = from_kv(
-        "serie_auto",
-        [
-            ["SERIE"],
-            ["VIN"],
-        ],
-    ) or from_regex(
-        "serie_auto",
-        [
-            r"N[°º]?\s*DE SERIE\s*/?\s*SERIES?\s*N[°º]?[^\n\r]*[\r\n]+([A-Z0-9]{8,})",
-            r"VIN[^\n\r:]*[:\s]+([A-Z0-9]{8,})",
-        ],
+    # ========== SERIE/VIN ==========
+    serie_auto = (
+        from_kv("serie_auto", [["SERIE"], ["VIN"], ["NO", "SERIE"], ["NUMERO", "SERIE"]])
+        or from_flexible_kv("serie_auto", [
+            "SERIE", "VIN", "NUMERO DE SERIE", "NO SERIE", "N SERIE", "SERIE VEHICULO"
+        ])
+        or from_regex(
+            "serie_auto",
+            [
+                r"N[°º#]?\s*DE SERIE\s*/?\s*SERIES?\s*N[°º#]?[^\n\r]*[\r\n]+([A-HJ-NPR-Z0-9]{8,17})",
+                r"VIN[^\n\r:]*[:\s]+([A-HJ-NPR-Z0-9]{8,17})",
+                r"SERIE\s*[:\-]?\s*([A-HJ-NPR-Z0-9]{8,17})",
+                r"^\s*Serie:\s*([A-HJ-NPR-Z0-9]{8,17})$",
+                r"\b([A-HJ-NPR-Z0-9]{17})\b",  # VIN estándar de 17 caracteres
+            ],
+        )
+        or from_proximity(
+            "serie_auto",
+            ["SERIE", "VIN", "NUMERO DE SERIE"],
+            max_lines_after=1,
+            value_pattern=r"([A-HJ-NPR-Z0-9]{8,17})",
+            exclude_patterns=["MARCA", "TIPO", "MODELO", "PLACAS"]
+        )
+        or (aseguradora == "CHUBB" and extract_ticket_field(["Serie", "SERIE", "No. serie", "NO. SERIE"]))
     )
+    
+    # Validar formato de VIN básico
+    if serie_auto:
+        serie_limpia = re.sub(r"[^A-Z0-9]", "", serie_auto.upper())
+        # VIN válido: 17 caracteres alfanuméricos (sin I, O, Q)
+        if len(serie_limpia) >= 8:
+            serie_auto = serie_limpia[:17]  # Tomar máximo 17 caracteres
 
-    placas = from_kv(
-        "placas",
-        [
-            ["PLACAS", "LICENSE"],
-            ["PLACAS"],
-        ],
-    ) or from_regex(
-        "placas",
-        [
-            r"PLACAS\s*/?\s*LICENSE PLATE[^\n\r]*[\r\n]+([A-Z0-9\-]{5,})",
-            r"PLACAS[^\n\r:]*[:\s]+([A-Z0-9\-]{5,})",
-        ],
+    # ========== PLACAS ==========
+    placas = (
+        from_kv("placas", [["PLACAS", "LICENSE"], ["PLACAS"], ["PLACA", "LICENSE"], ["PLACA"]])
+        or from_flexible_kv("placas", [
+            "PLACAS", "PLACA", "LICENSE PLATE", "NO PLACAS", "NUMERO PLACAS"
+        ])
+        or from_regex(
+            "placas",
+            [
+                r"PLACAS\s*/?\s*LICENSE PLATE[^\n\r]*[\r\n]+([A-Z0-9\-]{5,10})",
+                r"PLACAS[^\n\r:]*[:\s]+([A-Z0-9\-]{5,10})",
+                r"PLACA\s*[:\-]?\s*([A-Z0-9\-]{5,10})",
+                r"^\s*Placas:\s*([A-Z0-9\-]{5,10})$",
+                r"\b([A-Z]{1,3}-?\d{1,4}-?[A-Z]?\d?)\b",  # Formatos comunes de placas mexicanas
+            ],
+        )
+        or from_proximity(
+            "placas",
+            ["PLACAS", "PLACA", "LICENSE"],
+            max_lines_after=1,
+            value_pattern=r"([A-Z0-9\-]{5,10})",
+            exclude_patterns=["MARCA", "TIPO", "MODELO", "SERIE"]
+        )
+        or (aseguradora == "CHUBB" and extract_ticket_field(["Placas", "PLACAS", "Placa", "PLACA"]))
     )
+    
+    # Limpiar y validar placas
+    if placas:
+        placas = re.sub(r"\s+", "", placas.upper())  # Quitar espacios
+        # Validar longitud mínima
+        if len(re.sub(r"[^A-Z0-9]", "", placas)) < 5:
+            placas = ""  # Descartar si es muy corta
 
-    kilometraje = from_kv(
-        "kilometraje",
-        [
-            ["KILOMETRAJE", "MILEAGE"],
-            ["KILOMETRAJE"],
-        ],
-    ) or from_regex(
-        "kilometraje",
-        [
-            r"KILOMETRAJE\s*/?\s*MILEAGE[^\n\r]*[\r\n]+([0-9]{2,7})",
-            r"KILOMETRAJE[^\n\r:]*[:\s]+([0-9]{2,7})",
-        ],
+    # ========== KILOMETRAJE ==========
+    kilometraje = (
+        from_kv("kilometraje", [["KILOMETRAJE", "MILEAGE"], ["KILOMETRAJE"], ["KM"]])
+        or from_flexible_kv("kilometraje", [
+            "KILOMETRAJE", "MILEAGE", "KM", "KMS", "KILOMETROS", "ODOMETRO"
+        ])
+        or from_regex(
+            "kilometraje",
+            [
+                r"KILOMETRAJE\s*/?\s*MILEAGE[^\n\r]*[\r\n]+([0-9,.]{2,8})",
+                r"KILOMETRAJE[^\n\r:]*[:\s]+([0-9,.]{2,8})",
+                r"KM\s*[:\-]?\s*([0-9,.]{2,8})",
+                r"\b(\d{1,3}(?:,\d{3})+)\b",  # Formato con comas: 45,000
+                r"\b(\d{5,7})\b",  # Números de 5-7 dígitos (kilometraje común)
+            ],
+        )
+        or from_proximity(
+            "kilometraje",
+            ["KILOMETRAJE", "KM", "KMS", "ODOMETRO"],
+            max_lines_after=1,
+            value_pattern=r"([0-9,.]{2,8})",
+            exclude_patterns=["MARCA", "TIPO", "MODELO", "PLACAS"]
+        )
     )
-    kilometraje = re.sub(r"\D", "", kilometraje or "")
+    # Limpiar kilometraje - solo dígitos
+    if kilometraje:
+        kilometraje = re.sub(r"[^\d]", "", kilometraje)
+        # Validar rango razonable (1000 - 999999)
+        if kilometraje:
+            km_num = int(kilometraje)
+            if km_num < 100 or km_num > 999999:
+                kilometraje = ""  # Descartar si está fuera de rango
 
-    descripcion_siniestro = from_regex(
-        "descripcion_siniestro",
-        [
-            r"DESCRIPCI[ÓO]N DE DA[ÑN]OS A REPARAR[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
-            r"DESCRIPTION OF DAMAGES TO REPAIR[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
-            r"DESCRIPCI[ÓO]N DE DA[ÑN]OS A REPARAR[^\r\n]*\s+([A-Z0-9ÁÉÍÓÚÑ,\.\-\s]{8,})",
-        ],
+    # ========== DESCRIPCIÓN DE DAÑOS ==========
+    descripcion_siniestro = (
+        from_regex(
+            "descripcion_siniestro",
+            [
+                r"DESCRIPCI[ÓO]N DE DA[ÑN]OS A REPARAR[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
+                r"DESCRIPTION OF DAMAGES TO REPAIR[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
+                r"DESCRIPCI[ÓO]N DE DA[ÑN]OS A REPARAR[^\r\n]*\s+([A-Z0-9ÁÉÍÓÚÑ,\.\-\s]{8,})",
+                r"DA[ÑN]OS\s*A\s*REPARAR[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
+                r"DESCRIPCI[ÓO]N\s*DE\s*DA[ÑN]OS[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
+                r"OBSERVACIONES\s*DE\s*DA[ÑN]OS[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
+                r"DESCRIPCI[ÓO]N\s*DE\s*DA[ÑN]OS[^\r\n]*(?:\r?\n)+([^\r\n]{6,})",
+                # Qualitas Ajuste Express format
+                r"DESCRIPCI[ÓO]N\s+DE\s+DA[ÑN]OS[\s:]+([A-ZÁÉÍÓÚÑ][A-Z0-9ÁÉÍÓÚÑ,\.\-\s*]{10,200})",
+                # CHUBB ticket: Daños Mecanicos
+                r"DA[ÑN]OS\s+MECANICOS[^\r\n]*(?:\r?\n)+([A-ZÁÉÍÓÚÑ][A-Z0-9ÁÉÍÓÚÑ,\.\-\s]{10,300})",
+            ],
+        )
+        or from_proximity(
+            "descripcion_siniestro",
+            ["DAÑOS", "DANOS", "DAMAGES", "REPARAR", "DESCRIPCION DAÑOS", "DESCRIPCION DE DAÑOS"],
+            max_lines_after=5,
+            value_pattern=r"([A-ZÁÉÍÓÚÑ][A-Z0-9ÁÉÍÓÚÑ,\.\-\s]{10,200})",
+            exclude_patterns=["PREEXISTENTES", "PREEXISTING", "INUNDACION", "FLOOD", "AREAS DAÑADAS"]
+        )
     )
+    
+    # CHUBB ticket vertical: Extraer de "Piezas Dañadas" y "Daños Mecanicos"
+    if not descripcion_siniestro and aseguradora == "CHUBB" and normalized_lines:
+        piezas_danadas = []
+        danos_mecanicos = []
+        
+        # Buscar sección "Piezas Dañadas"
+        piezas_idx = -1
+        for idx, line in enumerate(normalized_lines):
+            if "PIEZAS DAÑADAS" in line.upper() or "PIEZAS DANADAS" in line.upper():
+                piezas_idx = idx
+                break
+        
+        if piezas_idx >= 0:
+            # Recolectar líneas hasta la siguiente sección
+            for line in normalized_lines[piezas_idx + 1 : piezas_idx + 20]:
+                line_upper = line.upper()
+                # Detenerse en secciones siguientes
+                if any(marker in line_upper for marker in [
+                    "DAÑOS MECANICOS", "DANOS MECANICOS", "NOTAS GENERALES", 
+                    "ALERTA DE FRAUDE", "FIRMA DEL CONDUCTOR"
+                ]):
+                    break
+                # Ignorar líneas vacías o que son encabezados de sección
+                if not line.strip() or "SECCION" in line_upper or line_upper in ["OTROS", "OTRO"]:
+                    continue
+                # Limpiar y agregar
+                cleaned = line.strip()
+                if len(cleaned) > 2:
+                    piezas_danadas.append(cleaned)
+        
+        # Buscar sección "Daños Mecanicos"
+        mecanicos_idx = -1
+        for idx, line in enumerate(normalized_lines):
+            if "DAÑOS MECANICOS" in line.upper() or "DANOS MECANICOS" in line.upper():
+                mecanicos_idx = idx
+                break
+        
+        if mecanicos_idx >= 0:
+            for line in normalized_lines[mecanicos_idx + 1 : mecanicos_idx + 10]:
+                line_upper = line.upper()
+                if any(marker in line_upper for marker in [
+                    "NOTAS GENERALES", "ALERTA DE FRAUDE", "FIRMA DEL CONDUCTOR", "CONDUCTOR"
+                ]):
+                    break
+                cleaned = line.strip()
+                if len(cleaned) > 5:
+                    danos_mecanicos.append(cleaned)
+        
+        # Combinar ambas fuentes
+        descripcion_parts = []
+        if piezas_danadas:
+            descripcion_parts.append("Piezas: " + ", ".join(piezas_danadas[:5]))
+        if danos_mecanicos:
+            descripcion_parts.append("Daños: " + " ".join(danos_mecanicos[:3]))
+        
+        if descripcion_parts:
+            descripcion_siniestro = "; ".join(descripcion_parts)
+            field_debug["descripcion_siniestro"] = "chubb_ticket_piezas_mecanicos"
+    
+    # Validar que la descripción no sea texto de ayuda/instrucción
     if descripcion_siniestro:
         upper_desc = descripcion_siniestro.upper()
-        if "EN CASO DE INUND" in upper_desc or "IN CASE OF FLOOD" in upper_desc:
+        textos_invalidos = [
+            "EN CASO DE INUND", "IN CASE OF FLOOD", "DESCRIBIR", "ANOTAR",
+            "INDICAR", "ESPECIFICAR", "COMPLETAR", "LLENAR"
+        ]
+        if any(inv in upper_desc for inv in textos_invalidos):
             descripcion_siniestro = ""
             field_debug.pop("descripcion_siniestro", None)
+    
+    # Fallback: buscar líneas después del encabezado de daños
     if not descripcion_siniestro and normalized_lines:
         header_idx = -1
         for idx, line in enumerate(normalized_lines):
@@ -779,17 +1402,15 @@ def _parse_orden_fields(
                     if non_generic:
                         candidates = non_generic
                     if not candidates:
+                        # Palabras clave extendidas para detectar daños
                         damage_keywords = (
-                            "FACIA",
-                            "FARO",
-                            "PUERTA",
-                            "DEFENSA",
-                            "COFRE",
-                            "SALPICADERA",
-                            "ESPEJO",
-                            "PARRILLA",
-                            "TAPA",
-                            "COSTADO",
+                            "FACIA", "FARO", "PUERTA", "DEFENSA", "COFRE", "SALPICADERA",
+                            "ESPEJO", "PARRILLA", "TAPA", "COSTADO", "PARACHOQUE",
+                            "GUARDAFANGO", "GUARDAFANGOS", "BUMPER", "LAMPARA",
+                            "CALAVERA", "MICA", "CRISTAL", "VIDRIO", "REJILLA",
+                            "ALERON", "FASCIA", "ESTRIBO", "ROCE", "ABOLLADURA",
+                            "GOLPE", "IMPACTO", "RAYON", "RASGUÑO", "QUEBRADO",
+                            "ROTO", "DAÑADO", "DAÑO", "COLISION", "CHOQUE"
                         )
                         for c in normalized_lines[piezas_idx + 1 : piezas_idx + 12]:
                             cu = c.upper()
@@ -799,29 +1420,73 @@ def _parse_orden_fields(
                     descripcion_siniestro = ", ".join(candidates[:2])
                     field_debug["descripcion_siniestro"] = "chubb_piezas_danadas"
 
+    # Fallback específico para Qualitas Ajuste Express
     if not descripcion_siniestro and aseguradora == "QUALITAS" and normalized_lines:
-        # Extra fallback for Qualitas where description line may be detached from the section header.
+        # Buscar sección "Descripción de daños" o "Descripción de daños a reparar"
         desc_idx = -1
         for idx, line in enumerate(normalized_lines):
             up = line.upper()
-            if "DESCRIPCION DE DANOS A REPARAR" in up or "DESCRIPTION OF DAMAGES TO REPAIR" in up:
+            if any(marker in up for marker in [
+                "DESCRIPCION DE DANOS", "DESCRIPTION OF DAMAGES", 
+                "DAÑOS A REPARAR", "DAMAGES TO REPAIR", "OBSERVACIONES",
+                "DESCRIPCION DE DAÑOS", "DESCRIPCION DAÑOS"
+            ]):
+                desc_idx = idx
+                break
+        
+        if desc_idx >= 0:
+            # Palabras clave extendidas para detectar daños
+            damage_keywords = (
+                "SALPICADERA", "ESPEJO", "FARO", "FACIA", "DEFENSA", "PUERTA",
+                "COSTADO", "COFRE", "TOLDO", "CANTONERA", "PARRILLA", "STOP",
+                "ESTRIBO", "PARACHOQUE", "GUARDAFANGO", "GUARDAFANGOS", "BUMPER",
+                "LAMPARA", "CALAVERA", "MICA", "CRISTAL", "VIDRIO", "REJILLA",
+                "ALERON", "FASCIA", "ROCE", "ABOLLADURA", "GOLPE", "IMPACTO",
+                "RAYON", "RASGUÑO", "QUEBRADO", "ROTO", "DAÑADO", "DAÑO",
+                "COLISION", "CHOQUE", "TRASERO", "FRONTAL", "LATERAL", "DERECHO",
+                "IZQUIERDO", "DELANTERO", "POSTERIOR", "CAPOT", "TAPA", "BAUL",
+                "PARTE", "TRASERA", "DELANTERA", "IZQUIERDA", "DERECHA"
+            )
+            
+            # Para Ajuste Express, la descripción puede estar en la misma línea o siguientes
+            candidates = []
+            for line in normalized_lines[desc_idx : desc_idx + 10]:
+                up = line.upper()
+                # Saltar líneas de encabezado o separadores
+                if any(skip in up for skip in ["AREAS DAÑADAS", "PARTE FRONTAL", "PARTE TRASERA", "LADO DERECHO", "LADO IZQUIERDO"]):
+                    continue
+                # Buscar líneas con palabras clave de daño
+                if any(kw in up for kw in damage_keywords):
+                    # Limpiar la línea
+                    cleaned = line.strip()
+                    if len(cleaned) > 10:
+                        candidates.append(cleaned)
+            
+            if candidates:
+                descripcion_siniestro = "; ".join(candidates[:3])  # Tomar hasta 3 líneas
+                field_debug["descripcion_siniestro"] = "qualitas_ajuste_express"
+    
+    # Fallback general para Qualitas
+    if not descripcion_siniestro and aseguradora == "QUALITAS" and normalized_lines:
+        desc_idx = -1
+        for idx, line in enumerate(normalized_lines):
+            up = line.upper()
+            if any(marker in up for marker in [
+                "DESCRIPCION DE DANOS", "DESCRIPTION OF DAMAGES", 
+                "DAÑOS A REPARAR", "DAMAGES TO REPAIR", "OBSERVACIONES"
+            ]):
                 desc_idx = idx
                 break
         if desc_idx >= 0:
             damage_keywords = (
-                "SALPICADERA",
-                "ESPEJO",
-                "FARO",
-                "FACIA",
-                "DEFENSA",
-                "PUERTA",
-                "COSTADO",
-                "COFRE",
-                "TOLDO",
-                "CANTONERA",
-                "PARRILLA",
-                "STOP",
-                "ESTRIBO",
+                "SALPICADERA", "ESPEJO", "FARO", "FACIA", "DEFENSA", "PUERTA",
+                "COSTADO", "COFRE", "TOLDO", "CANTONERA", "PARRILLA", "STOP",
+                "ESTRIBO", "PARACHOQUE", "GUARDAFANGO", "GUARDAFANGOS", "BUMPER",
+                "LAMPARA", "CALAVERA", "MICA", "CRISTAL", "VIDRIO", "REJILLA",
+                "ALERON", "FASCIA", "ROCE", "ABOLLADURA", "GOLPE", "IMPACTO",
+                "RAYON", "RASGUÑO", "QUEBRADO", "ROTO", "DAÑADO", "DAÑO",
+                "COLISION", "CHOQUE", "TRASERO", "FRONTAL", "LATERAL", "DERECHO",
+                "IZQUIERDO", "DELANTERO", "POSTERIOR", "CAPOT", "TAPA", "BAUL"
             )
             for line in normalized_lines[desc_idx + 1 : desc_idx + 25]:
                 up = line.upper()
@@ -837,18 +1502,41 @@ def _parse_orden_fields(
     # For some insurer templates, TIPO contains "MARCA ... MODELO", while MARCA may contain dealer name.
     marca_vehiculo = marca_raw
     tipo_vehiculo = tipo_raw
-    if tipo_raw and aseguradora != "CHUBB":
+    
+    # Qualitas Ajuste Express: Marca puede ser "REGULARIZADO" y Tipo contiene "Nissan Sedan..."
+    # Detectar si marca parece un valor de sistema y tipo contiene marca real
+    if tipo_raw:
         tipo_clean = _normalize_ocr_text(tipo_raw)
-        brand_model_match = re.match(r"^([A-Z0-9]{2,})(?:\s*\([A-Z0-9]{1,4}\))?\s+(.+)$", tipo_clean)
-        if brand_model_match:
+        
+        # Patrón: "Marca Tipo Modelo" en el campo tipo (ej: "Nissan Sedan 4D S 1.8L I4 2018")
+        brand_model_match = re.match(r"^([A-Z][A-Z0-9]{1,15})(?:\s+([A-Z][A-Z0-9\s]{2,30}))?\s*(\d{4})?$", tipo_clean, re.IGNORECASE)
+        if brand_model_match and marca_vehiculo:
             candidate_brand = brand_model_match.group(1)
-            candidate_type = _normalize_ocr_text(brand_model_match.group(2))
-            if candidate_type:
-                tipo_vehiculo = candidate_type
-                if candidate_brand:
-                    marca_vehiculo = candidate_brand
-                    field_debug["marca_vehiculo"] = "heuristic_from_tipo"
-                field_debug["tipo_vehiculo"] = "heuristic_from_tipo"
+            # Si marca actual parece un valor de sistema (REGULARIZADO, OTROS, etc.)
+            marca_upper = marca_vehiculo.upper()
+            if marca_upper in ["REGULARIZADO", "OTROS", "OTRO", "VARIOS", "DIFERENTES"]:
+                # Extraer marca del tipo
+                marca_vehiculo = candidate_brand.title()
+                field_debug["marca_vehiculo"] = "extracted_from_tipo_ajuste_express"
+                # El resto del tipo es el tipo real
+                remaining = tipo_clean[len(candidate_brand):].strip()
+                if remaining:
+                    # Quitar el año si está al final
+                    remaining = re.sub(r"\s+\d{4}$", "", remaining).strip()
+                    tipo_vehiculo = remaining
+                    field_debug["tipo_vehiculo"] = "cleaned_from_ajuste_express"
+        elif tipo_raw and aseguradora != "CHUBB":
+            # Heurística original para otros casos
+            brand_model_match = re.match(r"^([A-Z0-9]{2,})(?:\s*\([A-Z0-9]{1,4}\))?\s+(.+)$", tipo_clean)
+            if brand_model_match:
+                candidate_brand = brand_model_match.group(1)
+                candidate_type = _normalize_ocr_text(brand_model_match.group(2))
+                if candidate_type:
+                    tipo_vehiculo = candidate_type
+                    if candidate_brand:
+                        marca_vehiculo = candidate_brand
+                        field_debug["marca_vehiculo"] = "heuristic_from_tipo"
+                    field_debug["tipo_vehiculo"] = "heuristic_from_tipo"
 
     if aseguradora == "CHUBB":
         # CHUBB "Marca" is usually reliable; "Tipo" can be long, keep a concise class when possible.

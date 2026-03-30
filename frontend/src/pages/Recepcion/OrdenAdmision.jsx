@@ -467,10 +467,36 @@ export default function OrdenAdmision() {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
   };
 
-  const applyExtractedFields = (campos) => {
+  // Campos críticos que siempre deben reemplazarse si el OCR los detecta
+  const CRITICAL_OCR_FIELDS = [
+    "reporte_siniestro",
+    "fecha_adm", 
+    "hr_adm",
+    "nb_cliente",
+    "placas"
+  ];
+  
+  // Campos que solo se reemplazan si están vacíos (no críticos)
+  const OPTIONAL_OCR_FIELDS = [
+    "seguro_comp",
+    "tel_cliente",
+    "email_cliente",
+    "color_vehiculo",
+    "transmision",
+    "descripcion_siniestro"
+  ];
+
+  const applyExtractedFields = (campos, fieldDebug = {}) => {
     if (!campos || typeof campos !== "object") return;
+    
+    // Contador de campos aplicados para feedback
+    let appliedCount = 0;
+    let skippedCount = 0;
+    
     setForm((prev) => {
       const next = { ...prev };
+      
+      // Mapeo de campos del OCR a campos del formulario
       const map = {
         reporte_siniestro: "reporte_siniestro",
         fecha_adm: "fecha_adm",
@@ -489,16 +515,41 @@ export default function OrdenAdmision() {
         transmision: "transmision",
         descripcion_siniestro: "descripcion_siniestro"
       };
+      
       for (const [target, source] of Object.entries(map)) {
         const incoming = String(campos[source] || "").trim();
         if (!incoming) continue;
+        
         const current = String(next[target] || "").trim();
-        if (!current) {
+        const debugMethod = fieldDebug[source];
+        
+        // Lógica de aplicación según tipo de campo
+        if (CRITICAL_OCR_FIELDS.includes(target)) {
+          // Campos críticos: siempre reemplazar si hay nuevo valor
           next[target] = source === "kilometraje" ? incoming.replace(/[^\d]/g, "") : incoming;
+          appliedCount++;
+        } else if (OPTIONAL_OCR_FIELDS.includes(target)) {
+          // Campos opcionales: solo reemplazar si está vacío
+          if (!current) {
+            next[target] = incoming;
+            appliedCount++;
+          } else {
+            skippedCount++;
+          }
+        } else {
+          // Campos de vehículo: reemplazar si está vacío o si el método de extracción es confiable
+          if (!current || debugMethod?.startsWith("kv:") || debugMethod === "flexible_kv") {
+            next[target] = source === "kilometraje" ? incoming.replace(/[^\d]/g, "") : incoming;
+            appliedCount++;
+          } else {
+            skippedCount++;
+          }
         }
       }
       return next;
     });
+    
+    return { applied: appliedCount, skipped: skippedCount };
   };
 
   const handleAdjuntoChange = async (event) => {
@@ -521,8 +572,12 @@ export default function OrdenAdmision() {
       const payload = await response.json();
       const campos = payload?.campos || {};
       const fieldDebug = payload?.field_debug || {};
-      applyExtractedFields(campos);
+      const ocrLines = payload?.ocr_lines || [];
+      
+      // Aplicar campos extraídos con información de debug
+      const applyResult = applyExtractedFields(campos, fieldDebug);
 
+      // Procesar daños del siniestro si están presentes
       if (campos?.danos_siniestro) {
         setDanosSiniestroParts((prev) => {
           const list = String(campos.danos_siniestro)
@@ -533,12 +588,15 @@ export default function OrdenAdmision() {
           return list;
         });
       } else if (campos?.descripcion_siniestro && partesAuto.length) {
+        // Extraer partes automáticamente de la descripción
         setDanosSiniestroParts((prev) => {
           if (prev.length) return prev;
           const matched = matchCatalogPartsFromDescription(campos.descripcion_siniestro, partesAuto);
           return matched.length ? matched : prev;
         });
       }
+      
+      // Procesar daños preexistentes
       if (campos?.danos_preexistentes) {
         setDanosPreexistParts((prev) => {
           const list = String(campos.danos_preexistentes)
@@ -550,46 +608,73 @@ export default function OrdenAdmision() {
         });
       }
 
+      // Actualizar grupo de marca si se detectó marca
       if (campos?.marca_vehiculo) {
         const selected = marcas.find((marca) => marca.nb_marca === campos.marca_vehiculo);
         if (selected?.gpo_marca) {
           setGrupoSeleccionado(selected.gpo_marca);
         }
       }
+      
       const aseguradoraDetectada = payload?.aseguradora_detectada;
+      
+      // Definir campos requeridos para revisión
       const requiredForReview = [
         ["reporte_siniestro", "Reporte/Siniestro"],
         ["fecha_adm", "Fecha admisión"],
         ["hr_adm", "Hora admisión"],
         ["nb_cliente", "Nombre cliente"],
-        ["tel_cliente", "Teléfono"],
-        ["email_cliente", "Email"],
         ["marca_vehiculo", "Marca"],
         ["tipo_vehiculo", "Tipo"],
         ["modelo_anio", "Año"],
-        ["serie_auto", "Serie"],
-        ["placas", "Placas"],
-        ["kilometraje", "Kilometraje"]
+        ["placas", "Placas"]
       ];
-      const missing = requiredForReview
+      
+      // Campos opcionales que son útiles pero no críticos
+      const optionalFields = [
+        ["tel_cliente", "Teléfono"],
+        ["email_cliente", "Email"],
+        ["serie_auto", "Serie"],
+        ["kilometraje", "Kilometraje"],
+        ["color_vehiculo", "Color"],
+        ["transmision", "Transmisión"]
+      ];
+      
+      // Calcular campos faltantes
+      const missingCritical = requiredForReview
         .filter(([key]) => !String(campos?.[key] || "").trim())
         .map(([, label]) => label);
-      // Useful while calibrating extraction templates.
-      if (Object.keys(fieldDebug).length) {
+        
+      const missingOptional = optionalFields
+        .filter(([key]) => !String(campos?.[key] || "").trim())
+        .map(([, label]) => label);
+      
+      // Log para debugging (solo en desarrollo)
+      if (Object.keys(fieldDebug).length && import.meta.env.DEV) {
         // eslint-disable-next-line no-console
-        console.info("OCR field_debug", fieldDebug);
+        console.info("OCR Debug:", { campos, fieldDebug, ocrLines: ocrLines.slice(0, 20) });
       }
-      setExtractInfo(
-        aseguradoraDetectada
-          ? `Documento detectado: ${aseguradoraDetectada}. Campos aplicados al formulario.${
-              missing.length ? ` Revisar manualmente: ${missing.join(", ")}.` : ""
-            }`
-          : `Se extrajo texto del documento. Revisa y completa los campos.${
-              missing.length ? ` Faltantes: ${missing.join(", ")}.` : ""
-            }`
-      );
+      
+      // Construir mensaje informativo
+      let infoMessage = "";
+      if (aseguradoraDetectada) {
+        infoMessage = `✓ ${aseguradoraDetectada} detectado. `;
+        infoMessage += `${applyResult.applied} campo(s) aplicado(s). `;
+        if (missingCritical.length) {
+          infoMessage += `⚠️ Revisar: ${missingCritical.join(", ")}.`;
+        } else {
+          infoMessage += "✓ Campos críticos completos.";
+        }
+        if (missingOptional.length <= 3) {
+          infoMessage += ` (Opcionales: ${missingOptional.join(", ")})`;
+        }
+      } else {
+        infoMessage = "No se detectó aseguradora. Revisa los campos manualmente.";
+      }
+      
+      setExtractInfo(infoMessage);
     } catch (err) {
-      setExtractInfo(err.message || "No se pudo leer el documento");
+      setExtractInfo(`❌ Error: ${err.message || "No se pudo leer el documento"}`);
     } finally {
       setExtractingDoc(false);
     }

@@ -559,6 +559,10 @@ export default function OrdenAdmision() {
     if (!file) return;
     try {
       setExtractingDoc(true);
+      
+      // Limpiar formulario anterior para evitar datos mezclados
+      resetForm();
+      
       const formData = new FormData();
       formData.append("file", file);
       const response = await fetch(
@@ -573,6 +577,11 @@ export default function OrdenAdmision() {
       const campos = payload?.campos || {};
       const fieldDebug = payload?.field_debug || {};
       const ocrLines = payload?.ocr_lines || [];
+      
+      // Debug: mostrar en consola lo que recibimos del backend
+      if (import.meta.env.DEV) {
+        console.log("OCR Response:", { campos, fieldDebug, rawText: payload?.raw_text?.substring(0, 500) });
+      }
       
       // Aplicar campos extraídos con información de debug
       const applyResult = applyExtractedFields(campos, fieldDebug);

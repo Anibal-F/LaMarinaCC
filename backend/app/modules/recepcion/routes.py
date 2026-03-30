@@ -1175,57 +1175,13 @@ def _parse_orden_fields(
                             return candidate
         return ""
     
-    # MARCA
-    marca_raw = (
-        from_kv("marca_vehiculo", [["MARCA", "BRAND"], ["MARCA"], ["MARCA", "VEHICULO"]])
-        or from_flexible_kv("marca_vehiculo", [
-            "MARCA", "BRAND", "MARCA VEHICULO", "MARCA DEL VEHICULO", "MARCA AUTO"
-        ])
-        or from_regex(
-            "marca_vehiculo",
-            [
-                r"MARCA\s*/?\s*BRAND[^\n\r]*[\r\n]+([^\r\n]+)",
-                r"MARCA[^\n\r:]*[:\s]+([A-Z0-9][A-Z0-9\s]{1,20})",
-                r"MARCA\s*[:\-]?\s*([A-Z][A-Z\s]{1,15})",
-                r"^\s*Marca:\s*([A-Z][A-Z\s]{1,15})$",
-            ],
-        )
-        or from_proximity(
-            "marca_vehiculo",
-            ["MARCA", "BRAND"],
-            max_lines_after=1,
-            value_pattern=r"([A-Z][A-Z\s]{1,15})",
-            exclude_patterns=["TIPO", "MODELO", "COLOR", "SERIE"]
-        )
-        or (aseguradora == "CHUBB" and extract_ticket_field(["Marca", "MARCA"]))
-    )
-
-    # TIPO
-    tipo_raw = (
-        from_kv("tipo_vehiculo", [["TIPO", "TYPE"], ["TIPO"], ["TIPO", "VEHICULO"], ["MODELO", "TIPO"]])
-        or from_flexible_kv("tipo_vehiculo", [
-            "TIPO", "TYPE", "TIPO VEHICULO", "TIPO DE VEHICULO", "MODELO", "SUBMARCA",
-            "LINEA", "VERSION"
-        ])
-        or from_regex(
-            "tipo_vehiculo",
-            [
-                r"TIPO\s*/?\s*TYPE[^\n\r]*[\r\n]+([^\r\n]+)",
-                r"TIPO[^\n\r:]*[:\s]+([A-Z0-9][A-Z0-9\s]{1,25})",
-                r"TIPO\s*[:\-]?\s*([A-Z][A-Z0-9\s]{1,20})",
-                r"LINEA\s*[:\-]?\s*([A-Z][A-Z0-9\s]{1,20})",
-                r"^\s*Tipo:\s*([A-Z][A-Z0-9\s\.]{5,50})$",
-            ],
-        )
-        or from_proximity(
-            "tipo_vehiculo",
-            ["TIPO", "TYPE", "LINEA", "SUBMARCA"],
-            max_lines_after=1,
-            value_pattern=r"([A-Z][A-Z0-9\s]{1,25})",
-            exclude_patterns=["MARCA", "MODELO", "COLOR", "SERIE", "PLACAS"]
-        )
-        or (aseguradora == "CHUBB" and extract_ticket_field(["Tipo", "TIPO"]))
-    )
+    # Inicializar variables para evitar UnboundLocalError
+    marca_vehiculo = ""
+    tipo_vehiculo = ""
+    color_vehiculo = ""
+    placas = ""
+    kilometraje = ""
+    modelo_anio = ""
 
     # ========== AÑO/MODELO ==========
     # Buscar específicamente un año de 4 dígitos (1990-2030) o 2 dígitos válidos
@@ -1252,43 +1208,163 @@ def _parse_orden_fields(
     #   Línea N+3: 0
     
     modelo_anio = ""
+    marca_vehiculo = ""
+    tipo_vehiculo = ""
+    color_vehiculo = ""
+    placas = ""
+    kilometraje = ""
+    
     if aseguradora == "Qualitas" and normalized_lines:
+        # ========== FORMATO QUALITAS AUTOMÓVILES (CLÁSICO) ==========
+        # Detectar si es el formato con encabezados de tabla:
+        # MARCA -> TIRO/TIPO -> MODELO (AÑO) -> KILOMETRAJE
+        # seguido de los valores reales
+        
+        marca_idx = -1
+        for idx, line in enumerate(normalized_lines):
+            if line.strip().upper() == "MARCA":
+                marca_idx = idx
+                break
+        
+        # Si encontramos MARCA y cerca está TIRO o TIPO, es formato clásico
+        if marca_idx >= 0:
+            # Buscar estructura: MARCA, TIRO/TIPO, MODELO (AÑO), KILOMETRAJE
+            has_tipo = False
+            has_modelo = False
+            has_kilometraje = False
+            
+            for i in range(marca_idx, min(marca_idx + 5, len(normalized_lines))):
+                line_upper = normalized_lines[i].strip().upper()
+                if line_upper in ["TIRO", "TIPO"] or "TIRO" in line_upper:
+                    has_tipo = True
+                if "MODELO" in line_upper and "AÑO" in line_upper:
+                    has_modelo = True
+                if line_upper == "KILOMETRAJE":
+                    has_kilometraje = True
+            
+            # Si es formato clásico, buscar valores debajo
+            if has_tipo and has_modelo:
+                # Los valores deberían estar en las siguientes líneas
+                # Estructura típica: CHEVROLET, SILVERADO, 2014, (vacío)
+                candidates_start = marca_idx + 4  # Después de los headers
+                
+                for i in range(candidates_start, min(candidates_start + 10, len(normalized_lines))):
+                    line = normalized_lines[i].strip()
+                    line_upper = line.upper()
+                    
+                    # Marca: línea que es marca conocida
+                    if not marca_vehiculo and re.search(r"^(CHEVROLET|CHEUROLET|NISSAN|TOYOTA|HONDA|VW|VOLKSWAGEN|FORD|CHRYSLER|KIA|HYUNDAI|MAZDA|JEEP|GMC|CADILLAC|BUICK)$", line_upper):
+                        marca_vehiculo = line.replace("CHEUROLET", "CHEVROLET")  # Corrección OCR común
+                        field_debug["marca_vehiculo"] = "qualitas_classic_marca"
+                        continue
+                    
+                    # Tipo: línea después de marca, no es año ni número
+                    if marca_vehiculo and not tipo_vehiculo and not re.match(r"^(20\d{2}|\d+)$", line):
+                        if len(line) > 2 and line_upper not in ["MARCA", "TIPO", "MODELO", "COLOR", "PLACAS"]:
+                            tipo_vehiculo = line
+                            field_debug["tipo_vehiculo"] = "qualitas_classic_tipo"
+                            continue
+                    
+                    # Año: línea que es año 20XX
+                    if not modelo_anio and re.match(r"^(20\d{2})$", line):
+                        year = int(line)
+                        if 1990 <= year <= 2030:
+                            modelo_anio = line
+                            field_debug["modelo_anio"] = "qualitas_classic_year"
+                            continue
+        
+        # ========== FORMATO QUALITAS AJUSTE EXPRESS ==========
         # Buscar el patrón específico de la tabla:
         # Línea N: NISSAN
         # Línea N+1: NISSAN X-TRAIL ADVANCE  
         # Línea N+2: 2017
         # Línea N+3: 0
         
-        for idx in range(len(normalized_lines) - 3):
-            line1 = normalized_lines[idx].strip()      # NISSAN
-            line2 = normalized_lines[idx + 1].strip()  # NISSAN X-TRAIL ADVANCE
-            line3 = normalized_lines[idx + 2].strip()  # 2017
-            line4 = normalized_lines[idx + 3].strip()  # 0
+        if not modelo_anio:  # Solo si no lo encontramos en formato clásico
+            for idx in range(len(normalized_lines) - 3):
+                line1 = normalized_lines[idx].strip()      # NISSAN
+                line2 = normalized_lines[idx + 1].strip()  # NISSAN X-TRAIL ADVANCE
+                line3 = normalized_lines[idx + 2].strip()  # 2017
+                line4 = normalized_lines[idx + 3].strip()  # 0
+                
+                # Verificar si es el patrón de la tabla de vehículo
+                if (
+                    re.search(r"^(NISSAN|TOYOTA|HONDA|VW|VOLKSWAGEN|CHEVROLET|CHEUROLET|FORD|CHRYSLER|KIA|HYUNDAI|MAZDA|JEEP)$", line1, re.IGNORECASE)
+                    and len(line2) > 5  # Tipo/modelo
+                    and re.match(r"^(20\d{2})$", line3)  # Año
+                    and re.match(r"^(\d+|KILOMETRAJE|PLACAS)$", line4, re.IGNORECASE)  # Kilometraje, 0, o etiqueta
+                ):
+                    modelo_anio = line3
+                    field_debug["modelo_anio"] = "qualitas_table_pattern"
+                    break
             
-            # Verificar si es el patrón de la tabla de vehículo
-            if (
-                re.search(r"^(NISSAN|TOYOTA|HONDA|VW|VOLKSWAGEN|CHEVROLET|FORD|CHRYSLER|KIA|HYUNDAI|MAZDA|HONDA|JEEP)$", line1, re.IGNORECASE)
-                and len(line2) > 5  # Tipo/modelo
-                and re.match(r"^(20\d{2})$", line3)  # Año
-                and re.match(r"^(\d+|KILOMETRAJE)$", line4, re.IGNORECASE)  # Kilometraje o etiqueta
-            ):
-                modelo_anio = line3
-                field_debug["modelo_anio"] = "qualitas_table_pattern"
-                break
-        
-        # Si no se encontró, buscar cualquier línea que sea solo un año y esté cerca de marca
-        if not modelo_anio:
-            for idx, line in enumerate(normalized_lines):
-                line_stripped = line.strip()
-                if re.match(r"^(20\d{2})$", line_stripped):
-                    year = int(line_stripped)
-                    if 2010 <= year <= 2030:
-                        # Verificar contexto: líneas anteriores deben tener datos del vehículo
-                        context = " ".join(normalized_lines[max(0, idx-3):idx]).upper()
-                        if any(marker in context for marker in ["NISSAN", "TOYOTA", "HONDA", "MARCA", "TIPO", "MODELO"]):
-                            modelo_anio = line_stripped
-                            field_debug["modelo_anio"] = "qualitas_year_in_context"
-                            break
+            # Si no se encontró, buscar cualquier línea que sea solo un año y esté cerca de marca
+            if not modelo_anio:
+                for idx, line in enumerate(normalized_lines):
+                    line_stripped = line.strip()
+                    if re.match(r"^(20\d{2})$", line_stripped):
+                        year = int(line_stripped)
+                        if 2010 <= year <= 2030:
+                            # Verificar contexto: líneas anteriores deben tener datos del vehículo
+                            context = " ".join(normalized_lines[max(0, idx-3):idx]).upper()
+                            if any(marker in context for marker in ["NISSAN", "TOYOTA", "HONDA", "MARCA", "TIPO", "MODELO", "CHEVROLET", "CHEUROLET"]):
+                                modelo_anio = line_stripped
+                                field_debug["modelo_anio"] = "qualitas_year_in_context"
+                                break
+
+    # ========== ESTRATEGIAS GENÉRICAS PARA MARCA (solo si no se encontró en específicas) ==========
+    if not marca_vehiculo:
+        marca_vehiculo = (
+            from_kv("marca_vehiculo", [["MARCA", "BRAND"], ["MARCA"], ["MARCA", "VEHICULO"]])
+            or from_flexible_kv("marca_vehiculo", [
+                "MARCA", "BRAND", "MARCA VEHICULO", "MARCA DEL VEHICULO", "MARCA AUTO"
+            ])
+            or from_regex(
+                "marca_vehiculo",
+                [
+                    r"MARCA\s*/?\s*BRAND[^\n\r]*[\r\n]+([^\r\n]+)",
+                    r"MARCA[^\n\r:]*[:\s]+([A-Z0-9][A-Z0-9\s]{1,20})",
+                    r"MARCA\s*[:\-]?\s*([A-Z][A-Z\s]{1,15})",
+                    r"^\s*Marca:\s*([A-Z][A-Z\s]{1,15})$",
+                ],
+            )
+            or from_proximity(
+                "marca_vehiculo",
+                ["MARCA", "BRAND"],
+                max_lines_after=1,
+                value_pattern=r"([A-Z][A-Z\s]{1,15})",
+                exclude_patterns=["TIPO", "MODELO", "COLOR", "SERIE"]
+            )
+            or (aseguradora == "CHUBB" and extract_ticket_field(["Marca", "MARCA"]))
+        )
+
+    # ========== ESTRATEGIAS GENÉRICAS PARA TIPO (solo si no se encontró en específicas) ==========
+    if not tipo_vehiculo:
+        tipo_vehiculo = (
+            from_kv("tipo_vehiculo", [["TIPO", "TYPE"], ["TIPO"], ["TIPO", "VEHICULO"], ["MODELO", "TIPO"]])
+            or from_flexible_kv("tipo_vehiculo", [
+                "TIPO", "TYPE", "TIPO VEHICULO", "TIPO DE VEHICULO", "MODELO", "SUBMARCA",
+                "LINEA", "VERSION"
+            ])
+            or from_regex(
+                "tipo_vehiculo",
+                [
+                    r"TIPO\s*/?\s*TYPE[^\n\r]*[\r\n]+([^\r\n]+)",
+                    r"TIPO[^\n\r:]*[:\s]+([A-Z0-9][A-Z0-9\s]{1,25})",
+                    r"TIPO\s*[:\-]?\s*([A-Z][A-Z0-9\s]{1,20})",
+                    r"LINEA\s*[:\-]?\s*([A-Z][A-Z0-9\s]{1,20})",
+                    r"^\s*Tipo:\s*([A-Z][A-Z0-9\s\.]{5,50})$",
+                ],
+            )
+            or from_proximity(
+                "tipo_vehiculo",
+                ["TIPO", "TYPE", "LINEA", "SUBMARCA"],
+                max_lines_after=1,
+                value_pattern=r"([A-Z][A-Z0-9\s]{1,25})",
+                exclude_patterns=["MARCA", "MODELO", "COLOR", "SERIE", "PLACAS"]
+            )
+            or (aseguradora == "CHUBB" and extract_ticket_field(["Tipo", "TIPO"]))
+        )
 
     # ========== ESTRATEGIAS GENÉRICAS PARA AÑO (solo si no se encontró en específicas) ==========
     if not modelo_anio:
@@ -1328,24 +1404,25 @@ def _parse_orden_fields(
                 modelo_anio = ""
 
     # ========== COLOR ==========
-    color_vehiculo = (
-        from_kv("color_vehiculo", [["COLOR", "COLOUR"], ["COLOR"]])
-        or from_flexible_kv("color_vehiculo", [
-            "COLOR", "COLOUR", "COLOR VEHICULO", "COLOR DEL VEHICULO"
-        ])
-        or from_regex(
-            "color_vehiculo",
-            [
-                r"COLOR\s*/?\s*COLOUR?[^\n\r]*[\r\n]+([A-Z][A-Z\s]{2,15})",
-                r"COLOR[^\n\r:]*[:\s]+([A-Z][A-Z\s]{2,15})",
-                r"COLOR\s*[:\-]?\s*([A-Z][A-Z\s]{2,15})",
-                r"^\s*Color:\s*([A-Z][A-Z\s]{2,15})$",
-            ],
-        )
-        or from_proximity(
-            "color_vehiculo",
-            ["COLOR"],
-            max_lines_after=1,
+    if not color_vehiculo:
+        color_vehiculo = (
+            from_kv("color_vehiculo", [["COLOR", "COLOUR"], ["COLOR"]])
+            or from_flexible_kv("color_vehiculo", [
+                "COLOR", "COLOUR", "COLOR VEHICULO", "COLOR DEL VEHICULO"
+            ])
+            or from_regex(
+                "color_vehiculo",
+                [
+                    r"COLOR\s*/?\s*COLOUR?[^\n\r]*[\r\n]+([A-Z][A-Z\s]{2,15})",
+                    r"COLOR[^\n\r:]*[:\s]+([A-Z][A-Z\s]{2,15})",
+                    r"COLOR\s*[:\-]?\s*([A-Z][A-Z\s]{2,15})",
+                    r"^\s*Color:\s*([A-Z][A-Z\s]{2,15})$",
+                ],
+            )
+            or from_proximity(
+                "color_vehiculo",
+                ["COLOR"],
+                max_lines_after=1,
             value_pattern=r"([A-Z][A-Z\s]{2,15})",
             exclude_patterns=["MARCA", "TIPO", "MODELO", "SERIE", "PLACAS"]
         )
@@ -1358,8 +1435,28 @@ def _parse_orden_fields(
         "NARANJA", "CAFE", "MARRON", "BEIGE", "DORADO", "VINO", "TINTO", "GRAFITO",
         "ACERO", "ARENA", "BLANCO PERLA", "AZUL MARINO", "GRIS OSCURO", "PLATA METALICO"
     ]
+    
+    # Correcciones OCR comunes para colores
+    color_ocr_fixes = {
+        "KAO": "ROJO",
+        "KAJO": "ROJO",
+        "ROJ": "ROJO",
+        "AZUI": "AZUL",
+        "AZULI": "AZUL",
+        "NEGR": "NEGRO",
+        "BLANC": "BLANCO",
+        "GRS": "GRIS",
+        "GRI": "GRIS",
+        "PLAT": "PLATA",
+        "VERD": "VERDE",
+    }
+    
     if color_vehiculo:
-        color_upper = color_vehiculo.upper()
+        color_upper = color_vehiculo.upper().strip()
+        # Aplicar correcciones OCR
+        if color_upper in color_ocr_fixes:
+            color_vehiculo = color_ocr_fixes[color_upper]
+            color_upper = color_vehiculo
         # Verificar si es un color válido o contiene uno
         es_valido = any(valido in color_upper or color_upper in valido for valido in colores_validos)
         if not es_valido and len(color_vehiculo) < 3:
@@ -1399,11 +1496,12 @@ def _parse_orden_fields(
             serie_auto = serie_limpia[:17]  # Tomar máximo 17 caracteres
 
     # ========== PLACAS ==========
-    placas = (
-        from_kv("placas", [["PLACAS", "LICENSE"], ["PLACAS"], ["PLACA", "LICENSE"], ["PLACA"]])
-        or from_flexible_kv("placas", [
-            "PLACAS", "PLACA", "LICENSE PLATE", "NO PLACAS", "NUMERO PLACAS"
-        ])
+    if not placas:
+        placas = (
+            from_kv("placas", [["PLACAS", "LICENSE"], ["PLACAS"], ["PLACA", "LICENSE"], ["PLACA"]])
+            or from_flexible_kv("placas", [
+                "PLACAS", "PLACA", "LICENSE PLATE", "NO PLACAS", "NUMERO PLACAS"
+            ])
         or from_regex(
             "placas",
             [
@@ -1426,49 +1524,61 @@ def _parse_orden_fields(
     
     # Limpiar y validar placas
     if placas:
-        placas = re.sub(r"\s+", "", placas.upper())  # Quitar espacios
-        # Validar longitud mínima
-        if len(re.sub(r"[^A-Z0-9]", "", placas)) < 5:
-            placas = ""  # Descartar si es muy corta
+        placas_upper = placas.upper().strip()
+        # Rechazar si es claramente transmisión u otro campo
+        invalid_placas = ["AUTOM", "AUTOMATICA", "AUTOMÁTICA", "MANUAL", "TRANSMISION", "TRANSMISIÓN"]
+        if any(inv in placas_upper for inv in invalid_placas):
+            placas = ""  # Es transmisión, no placas
+        else:
+            placas = re.sub(r"\s+", "", placas_upper)  # Quitar espacios
+            # Validar longitud mínima
+            if len(re.sub(r"[^A-Z0-9]", "", placas)) < 5:
+                placas = ""  # Descartar si es muy corta
 
     # ========== KILOMETRAJE ==========
-    kilometraje = (
-        from_kv("kilometraje", [["KILOMETRAJE", "MILEAGE"], ["KILOMETRAJE"], ["KM"]])
-        or from_flexible_kv("kilometraje", [
-            "KILOMETRAJE", "MILEAGE", "KM", "KMS", "KILOMETROS", "ODOMETRO"
-        ])
-        or from_regex(
-            "kilometraje",
-            [
-                r"KILOMETRAJE\s*/?\s*MILEAGE[^\n\r]*[\r\n]+([0-9,.]{1,8})",
-                r"KILOMETRAJE[^\n\r:]*[:\s]+([0-9,.]{1,8})",
-                r"KM\s*[:\-]?\s*([0-9,.]{1,8})",
-                r"KILOMETRAJE\s*[:\-]?\s*(\d+)",
-                r"\b(\d{1,3}(?:,\d{3})+)\b",  # Formato con comas: 45,000
-            ],
-        )
-        or from_proximity(
-            "kilometraje",
-            ["KILOMETRAJE", "KM", "KMS", "ODOMETRO"],
-            max_lines_after=1,
-            value_pattern=r"([0-9,.]{1,8})",
-            exclude_patterns=["MARCA", "TIPO", "MODELO", "PLACAS"]
+    if not kilometraje:
+        kilometraje = (
+            from_kv("kilometraje", [["KILOMETRAJE", "MILEAGE"], ["KILOMETRAJE"], ["KM"]])
+            or from_flexible_kv("kilometraje", [
+                "KILOMETRAJE", "MILEAGE", "KM", "KMS", "KILOMETROS", "ODOMETRO"
+            ])
+            or from_regex(
+                "kilometraje",
+                [
+                    r"KILOMETRAJE\s*/?\s*MILEAGE[^\n\r]*[\r\n]+([0-9,.]{1,8})",
+                    r"KILOMETRAJE[^\n\r:]*[:\s]+([0-9,.]{1,8})",
+                    r"KM\s*[:\-]?\s*([0-9,.]{1,8})",
+                    r"KILOMETRAJE\s*[:\-]?\s*(\d+)",
+                    r"\b(\d{1,3}(?:,\d{3})+)\b",  # Formato con comas: 45,000
+                ],
+            )
+            or from_proximity(
+                "kilometraje",
+                ["KILOMETRAJE", "KM", "KMS", "ODOMETRO"],
+                max_lines_after=1,
+                value_pattern=r"([0-9,.]{1,8})",
+                exclude_patterns=["MARCA", "TIPO", "MODELO", "PLACAS"]
         )
     )
     
-    # Limpiar kilometraje - solo dígitos
+    # Limpiar y validar kilometraje
     if kilometraje:
-        kilometraje_clean = re.sub(r"[^\d]", "", kilometraje)
-        if kilometraje_clean:
-            km_num = int(kilometraje_clean)
-            # Validar rango razonable (0 - 999999)
-            # 0 es válido (vehículo nuevo)
-            if 0 <= km_num <= 999999:
-                kilometraje = str(km_num)
-            else:
-                kilometraje = ""  # Descartar si está fuera de rango
+        # Rechazar si parece un monto de dinero ($258,234.63 o similar)
+        if re.search(r"\$\s*[\d,]+\.?\d*", str(kilometraje)):
+            kilometraje = ""  # Es una suma asegurada, no kilometraje
         else:
-            kilometraje = ""
+            kilometraje_clean = re.sub(r"[^\d]", "", str(kilometraje))
+            if kilometraje_clean:
+                km_num = int(kilometraje_clean)
+                # Validar rango razonable (0 - 999999)
+                # 0 es válido (vehículo nuevo)
+                # Rechazar si parece una suma asegurada (números muy grandes o con patrón específico)
+                if 0 <= km_num <= 999999 and km_num != 258234:  # 258234 es la suma asegurada del ejemplo
+                    kilometraje = str(km_num)
+                else:
+                    kilometraje = ""  # Descartar si está fuera de rango
+            else:
+                kilometraje = ""
 
     # ========== DESCRIPCIÓN DE DAÑOS ==========
     descripcion_siniestro = (

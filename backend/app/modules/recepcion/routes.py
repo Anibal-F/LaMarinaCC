@@ -907,8 +907,50 @@ def _parse_orden_fields(
                         nb_cliente = candidate
                         field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
                         break
+    
+    # Qualitas Ajuste Express: buscar "FIRMA DEL CONDUCTOR ASEGURADO" y tomar la línea de arriba
+    if not nb_cliente and aseguradora == "QUALITAS" and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            if "FIRMA DEL CONDUCTOR ASEGURADO" in line.upper():
+                # El nombre debería estar en la línea anterior
+                if idx > 0:
+                    candidate = normalized_lines[idx - 1].strip()
+                    if is_valid_name(candidate):
+                        nb_cliente = candidate
+                        field_debug["nb_cliente"] = "qualitas_firma_conductor"
+                        break
+                # O en la misma línea si el formato es "NOMBRE\nFIRMA DEL CONDUCTOR..."
+                if idx > 0:
+                    prev_line = normalized_lines[idx - 1].strip()
+                    if prev_line and is_valid_name(prev_line):
+                        nb_cliente = prev_line
+                        field_debug["nb_cliente"] = "qualitas_firma_conductor"
+                        break
 
     # ========== TELÉFONO ==========
+    # Patrones para detectar teléfonos de taller/aseguradora (no del cliente)
+    TALLER_PHONE_PATTERNS = [
+        "6699868513",  # Teléfono del taller La Marina
+        "800800",      # Líneas 800 de Qualitas
+        "8700288",     # Otros números de Qualitas
+        "555481",      # Teléfonos CDMX
+        "555002",
+    ]
+    
+    def is_valid_client_phone(phone: str) -> bool:
+        """Valida que el teléfono sea del cliente, no del taller o aseguradora."""
+        if not phone:
+            return False
+        digits = re.sub(r"\D", "", phone)
+        # Verificar contra patrones de teléfonos de taller/aseguradora
+        for pattern in TALLER_PHONE_PATTERNS:
+            if pattern in digits:
+                return False
+        # Debe tener al menos 10 dígitos
+        if len(digits) < 10:
+            return False
+        return True
+    
     tel_cliente = (
         from_kv("tel_cliente", [
             ["TELEFONO", "PHONE"],
@@ -946,6 +988,11 @@ def _parse_orden_fields(
             window_size=3
         )
     )
+    
+    # Validar que el teléfono sea del cliente
+    if tel_cliente and not is_valid_client_phone(tel_cliente):
+        tel_cliente = ""
+        field_debug["tel_cliente"] = "rejected_taller_phone"
 
     # Qualitas OCR often has multiple phone labels; prioritize the phone tied to the customer block.
     if normalized_lines:
@@ -979,6 +1026,29 @@ def _parse_orden_fields(
         tel_cliente = tel_cliente[-10:]
 
     # ========== EMAIL ==========
+    # Dominios de aseguradoras (emails que NO son del cliente)
+    INSURER_EMAIL_DOMAINS = [
+        "qualitas.com.mx",
+        "qualitas.com",
+        "chubb.com",
+        "chubb.com.mx",
+        "chubbservicios.com",
+        "chubbservicios.com.mx",
+        "gnp.com.mx",
+        "axa.com.mx",
+        "mapfre.com.mx",
+    ]
+    
+    def is_valid_client_email(email: str) -> bool:
+        """Valida que el email sea del cliente, no de la aseguradora."""
+        if not email:
+            return False
+        email_lower = email.lower()
+        for domain in INSURER_EMAIL_DOMAINS:
+            if domain in email_lower:
+                return False
+        return True
+    
     email_cliente = (
         from_kv("email_cliente", [["E", "MAIL"], ["EMAIL"], ["CORREO"], ["E-MAIL"]])
         or from_flexible_kv("email_cliente", [
@@ -986,12 +1056,18 @@ def _parse_orden_fields(
         ])
     )
     
+    # Validar que no sea email de aseguradora
+    if email_cliente and not is_valid_client_email(email_cliente):
+        email_cliente = ""
+    
     # Buscar cualquier email en el texto si no se encontró por KV
     if not email_cliente:
         email_match = re.search(r"([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", upper_text, flags=re.IGNORECASE)
-        email_cliente = (email_match.group(1) if email_match else "").lower()
-        if email_cliente:
-            field_debug["email_cliente"] = "regex_global"
+        if email_match:
+            candidate = email_match.group(1).lower()
+            if is_valid_client_email(candidate):
+                email_cliente = candidate
+                field_debug["email_cliente"] = "regex_global"
     
     # Buscar email cerca de la etiqueta
     if not email_cliente and normalized_lines:
@@ -1006,9 +1082,10 @@ def _parse_orden_fields(
                 if "@" in line:
                     possible = _normalize_ocr_text(line).lower()
                     if re.search(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", possible):
-                        email_cliente = possible
-                        field_debug["email_cliente"] = "line_after_email_label"
-                        break
+                        if is_valid_client_email(possible):
+                            email_cliente = possible
+                            field_debug["email_cliente"] = "line_after_email_label"
+                            break
     
     # Buscar email en el contexto del cliente
     if not email_cliente and normalized_lines and nb_cliente:
@@ -1018,9 +1095,11 @@ def _parse_orden_fields(
                 for next_line in normalized_lines[idx:idx+5]:
                     email_match = re.search(r"([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})", next_line.lower())
                     if email_match:
-                        email_cliente = email_match.group(1)
-                        field_debug["email_cliente"] = "context_after_name"
-                        break
+                        candidate = email_match.group(1)
+                        if is_valid_client_email(candidate):
+                            email_cliente = candidate
+                            field_debug["email_cliente"] = "context_after_name"
+                            break
                 if email_cliente:
                     break
     
@@ -1185,6 +1264,23 @@ def _parse_orden_fields(
                     if year_str:
                         modelo_anio = year_str
                         field_debug["modelo_anio"] = "line_after_modelo_chubb"
+                        break
+                if modelo_anio:
+                    break
+    
+    # Para Qualitas Ajuste Express: el año viene en la columna MODELO de la tabla
+    # Buscar patrón específico en las líneas
+    if not modelo_anio and aseguradora == "QUALITAS" and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            # Buscar línea que tenga "MODELO" como encabezado de columna
+            if "MODELO" in line.upper():
+                # En la siguiente línea o en las siguientes, buscar un año
+                for j in range(1, min(5, len(normalized_lines) - idx)):
+                    candidate = normalized_lines[idx + j]
+                    year_str = extract_year_from_text(candidate)
+                    if year_str:
+                        modelo_anio = year_str
+                        field_debug["modelo_anio"] = "qualitas_modelo_column"
                         break
                 if modelo_anio:
                     break

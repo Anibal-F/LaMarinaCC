@@ -657,16 +657,33 @@ export default function OrdenAdmision() {
       
       // Construir mensaje informativo
       let infoMessage = "";
+      
+      // Verificar si faltan datos del cliente específicamente
+      const missingClientData = [];
+      if (!campos?.nb_cliente) missingClientData.push("Nombre");
+      if (!campos?.tel_cliente) missingClientData.push("Teléfono");
+      if (!campos?.email_cliente) missingClientData.push("Email");
+      
+      // Verificar si los datos fueron rechazados (son del taller/aseguradora)
+      const rejectedClientData = [];
+      if (fieldDebug?.tel_cliente === "rejected_taller_phone") rejectedClientData.push("Teléfono");
+      if (!campos?.tel_cliente && !fieldDebug?.tel_cliente) rejectedClientData.push("Teléfono");
+      if (!campos?.email_cliente) rejectedClientData.push("Email");
+      
       if (aseguradoraDetectada) {
         infoMessage = `✓ ${aseguradoraDetectada} detectado. `;
         infoMessage += `${applyResult.applied} campo(s) aplicado(s). `;
+        
         if (missingCritical.length) {
           infoMessage += `⚠️ Revisar: ${missingCritical.join(", ")}.`;
         } else {
           infoMessage += "✓ Campos críticos completos.";
         }
-        if (missingOptional.length <= 3) {
-          infoMessage += ` (Opcionales: ${missingOptional.join(", ")})`;
+        
+        // Mensaje específico para datos del cliente
+        if (missingClientData.length > 0 || rejectedClientData.length > 0) {
+          const clientFields = [...new Set([...missingClientData, ...rejectedClientData])];
+          infoMessage += ` 📋 Faltan datos del cliente: ${clientFields.join(", ")} (agregar manualmente).`;
         }
       } else {
         infoMessage = "No se detectó aseguradora. Revisa los campos manualmente.";

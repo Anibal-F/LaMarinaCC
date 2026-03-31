@@ -873,7 +873,13 @@ def _parse_orden_fields(
         "CAMACHO", "LEYVA", "JOB EDUARDO",
         # Textos de encabezados CHUBB
         "VALIDO POR", "VALIDO", "CLAVE ACCESO", "FECHA ENTREGA", "IDENTIFICADOR",
-        "VOLANTE DE ADMISION", "VOLANTE DE ADMISIÓN", "Y VALUACION", "Y VALUACIÓN"
+        "VOLANTE DE ADMISION", "VOLANTE DE ADMISIÓN", "Y VALUACION", "Y VALUACIÓN",
+        # Textos del disclaimer CHUBB
+        "OPERACIONES REALIZADAS", "FUERA DE ESTOS", "CANALES", "EVITA CAER",
+        "FRAUDES", "VICTIMA", "DENUNCIA", "GUARDIA NACIONAL", "CHUBB NO SE",
+        "RESPONSABLE POR", "CORREOS DESDE", "DOMINIOS", "DISTINTOS", "OFICIALES",
+        "CHUBB.COM", "CHUBBSERVICIOS.COM", "ALERTA DE FRAUDE", "NUNCA TE PEDIREMOS",
+        "DEPOSITOS", "CUENTAS", "NUESTRO NOMBRE"
     ]
     
     def is_valid_name(candidate: str) -> bool:
@@ -984,7 +990,11 @@ def _parse_orden_fields(
                     # El nombre debería estar en la siguiente línea
                     if i + 1 < len(normalized_lines):
                         candidate = normalized_lines[i + 1].strip()
-                        if is_valid_name(candidate):
+                        # Validación simplificada para CHUBB: nombre en mayúsculas con 3-6 palabras
+                        words = candidate.split()
+                        if (len(words) >= 3 and len(words) <= 6 and 
+                            candidate == candidate.upper() and
+                            all(w.isalpha() for w in words)):
                             nb_cliente = candidate
                             field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
                             break

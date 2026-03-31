@@ -612,6 +612,25 @@ def _parse_orden_fields(
                         break
                 if raw_fecha:
                     break
+    
+    # Estrategia para formato bilingüe: buscar "FECHA DATE" y tomar siguiente línea con formato fecha
+    if not raw_fecha and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            line_upper = line.upper()
+            if "FECHA" in line_upper and ("DATE" in line_upper or "HORA" in line_upper or "TIME" in line_upper):
+                # Buscar en las siguientes líneas un valor que parezca fecha (DD/MM/YYYY)
+                for next_line in normalized_lines[idx+1:idx+5]:
+                    # Saltar líneas que son otras etiquetas
+                    if any(label in next_line.upper() for label in ["HORA", "TIME", "PÓLIZA", "POLICY", "ENDOSO", "ENDORSEMENT"]):
+                        continue
+                    # Buscar patrón DD/MM/YYYY
+                    fecha_match = re.search(r"\b(\d{2}/\d{2}/\d{4})\b", next_line)
+                    if fecha_match:
+                        raw_fecha = fecha_match.group(1)
+                        field_debug["fecha_adm"] = "qualitas_bilingual_date"
+                        break
+                if raw_fecha:
+                    break
 
     fecha_iso = normalize_date(raw_fecha)
 

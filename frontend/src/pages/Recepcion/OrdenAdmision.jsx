@@ -183,6 +183,7 @@ export default function OrdenAdmision() {
   const [adjuntoOrden, setAdjuntoOrden] = useState(null);
   const [adjuntoPreviewUrl, setAdjuntoPreviewUrl] = useState("");
   const [adjuntoPreviewType, setAdjuntoPreviewType] = useState("");
+  const [previewExpanded, setPreviewExpanded] = useState(true);
   const [extractingDoc, setExtractingDoc] = useState(false);
   const [extractInfo, setExtractInfo] = useState("");
   
@@ -419,6 +420,7 @@ export default function OrdenAdmision() {
     resetForm();
     setGrupoSeleccionado("");
     setMarcaError("");
+    setPreviewExpanded(true);
     setIsModalOpen(true);
   };
 
@@ -484,6 +486,7 @@ export default function OrdenAdmision() {
     }
     setAdjuntoPreviewUrl("");
     setAdjuntoPreviewType("");
+    setPreviewExpanded(true);
   };
 
   const handleChange = (field) => (event) => {
@@ -1882,8 +1885,15 @@ export default function OrdenAdmision() {
               </div>
             </div>
             <div className={`flex flex-1 overflow-hidden ${adjuntoPreviewUrl ? 'flex-row' : ''}`}>
-              {/* Columna del formulario */}
-              <div className={`${adjuntoPreviewUrl ? 'w-1/2' : 'w-full'} overflow-y-auto`}>
+              {/* Columna del formulario - se expande cuando preview está colapsada */}
+              <div 
+                className={`
+                  overflow-y-auto transition-all duration-300 ease-out
+                  ${adjuntoPreviewUrl 
+                    ? (previewExpanded ? 'w-1/2' : 'flex-1') 
+                    : 'w-full'}
+                `}
+              >
                 <form
                   id="orden-admision-form"
                   className="p-6 space-y-6"
@@ -2284,33 +2294,65 @@ export default function OrdenAdmision() {
               
               {/* Columna de vista previa - aparece cuando hay archivo */}
               {adjuntoPreviewUrl ? (
-                <div className="w-1/2 border-l border-border-dark bg-background-dark/30 flex flex-col">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border-dark bg-surface-dark/50">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-slate-400 text-sm">preview</span>
-                      <span className="text-sm font-medium text-slate-300">Vista previa</span>
-                    </div>
-                    <span className="text-xs text-slate-500 truncate max-w-[200px]">
-                      {adjuntoOrden?.name}
-                    </span>
-                  </div>
-                  <div className="flex-1 overflow-auto p-4">
-                    {adjuntoPreviewType.includes("pdf") ? (
-                      <iframe
-                        src={adjuntoPreviewUrl}
-                        title="Vista previa del documento"
-                        className="w-full h-full min-h-[500px] rounded-lg border border-border-dark bg-white"
-                      />
+                <div 
+                  className={`
+                    border-l border-border-dark bg-background-dark/30 flex flex-col
+                    transition-all duration-300 ease-out overflow-hidden
+                    ${previewExpanded ? 'w-1/2' : 'w-14'}
+                  `}
+                >
+                  <div className="flex items-center justify-between px-3 py-3 border-b border-border-dark bg-surface-dark/50">
+                    {previewExpanded ? (
+                      <>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="material-symbols-outlined text-slate-400 text-sm">preview</span>
+                          <span className="text-sm font-medium text-slate-300 truncate">Vista previa</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500 truncate max-w-[150px]">
+                            {adjuntoOrden?.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewExpanded(false)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-dark/80 transition-colors"
+                            title="Colapsar vista previa"
+                          >
+                            <span className="material-symbols-outlined text-lg">chevron_right</span>
+                          </button>
+                        </div>
+                      </>
                     ) : (
-                      <div className="h-full flex items-center justify-center">
-                        <img
-                          src={adjuntoPreviewUrl}
-                          alt="Vista previa"
-                          className="max-w-full max-h-full object-contain rounded-lg border border-border-dark"
-                        />
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewExpanded(true)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-dark/80 transition-colors mx-auto"
+                        title="Expandir vista previa"
+                      >
+                        <span className="material-symbols-outlined text-lg">chevron_left</span>
+                      </button>
                     )}
                   </div>
+                  
+                  {previewExpanded && (
+                    <div className="flex-1 overflow-auto p-4">
+                      {adjuntoPreviewType.includes("pdf") ? (
+                        <iframe
+                          src={adjuntoPreviewUrl}
+                          title="Vista previa del documento"
+                          className="w-full h-full min-h-[500px] rounded-lg border border-border-dark bg-white"
+                        />
+                      ) : (
+                        <div className="h-full flex items-center justify-center">
+                          <img
+                            src={adjuntoPreviewUrl}
+                            alt="Vista previa"
+                            className="max-w-full max-h-full object-contain rounded-lg border border-border-dark"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>

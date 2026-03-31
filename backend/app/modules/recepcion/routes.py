@@ -1380,7 +1380,7 @@ def _parse_orden_fields(
                     # Tipo: línea después de marca, no es año ni número ni etiqueta
                     if marca_vehiculo and not tipo_vehiculo:
                         # Saltar si parece una etiqueta
-                        if any(label in line_upper for label in skip_labels):
+                        if any(label in line_upper for label in skip_patterns):
                             continue
                         if not re.match(r"^(20\d{2}|\d+)$", line) and len(line) > 2:
                             tipo_vehiculo = line

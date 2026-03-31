@@ -892,6 +892,13 @@ def _parse_orden_fields(
         # Debe empezar con letra mayúscula
         if not re.match(r"^[A-ZÁÉÍÓÚÑ]", candidate):
             return False
+        # RECHAZAR ACRÓNIMOS: si todas las palabras son de 2-3 letras, probablemente es un acrónimo
+        # Nombres reales típicamente tienen al menos algunas palabras de 4+ letras
+        short_words = [w for w in words if len(w) <= 3]
+        long_words = [w for w in words if len(w) >= 4]
+        # Si más de la mitad son palabras cortas Y hay pocas palabras largas, es acrónimo
+        if len(short_words) > len(words) / 2 and len(long_words) < 2:
+            return False
         return True
     
     # ========== ESTRATEGIAS ESPECÍFICAS POR ASEGURADORA PRIMERO ==========
@@ -2175,42 +2182,38 @@ def _parse_orden_fields(
 
         # CHUBB: Buscar nombre del asegurado desde sección "Asegurado:" o "Datos Vehículo"
         if not nb_cliente and normalized_lines:
-            # ESTRATEGIA 1: Buscar "Asegurado:" seguido del nombre (formato ticket CHUBB)
-            # Buscar específicamente líneas que contengan "Asegurado" y posiblemente ":"
+            # ESTRATEGIA 1: Buscar en sección "Datos Vehículo" -> "Asegurado:" -> Nombre
+            # Esta es la estructura típica del ticket CHUBB vertical
+            datos_vehiculo_idx = -1
             for idx, line in enumerate(normalized_lines):
-                line_upper = line.upper()
-                if "ASEGURADO" in line_upper:
-                    # Caso 1: "Asegurado:" en una línea, nombre en la siguiente
-                    if ":" in line and idx + 1 < len(normalized_lines):
-                        candidate = normalized_lines[idx + 1].strip()
-                        if is_valid_name(candidate):
-                            nb_cliente = candidate
-                            field_debug["nb_cliente"] = "chubb_asegurado_next_line"
-                            break
-                    # Caso 2: "Asegurado: NOMBRE" en la misma línea
-                    elif ":" in line:
+                if "DATOS VEHICULO" in line.upper() or "DATOS VEHÍCULO" in line.upper():
+                    datos_vehiculo_idx = idx
+                    break
+            
+            if datos_vehiculo_idx >= 0:
+                # Buscar "Asegurado:" dentro de las siguientes 10 líneas después de "Datos Vehículo"
+                for i in range(datos_vehiculo_idx + 1, min(datos_vehiculo_idx + 10, len(normalized_lines))):
+                    line = normalized_lines[i]
+                    if "ASEGURADO" in line.upper() and ":" in line:
+                        # Nombre debería estar en la siguiente línea
+                        if i + 1 < len(normalized_lines):
+                            candidate = normalized_lines[i + 1].strip()
+                            if is_valid_name(candidate):
+                                nb_cliente = candidate
+                                field_debug["nb_cliente"] = "chubb_datos_vehiculo_asegurado"
+                                break
+                        # O en la misma línea después del ":"
                         parts = line.split(":", 1)
                         if len(parts) > 1:
                             candidate = parts[1].strip()
                             if is_valid_name(candidate):
                                 nb_cliente = candidate
-                                field_debug["nb_cliente"] = "chubb_asegurado_same_line"
+                                field_debug["nb_cliente"] = "chubb_asegurado_inline"
                                 break
-            
-            # ESTRATEGIA 2: Buscar en sección después de "Asegurado:" o "Datos Vehículo"
-            # Buscar primero el índice de "Asegurado:" o "Datos Vehículo"
-            if not nb_cliente:
-                start_idx = -1
-                for idx, line in enumerate(normalized_lines):
-                    if "ASEGURADO" in line.upper():
-                        start_idx = idx
-                        break
                 
-                if start_idx < 0:
-                    for idx, line in enumerate(normalized_lines):
-                        if "DATOS VEHICULO" in line.upper() or "DATOS VEHÍCULO" in line.upper():
-                            start_idx = idx
-                            break
+                # Si no se encontró con "Asegurado:", buscar nombre válido en la sección
+                if not nb_cliente:
+                    start_idx = datos_vehiculo_idx
                 
                 if start_idx >= 0:
                     # Buscar en las siguientes líneas un nombre válido

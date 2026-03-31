@@ -586,6 +586,86 @@ export default function OrdenAdmision() {
       // Aplicar campos extraídos con información de debug
       const applyResult = applyExtractedFields(campos, fieldDebug);
 
+      // ========== FUZZY MATCHING PARA TIPO DE VEHÍCULO ==========
+      // Si el OCR detectó un tipo, intentar encontrar el mejor match en el catálogo
+      if (campos?.tipo_vehiculo && modelosAutos.length > 0) {
+        const tipoOcr = String(campos.tipo_vehiculo).toUpperCase().trim();
+        const marcaOcr = String(campos.marca_vehiculo || "").toUpperCase().trim();
+        
+        // Filtrar modelos por marca si está disponible
+        const modelosFiltrados = marcaOcr
+          ? modelosAutos.filter(m => String(m.nb_marca || "").toUpperCase() === marcaOcr)
+          : modelosAutos;
+        
+        if (modelosFiltrados.length > 0) {
+          // Función de distancia de Levenshtein simplificada
+          const levenshteinDistance = (a, b) => {
+            const matrix = [];
+            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= b.length; i++) {
+              for (let j = 1; j <= a.length; j++) {
+                matrix[i][j] = b.charAt(i - 1) === a.charAt(j - 1)
+                  ? matrix[i - 1][j - 1]
+                  : Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+              }
+            }
+            return matrix[b.length][a.length];
+          };
+          
+          // Calcular score de similitud (0-1, donde 1 es exacto)
+          const similarity = (a, b) => {
+            const aClean = a.replace(/[^A-Z0-9]/gi, "");
+            const bClean = b.replace(/[^A-Z0-9]/gi, "");
+            if (!aClean || !bClean) return 0;
+            const dist = levenshteinDistance(aClean, bClean);
+            const maxLen = Math.max(aClean.length, bClean.length);
+            return 1 - dist / maxLen;
+          };
+          
+          // Encontrar el mejor match
+          let bestMatch = null;
+          let bestScore = 0;
+          const SIMILARITY_THRESHOLD = 0.4; // Mínimo 40% de similitud
+          
+          for (const modelo of modelosFiltrados) {
+            const nombreModelo = String(modelo.nb_modelo || "").toUpperCase().trim();
+            if (!nombreModelo) continue;
+            
+            const score = similarity(tipoOcr, nombreModelo);
+            
+            // Bonus si el OCR contiene el nombre del modelo
+            if (tipoOcr.includes(nombreModelo) || nombreModelo.includes(tipoOcr)) {
+              const bonus = 0.3;
+              const adjustedScore = Math.min(score + bonus, 1);
+              if (adjustedScore > bestScore) {
+                bestScore = adjustedScore;
+                bestMatch = modelo;
+              }
+            } else if (score > bestScore) {
+              bestScore = score;
+              bestMatch = modelo;
+            }
+          }
+          
+          // Aplicar el mejor match si supera el umbral
+          if (bestMatch && bestScore >= SIMILARITY_THRESHOLD) {
+            setForm(prev => ({
+              ...prev,
+              tipo_vehiculo: bestMatch.nb_modelo
+            }));
+            if (import.meta.env.DEV) {
+              // eslint-disable-next-line no-console
+              console.log("Fuzzy match tipo:", {
+                original: campos.tipo_vehiculo,
+                matched: bestMatch.nb_modelo,
+                score: bestScore.toFixed(2)
+              });
+            }
+          }
+        }
+      }
+
       // Procesar daños del siniestro si están presentes
       if (campos?.danos_siniestro) {
         setDanosSiniestroParts((prev) => {

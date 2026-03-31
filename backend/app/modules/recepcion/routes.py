@@ -1923,6 +1923,46 @@ def _parse_orden_fields(
                     field_debug["descripcion_siniestro"] = "qualitas_damage_keywords"
                     break
 
+    # ========== LIMPIEZA DE TIPO PARA MATCH CON CATÁLOGO ==========
+    def clean_tipo_for_catalog(tipo: str, marca: str, anio: str) -> str:
+        """
+        Limpia el campo tipo para facilitar fuzzy matching con catálogo.
+        Quita la marca del inicio y el año del final si están presentes.
+        Ej: "TY TOYOTA COROLLA BASE 4P L4 2017" → "COROLLA BASE 4P L4"
+        """
+        if not tipo:
+            return tipo
+        
+        tipo_clean = tipo.strip()
+        tipo_upper = tipo_clean.upper()
+        
+        # Quitar prefijos comunes de marca (TY, TOYOTA, etc.)
+        brand_prefixes = ["TY", "TOYOTA", "NISSAN", "CHEVROLET", "CHEV", "FORD", "HONDA", "VW", "VOLKSWAGEN", "KIA", "HYUNDAI", "MAZDA", "JEEP", "GMC", "CHRYSLER"]
+        for prefix in brand_prefixes:
+            # Buscar al inicio o después de espacio
+            pattern = rf"^({prefix}\s+)+"
+            tipo_clean = re.sub(pattern, "", tipo_clean, flags=re.IGNORECASE).strip()
+        
+        # Quitar año del final si está presente
+        if anio and tipo_clean.endswith(anio):
+            tipo_clean = tipo_clean[:-len(anio)].strip()
+        # También quitar cualquier año de 4 dígitos del final
+        tipo_clean = re.sub(r"\s+20\d{2}$", "", tipo_clean).strip()
+        
+        # Quitar sufijos comunes de especificación técnica (opcional, para catálogo)
+        # Patrones como "4P L4", "4P", "5P", etc.
+        tipo_clean = re.sub(r"\s+\d+P\s+L\d+$", "", tipo_clean, flags=re.IGNORECASE).strip()
+        tipo_clean = re.sub(r"\s+L\d+$", "", tipo_clean, flags=re.IGNORECASE).strip()
+        
+        return tipo_clean if tipo_clean else tipo
+    
+    # Aplicar limpieza al tipo
+    if tipo_vehiculo:
+        tipo_original = tipo_vehiculo
+        tipo_vehiculo = clean_tipo_for_catalog(tipo_vehiculo, marca_vehiculo, modelo_anio)
+        if tipo_vehiculo != tipo_original:
+            field_debug["tipo_vehiculo"] = field_debug.get("tipo_vehiculo", "") + "_catalog_cleaned"
+
     # For some insurer templates, TIPO contains "MARCA ... MODELO", while MARCA may contain dealer name.
     # Qualitas Ajuste Express: Marca puede ser "REGULARIZADO" y Tipo contiene "Nissan Sedan..."
     # Detectar si marca parece un valor de sistema y tipo contiene marca real

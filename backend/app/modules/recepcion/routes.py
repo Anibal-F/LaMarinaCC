@@ -2176,13 +2176,16 @@ def _parse_orden_fields(
         # CHUBB: Buscar nombre del asegurado desde sección "Asegurado:" o "Datos Vehículo"
         if not nb_cliente and normalized_lines:
             # Primero intentar buscar línea con "Asegurado:" explícito
+            asegurado_idx = -1
             for idx, line in enumerate(normalized_lines):
-                if "ASEGURADO:" in line.upper() and idx + 1 < len(normalized_lines):
-                    candidate = normalized_lines[idx + 1].strip()
-                    if is_valid_name(candidate):
-                        nb_cliente = candidate
-                        field_debug["nb_cliente"] = "chubb_asegurado_explicit"
-                        break
+                if "ASEGURADO" in line.upper() and ":" in line:
+                    asegurado_idx = idx
+                    if idx + 1 < len(normalized_lines):
+                        candidate = normalized_lines[idx + 1].strip()
+                        if is_valid_name(candidate):
+                            nb_cliente = candidate
+                            field_debug["nb_cliente"] = "chubb_asegurado_explicit"
+                            break
             
             # Si no se encontró, buscar en sección "Datos Vehículo" 
             if not nb_cliente:
@@ -2193,11 +2196,29 @@ def _parse_orden_fields(
                         break
                 
                 if datos_vehiculo_idx >= 0:
-                    # Buscar en las siguientes líneas un nombre válido (3-5 palabras en mayúsculas)
+                    # Buscar en las siguientes líneas un nombre válido
+                    # Patrón mejorado: nombre de persona
                     for i in range(datos_vehiculo_idx + 1, min(datos_vehiculo_idx + 15, len(normalized_lines))):
                         candidate = normalized_lines[i].strip()
-                        # Patrón típico: 3-5 palabras en mayúsculas
-                        if re.match(r"^[A-ZÁÉÍÓÚÑ]+(\s+[A-ZÁÉÍÓÚÑ]+){2,4}$", candidate):
+                        words = candidate.split()
+                        
+                        # Palabras cortas válidas en nombres (artículos, preposiciones)
+                        valid_short_words = {"DE", "DEL", "LA", "LOS", "LAS", "Y", "MC", "VON", "VAN"}
+                        
+                        # Validar que sea un nombre de persona:
+                        # - 3-6 palabras
+                        # - Todas en mayúsculas
+                        # - Palabras de 3+ letras O palabras cortas válidas
+                        # - Al menos 2 palabras de 4+ letras (para evitar acrónimos)
+                        # - Sin números
+                        long_words = [w for w in words if len(w) >= 4]
+                        
+                        if (len(words) >= 3 and len(words) <= 6 and
+                            candidate == candidate.upper() and
+                            not any(c.isdigit() for c in candidate) and
+                            len(long_words) >= 2 and  # Al menos 2 palabras largas
+                            all(w.isalpha() and (len(w) >= 3 or w in valid_short_words) for w in words)):
+                            
                             if is_valid_name(candidate):
                                 nb_cliente = candidate
                                 field_debug["nb_cliente"] = "chubb_datos_vehiculo"

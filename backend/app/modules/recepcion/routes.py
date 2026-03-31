@@ -528,6 +528,28 @@ def _parse_orden_fields(
             pass
 
         # Formats with month names, e.g. 12/dic/2025.
+        # Correcciones OCR comunes para meses
+        month_ocr_fixes = {
+            "NAR": "MAR",  # OCR confunde M con N
+            "NAY": "MAY",  # OCR confunde M con N
+            "IAR": "MAR",  # OCR confunde M con I
+            "IAY": "MAY",  # OCR confunde M con I
+            "JUN": "JUN",
+            "JUL": "JUL",
+            "AGD": "AGO",  # OCR confunde O con D
+            "AGQ": "AGO",  # OCR confunde O con Q
+            "SEB": "SEP",  # OCR confunde P con B
+            "SET": "SEP",  # OCR confunde P con T
+            "OCT": "OCT",
+            "NOB": "NOV",  # OCR confunde V con B
+            "DIC": "DIC",
+        }
+        
+        # Aplicar correcciones OCR a la fecha raw
+        raw_fixed = raw.upper()
+        for wrong, correct in month_ocr_fixes.items():
+            raw_fixed = raw_fixed.replace(wrong, correct)
+        
         month_map = {
             "ENE": "01",
             "FEB": "02",
@@ -548,7 +570,7 @@ def _parse_orden_fields(
         }
         month_match = re.search(
             r"\b(\d{1,2})(?:[\/\-]|\s+)([A-Z]{3})(?:[\/\-]|\s+)(\d{4})\b",
-            _normalize_key_label(raw),
+            _normalize_key_label(raw_fixed),
         )
         if month_match:
             day = int(month_match.group(1))
@@ -937,13 +959,26 @@ def _parse_orden_fields(
     # CHUBB ticket vertical: buscar "Asegurado:" seguido de nombre en línea siguiente
     if not nb_cliente and aseguradora == "CHUBB" and normalized_lines:
         for idx, line in enumerate(normalized_lines):
-            if re.search(r"^\s*Asegurado\s*:\s*$", line, re.IGNORECASE):
+            line_upper = line.upper()
+            # Buscar "Asegurado:" o "Asegurado" como etiqueta
+            if "ASEGURADO" in line_upper and ":" in line:
                 # El nombre debería estar en la siguiente línea
                 if idx + 1 < len(normalized_lines):
                     candidate = normalized_lines[idx + 1].strip()
                     if is_valid_name(candidate):
                         nb_cliente = candidate
                         field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
+                        break
+        
+        # Fallback: si no se encontró, buscar línea con nombre completo típico (3+ palabras, mayúsculas)
+        if not nb_cliente:
+            for line in normalized_lines:
+                candidate = line.strip()
+                # Patrón típico de nombre: 3-5 palabras en mayúsculas (ej: MANUEL DE JESUS HERNANDEZ TOVAR)
+                if re.match(r"^[A-ZÁÉÍÓÚÑ]+(\s+[A-ZÁÉÍÓÚÑ]+){2,4}$", candidate):
+                    if is_valid_name(candidate):
+                        nb_cliente = candidate
+                        field_debug["nb_cliente"] = "chubb_ticket_name_pattern"
                         break
     
     # ========== ESTRATEGIAS GENÉRICAS (solo si no se encontró en específicas) ==========
@@ -1373,6 +1408,28 @@ def _parse_orden_fields(
                                 modelo_anio = line_stripped
                                 field_debug["modelo_anio"] = "qualitas_year_in_context"
                                 break
+
+    # ========== ESTRATEGIA ESPECÍFICA PARA CHUBB (AÑO DEL MODELO) ==========
+    # CHUBB tiene "Modelo:2024" en los datos del vehículo, separado de la fecha de ocurrencia
+    if not modelo_anio and aseguradora == "CHUBB" and normalized_lines:
+        for idx, line in enumerate(normalized_lines):
+            line_upper = line.upper()
+            # Buscar "Modelo:" o "Modelo:" seguido de año
+            if "MODELO:" in line_upper or "MODELO:" in line:
+                # Extraer año de la misma línea (ej: "Modelo:2024")
+                year_match = re.search(r"MODELO:\s*(20\d{2})", line, re.IGNORECASE)
+                if year_match:
+                    modelo_anio = year_match.group(1)
+                    field_debug["modelo_anio"] = "chubb_modelo_year"
+                    break
+                # O buscar en la siguiente línea
+                if idx + 1 < len(normalized_lines):
+                    next_line = normalized_lines[idx + 1].strip()
+                    year_match = re.match(r"^(20\d{2})$", next_line)
+                    if year_match:
+                        modelo_anio = year_match.group(1)
+                        field_debug["modelo_anio"] = "chubb_modelo_next_line"
+                        break
 
     # ========== ESTRATEGIAS GENÉRICAS PARA MARCA (solo si no se encontró en específicas) ==========
     if not marca_vehiculo:

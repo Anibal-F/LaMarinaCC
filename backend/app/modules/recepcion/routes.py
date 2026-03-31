@@ -2173,44 +2173,75 @@ def _parse_orden_fields(
             else:
                 tipo_vehiculo = tipo_clean
 
-        # Customer name is often in signature section above "Conductor".
-        if normalized_lines:
-            signature_name = ""
+        # CHUBB: Buscar nombre del asegurado desde sección "Asegurado:" o "Datos Vehículo"
+        if not nb_cliente and normalized_lines:
+            # Primero intentar buscar línea con "Asegurado:" explícito
             for idx, line in enumerate(normalized_lines):
-                if "CONDUCTOR" in line.upper() and idx > 0:
-                    start = max(0, idx - 8)
-                    window = normalized_lines[start:idx]
-                    candidates: list[str] = []
-                    for candidate in window:
-                        candidate_up = candidate.upper()
-                        compact = _normalize_key_label(candidate)
-                        if (
-                            candidate
-                            and "AJUSTADOR" not in candidate_up
-                            and "NOMBRE" not in candidate_up
-                            and "FIRMA" not in candidate_up
-                            and "CONDUCTOR" not in candidate_up
-                            and "NOTAS GENERALES" not in candidate_up
-                            and "NOTAS" != candidate_up.strip()
-                            and "@" not in candidate
-                            and ":" not in candidate
-                            and "." not in candidate
-                            and not re.search(r"\d", candidate)
-                            and "CHUBB" not in candidate_up
-                            and "FRAUDE" not in candidate_up
-                            and "GUARDIA" not in candidate_up
-                            and re.fullmatch(r"[A-ZÁÉÍÓÚÑ ]{6,}", compact or "")
-                            and len(candidate_up.split()) >= 2
-                            and len(candidate_up.split()) <= 6
-                            and re.search(r"[A-ZÁÉÍÓÚÑ]", candidate_up)
-                        ):
-                            candidates.append(candidate)
-                    if candidates:
-                        signature_name = candidates[0]
+                if "ASEGURADO:" in line.upper() and idx + 1 < len(normalized_lines):
+                    candidate = normalized_lines[idx + 1].strip()
+                    if is_valid_name(candidate):
+                        nb_cliente = candidate
+                        field_debug["nb_cliente"] = "chubb_asegurado_explicit"
                         break
-            if signature_name:
-                nb_cliente = signature_name
-                field_debug["nb_cliente"] = "line_before_conductor"
+            
+            # Si no se encontró, buscar en sección "Datos Vehículo" 
+            if not nb_cliente:
+                datos_vehiculo_idx = -1
+                for idx, line in enumerate(normalized_lines):
+                    if "DATOS VEHICULO" in line.upper() or "DATOS VEHÍCULO" in line.upper():
+                        datos_vehiculo_idx = idx
+                        break
+                
+                if datos_vehiculo_idx >= 0:
+                    # Buscar en las siguientes líneas un nombre válido (3-5 palabras en mayúsculas)
+                    for i in range(datos_vehiculo_idx + 1, min(datos_vehiculo_idx + 15, len(normalized_lines))):
+                        candidate = normalized_lines[i].strip()
+                        # Patrón típico: 3-5 palabras en mayúsculas
+                        if re.match(r"^[A-ZÁÉÍÓÚÑ]+(\s+[A-ZÁÉÍÓÚÑ]+){2,4}$", candidate):
+                            if is_valid_name(candidate):
+                                nb_cliente = candidate
+                                field_debug["nb_cliente"] = "chubb_datos_vehiculo"
+                                break
+            
+            # Fallback: buscar en sección de firmas (arriba de "Conductor")
+            if not nb_cliente:
+                signature_name = ""
+                for idx, line in enumerate(normalized_lines):
+                    if "CONDUCTOR" in line.upper() and idx > 0:
+                        start = max(0, idx - 8)
+                        window = normalized_lines[start:idx]
+                        candidates: list[str] = []
+                        for candidate in window:
+                            candidate_up = candidate.upper()
+                            compact = _normalize_key_label(candidate)
+                            if (
+                                candidate
+                                and "AJUSTADOR" not in candidate_up
+                                and "NOMBRE" not in candidate_up
+                                and "FIRMA" not in candidate_up
+                                and "CONDUCTOR" not in candidate_up
+                                and "NOTAS GENERALES" not in candidate_up
+                                and "NOTAS" != candidate_up.strip()
+                                and "@" not in candidate
+                                and ":" not in candidate
+                                and "." not in candidate
+                                and not re.search(r"\d", candidate)
+                                and "CHUBB" not in candidate_up
+                                and "FRAUDE" not in candidate_up
+                                and "GUARDIA" not in candidate_up
+                                and "RESPONSABLE" not in candidate_up
+                                and re.fullmatch(r"[A-ZÁÉÍÓÚÑ ]{6,}", compact or "")
+                                and len(candidate_up.split()) >= 2
+                                and len(candidate_up.split()) <= 6
+                                and re.search(r"[A-ZÁÉÍÓÚÑ]", candidate_up)
+                            ):
+                                candidates.append(candidate)
+                        if candidates:
+                            signature_name = candidates[0]
+                            break
+                if signature_name:
+                    nb_cliente = signature_name
+                    field_debug["nb_cliente"] = "line_before_conductor"
 
     fields = {
         "seguro_comp": aseguradora,

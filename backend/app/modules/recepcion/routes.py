@@ -2175,30 +2175,47 @@ def _parse_orden_fields(
 
         # CHUBB: Buscar nombre del asegurado desde sección "Asegurado:" o "Datos Vehículo"
         if not nb_cliente and normalized_lines:
-            # Primero intentar buscar línea con "Asegurado:" explícito
-            asegurado_idx = -1
+            # ESTRATEGIA 1: Buscar "Asegurado:" seguido del nombre (formato ticket CHUBB)
+            # Buscar específicamente líneas que contengan "Asegurado" y posiblemente ":"
             for idx, line in enumerate(normalized_lines):
-                if "ASEGURADO" in line.upper() and ":" in line:
-                    asegurado_idx = idx
-                    if idx + 1 < len(normalized_lines):
+                line_upper = line.upper()
+                if "ASEGURADO" in line_upper:
+                    # Caso 1: "Asegurado:" en una línea, nombre en la siguiente
+                    if ":" in line and idx + 1 < len(normalized_lines):
                         candidate = normalized_lines[idx + 1].strip()
                         if is_valid_name(candidate):
                             nb_cliente = candidate
-                            field_debug["nb_cliente"] = "chubb_asegurado_explicit"
+                            field_debug["nb_cliente"] = "chubb_asegurado_next_line"
                             break
+                    # Caso 2: "Asegurado: NOMBRE" en la misma línea
+                    elif ":" in line:
+                        parts = line.split(":", 1)
+                        if len(parts) > 1:
+                            candidate = parts[1].strip()
+                            if is_valid_name(candidate):
+                                nb_cliente = candidate
+                                field_debug["nb_cliente"] = "chubb_asegurado_same_line"
+                                break
             
-            # Si no se encontró, buscar en sección "Datos Vehículo" 
+            # ESTRATEGIA 2: Buscar en sección después de "Asegurado:" o "Datos Vehículo"
+            # Buscar primero el índice de "Asegurado:" o "Datos Vehículo"
             if not nb_cliente:
-                datos_vehiculo_idx = -1
+                start_idx = -1
                 for idx, line in enumerate(normalized_lines):
-                    if "DATOS VEHICULO" in line.upper() or "DATOS VEHÍCULO" in line.upper():
-                        datos_vehiculo_idx = idx
+                    if "ASEGURADO" in line.upper():
+                        start_idx = idx
                         break
                 
-                if datos_vehiculo_idx >= 0:
+                if start_idx < 0:
+                    for idx, line in enumerate(normalized_lines):
+                        if "DATOS VEHICULO" in line.upper() or "DATOS VEHÍCULO" in line.upper():
+                            start_idx = idx
+                            break
+                
+                if start_idx >= 0:
                     # Buscar en las siguientes líneas un nombre válido
                     # Patrón mejorado: nombre de persona
-                    for i in range(datos_vehiculo_idx + 1, min(datos_vehiculo_idx + 15, len(normalized_lines))):
+                    for i in range(start_idx + 1, min(start_idx + 20, len(normalized_lines))):
                         candidate = normalized_lines[i].strip()
                         words = candidate.split()
                         
@@ -2221,7 +2238,7 @@ def _parse_orden_fields(
                             
                             if is_valid_name(candidate):
                                 nb_cliente = candidate
-                                field_debug["nb_cliente"] = "chubb_datos_vehiculo"
+                                field_debug["nb_cliente"] = "chubb_name_search"
                                 break
             
             # Fallback: buscar en sección de firmas (arriba de "Conductor")

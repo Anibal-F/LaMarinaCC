@@ -1968,8 +1968,25 @@ def _parse_orden_fields(
 
     # ========== CORRECCIÓN DE MARCA SI ES INVÁLIDA ==========
     # Validación de seguridad: si la marca es una etiqueta u otro campo, corregir
-    invalid_marcas = ["TIPO", "TYPE", "MARCA", "BRAND", "MODELO", "MODEL", "AÑO", "YEAR", "KILOMETRAJE", "MILEAGE"]
-    if marca_vehiculo and marca_vehiculo.upper() in invalid_marcas:
+    invalid_marcas = ["TIPO", "TYPE", "MARCA", "BRAND", "MODELO", "MODEL", "AÑO", "ANO", "YEAR", "KILOMETRAJE", "MILEAGE", "PLACAS", "PLATES"]
+    
+    def is_invalid_marca(marca: str) -> bool:
+        """Determina si la marca es inválida (etiqueta u otro campo)."""
+        if not marca:
+            return True
+        marca_upper = marca.upper()
+        # Si es exactamente una etiqueta inválida
+        if marca_upper in invalid_marcas:
+            return True
+        # Si contiene palabras de etiquetas (ej: "TIPO TYPE", "MARCA BRAND")
+        marca_words = marca_upper.split()
+        invalid_words = [w for w in marca_words if w in invalid_marcas]
+        # Si más de la mitad de las palabras son etiquetas, es inválida
+        if len(invalid_words) > 0 and len(invalid_words) >= len(marca_words) / 2:
+            return True
+        return False
+    
+    if is_invalid_marca(marca_vehiculo):
         # Buscar marca en las líneas del OCR
         for line in normalized_lines:
             line_upper = line.strip().upper()
@@ -1981,7 +1998,7 @@ def _parse_orden_fields(
                 break
     
     # Si aún no tenemos marca válida, buscar la primera línea que sea marca conocida
-    if not marca_vehiculo or marca_vehiculo.upper() in invalid_marcas:
+    if is_invalid_marca(marca_vehiculo):
         for line in normalized_lines:
             line_upper = line.strip().upper()
             marca_match = re.search(r"^(TOYOTA|NISSAN|CHEVROLET|CHEUROLET|HONDA|FORD|KIA|HYUNDAI|MAZDA|JEEP|VW|VOLKSWAGEN|GMC|CHRYSLER|BUICK|CADILLAC)$", line_upper)

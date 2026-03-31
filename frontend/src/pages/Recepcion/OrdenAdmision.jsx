@@ -181,6 +181,8 @@ export default function OrdenAdmision() {
   const [danosSiniestroSelect, setDanosSiniestroSelect] = useState("");
   const [danosPreexistSelect, setDanosPreexistSelect] = useState("");
   const [adjuntoOrden, setAdjuntoOrden] = useState(null);
+  const [adjuntoPreviewUrl, setAdjuntoPreviewUrl] = useState("");
+  const [adjuntoPreviewType, setAdjuntoPreviewType] = useState("");
   const [extractingDoc, setExtractingDoc] = useState(false);
   const [extractInfo, setExtractInfo] = useState("");
   
@@ -366,6 +368,16 @@ export default function OrdenAdmision() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewModal]);
 
+  // Cleanup de URL de vista previa del adjunto al desmontar
+  useEffect(() => {
+    return () => {
+      if (adjuntoPreviewUrl) {
+        URL.revokeObjectURL(adjuntoPreviewUrl);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const resetForm = () => {
     setForm({
       reporte_siniestro: "",
@@ -394,6 +406,11 @@ export default function OrdenAdmision() {
     setDanosPreexistSelect("");
     setAdjuntoOrden(null);
     setExtractInfo("");
+    if (adjuntoPreviewUrl) {
+      URL.revokeObjectURL(adjuntoPreviewUrl);
+    }
+    setAdjuntoPreviewUrl("");
+    setAdjuntoPreviewType("");
   };
 
   const openModal = () => {
@@ -461,6 +478,12 @@ export default function OrdenAdmision() {
     if (isSaving) return;
     setIsModalOpen(false);
     setEditingId(null);
+    // Limpiar vista previa del adjunto
+    if (adjuntoPreviewUrl) {
+      URL.revokeObjectURL(adjuntoPreviewUrl);
+    }
+    setAdjuntoPreviewUrl("");
+    setAdjuntoPreviewType("");
   };
 
   const handleChange = (field) => (event) => {
@@ -554,9 +577,25 @@ export default function OrdenAdmision() {
 
   const handleAdjuntoChange = async (event) => {
     const file = event.target.files?.[0] || null;
+    
+    // Limpiar URL anterior si existe
+    if (adjuntoPreviewUrl) {
+      URL.revokeObjectURL(adjuntoPreviewUrl);
+    }
+    
     setAdjuntoOrden(file);
     setExtractInfo("");
-    if (!file) return;
+    
+    if (!file) {
+      setAdjuntoPreviewUrl("");
+      setAdjuntoPreviewType("");
+      return;
+    }
+    
+    // Generar URL de vista previa para el archivo cargado
+    const objectUrl = URL.createObjectURL(file);
+    setAdjuntoPreviewUrl(objectUrl);
+    setAdjuntoPreviewType(file.type || "");
     try {
       setExtractingDoc(true);
       
@@ -1808,7 +1847,13 @@ export default function OrdenAdmision() {
       </div>
       {isModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/60">
-          <div className="w-full max-w-4xl max-h-[90vh] bg-surface-dark border border-border-dark rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <div 
+            className={`
+              w-full max-h-[90vh] bg-surface-dark border border-border-dark rounded-2xl shadow-2xl 
+              flex flex-col overflow-hidden transition-all duration-500 ease-out
+              ${adjuntoPreviewUrl ? 'max-w-7xl' : 'max-w-4xl'}
+            `}
+          >
             <div className="flex items-center justify-between px-6 py-4 border-b border-border-dark">
               <div>
                 <h3 className="text-lg font-bold text-white">Nueva orden de admisión</h3>
@@ -1834,11 +1879,14 @@ export default function OrdenAdmision() {
                 </button>
               </div>
             </div>
-            <form
-              id="orden-admision-form"
-              className="p-6 space-y-6 overflow-y-auto"
-              onSubmit={handleSubmit}
-            >
+            <div className={`flex flex-1 overflow-hidden ${adjuntoPreviewUrl ? 'flex-row' : ''}`}>
+              {/* Columna del formulario */}
+              <div className={`${adjuntoPreviewUrl ? 'w-1/2' : 'w-full'} overflow-y-auto`}>
+                <form
+                  id="orden-admision-form"
+                  className="p-6 space-y-6"
+                  onSubmit={handleSubmit}
+                >
               {error ? <p className="text-sm text-alert-red">{error}</p> : null}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-4">
@@ -2097,7 +2145,14 @@ export default function OrdenAdmision() {
                       <button
                         type="button"
                         className="text-slate-400 hover:text-white"
-                        onClick={() => setAdjuntoOrden(null)}
+                        onClick={() => {
+                          setAdjuntoOrden(null);
+                          if (adjuntoPreviewUrl) {
+                            URL.revokeObjectURL(adjuntoPreviewUrl);
+                            setAdjuntoPreviewUrl("");
+                            setAdjuntoPreviewType("");
+                          }
+                        }}
                       >
                         <span className="material-symbols-outlined text-lg">close</span>
                       </button>
@@ -2223,6 +2278,42 @@ export default function OrdenAdmision() {
                 </div>
               </div>
             </form>
+              </div>
+              
+              {/* Columna de vista previa - aparece cuando hay archivo */}
+              {adjuntoPreviewUrl ? (
+                <div className="w-1/2 border-l border-border-dark bg-background-dark/30 flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border-dark bg-surface-dark/50">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-slate-400 text-sm">preview</span>
+                      <span className="text-sm font-medium text-slate-300">Vista previa</span>
+                    </div>
+                    <span className="text-xs text-slate-500 truncate max-w-[200px]">
+                      {adjuntoOrden?.name}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-auto p-4">
+                    {adjuntoPreviewType.includes("pdf") ? (
+                      <iframe
+                        src={adjuntoPreviewUrl}
+                        title="Vista previa del documento"
+                        className="w-full h-full min-h-[500px] rounded-lg border border-border-dark bg-white"
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center">
+                        <img
+                          src={adjuntoPreviewUrl}
+                          alt="Vista previa"
+                          className="max-w-full max-h-full object-contain rounded-lg border border-border-dark"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            
+            {/* Footer con botones */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border-dark/60 bg-surface-dark/95">
               <button
                 type="button"

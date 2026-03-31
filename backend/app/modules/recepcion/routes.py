@@ -1233,33 +1233,50 @@ def _parse_orden_fields(
             has_modelo = False
             has_kilometraje = False
             
+            # Detectar si es formato bilingüe buscando "BRAND" o "TYPE" en las líneas siguientes
+            is_bilingual = any("BRAND" in normalized_lines[j].upper() or "TYPE" in normalized_lines[j].upper() for j in range(marca_idx, min(marca_idx + 5, len(normalized_lines))))
+            
+            # Buscar headers del formato (soporta español solo o bilingüe)
             for i in range(marca_idx, min(marca_idx + 5, len(normalized_lines))):
                 line_upper = normalized_lines[i].strip().upper()
-                if line_upper in ["TIRO", "TIPO"] or "TIRO" in line_upper:
+                # TIPO/TIRO - puede venir como "TIPO", "TIPO TYPE", "TIRO"
+                if "TIPO" in line_upper or "TIRO" in line_upper or "TYPE" in line_upper:
                     has_tipo = True
-                if "MODELO" in line_upper and "AÑO" in line_upper:
+                # MODELO (AÑO) - puede venir como "MODELO (AÑO)", "MODELO (ANO) MODEL (YEAR)"
+                if "MODELO" in line_upper and ("AÑO" in line_upper or "ANO" in line_upper or "YEAR" in line_upper):
                     has_modelo = True
-                if line_upper == "KILOMETRAJE":
+                # KILOMETRAJE/MILEAGE
+                if "KILOMETRAJE" in line_upper or "MILEAGE" in line_upper:
                     has_kilometraje = True
             
-            # Si es formato clásico, buscar valores debajo
+            # Si es formato clásico o bilingüe, buscar valores debajo
             if has_tipo and has_modelo:
-                # Detectar si es formato bilingüe (tiene "BRAND", "TYPE" en inglés)
-                is_bilingual = any("BRAND" in normalized_lines[j].upper() for j in range(marca_idx, min(marca_idx + 5, len(normalized_lines))))
-                
                 # Los valores deberían estar en las siguientes líneas
                 # Estructura típica: CHEVROLET, SILVERADO, 2014, (vacío)
+                # O bilingüe: TOYOTA, TY TOYOTA COROLLA..., 2017
                 candidates_start = marca_idx + 4  # Después de los headers
                 
                 # Lista de etiquetas a ignorar (tanto español como inglés)
-                skip_labels = ["MARCA", "BRAND", "TIPO", "TYPE", "MODELO", "MODEL", "AÑO", "YEAR", "KILOMETRAJE", "MILEAGE", "COLOR", "COLOUR", "PLACAS", "PLATES"]
+                # Incluye variantes como "MARCA BRAND", "TIPO TYPE", "MODELO (ANO) MODEL (YEAR)"
+                skip_patterns = [
+                    "MARCA", "BRAND", "TIPO", "TYPE", "MODELO", "MODEL", "AÑO", "ANO", "YEAR", 
+                    "KILOMETRAJE", "MILEAGE", "COLOR", "COLOUR", "PLACAS", "PLATES", "TRANSMISION", "TRANSMISSION"
+                ]
                 
                 for i in range(candidates_start, min(candidates_start + 10, len(normalized_lines))):
                     line = normalized_lines[i].strip()
                     line_upper = line.upper()
                     
-                    # Saltar líneas que son claramente etiquetas
-                    if any(line_upper == label or line_upper.startswith(label + " ") for label in skip_labels):
+                    # Saltar líneas que contienen etiquetas (para variantes bilingües como "MARCA BRAND")
+                    is_label = False
+                    for pattern in skip_patterns:
+                        if line_upper == pattern or line_upper.startswith(pattern + " ") or (" " + pattern) in line_upper:
+                            # Pero no saltar si la línea también contiene una marca conocida
+                            has_marca = any(m in line_upper for m in ["TOYOTA", "NISSAN", "CHEVROLET", "CHEUROLET", "HONDA", "FORD", "KIA", "HYUNDAI", "MAZDA", "JEEP", "VW", "VOLKSWAGEN"])
+                            if not has_marca:
+                                is_label = True
+                                break
+                    if is_label:
                         continue
                     
                     # Marca: línea que es marca conocida

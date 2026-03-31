@@ -626,23 +626,44 @@ export default function OrdenAdmision() {
           // Encontrar el mejor match
           let bestMatch = null;
           let bestScore = 0;
-          const SIMILARITY_THRESHOLD = 0.4; // Mínimo 40% de similitud
+          const SIMILARITY_THRESHOLD = 0.5; // Mínimo 50% de similitud (subido de 0.4)
           
           for (const modelo of modelosFiltrados) {
             const nombreModelo = String(modelo.nb_modelo || "").toUpperCase().trim();
             if (!nombreModelo) continue;
             
-            const score = similarity(tipoOcr, nombreModelo);
+            const nombreModeloClean = nombreModelo.replace(/[^A-Z0-9]/gi, "");
+            const tipoOcrClean = tipoOcr.replace(/[^A-Z0-9]/gi, "");
             
-            // Bonus si el OCR contiene el nombre del modelo
-            if (tipoOcr.includes(nombreModelo) || nombreModelo.includes(tipoOcr)) {
-              const bonus = 0.3;
-              const adjustedScore = Math.min(score + bonus, 1);
-              if (adjustedScore > bestScore) {
-                bestScore = adjustedScore;
-                bestMatch = modelo;
-              }
-            } else if (score > bestScore) {
+            let score = similarity(tipoOcr, nombreModelo);
+            
+            // Bonus si hay coincidencia exacta o contenida
+            if (tipoOcr === nombreModelo) {
+              // Coincidencia exacta - máximo bonus
+              score = 1.0;
+            } else if (tipoOcrClean === nombreModeloClean) {
+              // Coincidencia exacta después de limpiar
+              score = 0.95;
+            } else if (tipoOcr.includes(nombreModelo)) {
+              // OCR contiene exactamente el modelo del catálogo
+              const bonus = 0.25;
+              score = Math.min(score + bonus, 1);
+            } else if (nombreModelo.includes(tipoOcr)) {
+              // El modelo del catálogo contiene el OCR
+              // Penalizar si el catálogo es mucho más largo
+              const lengthRatio = tipoOcr.length / nombreModelo.length;
+              const bonus = 0.15 * lengthRatio; // Menos bonus si el catálogo es mucho más largo
+              score = Math.min(score + bonus, 0.9); // Máximo 0.9 para contenidos
+            }
+            
+            // Penalizar si la longitud del catálogo es mucho mayor que el OCR
+            // Esto evita que "COROLLA BASE" matchee con "COROLLA BASE 4 PTAS"
+            if (nombreModelo.length > tipoOcr.length * 1.5) {
+              const penalty = (nombreModelo.length - tipoOcr.length) * 0.02;
+              score = Math.max(0, score - penalty);
+            }
+            
+            if (score > bestScore) {
               bestScore = score;
               bestMatch = modelo;
             }

@@ -1949,6 +1949,30 @@ def _parse_orden_fields(
                     field_debug["descripcion_siniestro"] = "qualitas_damage_keywords"
                     break
 
+    # ========== CORRECCIÓN DE MARCA SI ES INVÁLIDA ==========
+    # Validación de seguridad: si la marca es una etiqueta u otro campo, corregir
+    invalid_marcas = ["TIPO", "TYPE", "MARCA", "BRAND", "MODELO", "MODEL", "AÑO", "YEAR", "KILOMETRAJE", "MILEAGE"]
+    if marca_vehiculo and marca_vehiculo.upper() in invalid_marcas:
+        # Buscar marca en las líneas del OCR
+        for line in normalized_lines:
+            line_upper = line.strip().upper()
+            # Buscar una marca válida conocida
+            marca_match = re.search(r"^(TOYOTA|NISSAN|CHEVROLET|CHEUROLET|HONDA|FORD|KIA|HYUNDAI|MAZDA|JEEP|VW|VOLKSWAGEN|GMC|CHRYSLER|BUICK|CADILLAC)$", line_upper)
+            if marca_match:
+                marca_vehiculo = line.strip().replace("CHEUROLET", "CHEVROLET")
+                field_debug["marca_vehiculo"] = "corrected_from_invalid"
+                break
+    
+    # Si aún no tenemos marca válida, buscar la primera línea que sea marca conocida
+    if not marca_vehiculo or marca_vehiculo.upper() in invalid_marcas:
+        for line in normalized_lines:
+            line_upper = line.strip().upper()
+            marca_match = re.search(r"^(TOYOTA|NISSAN|CHEVROLET|CHEUROLET|HONDA|FORD|KIA|HYUNDAI|MAZDA|JEEP|VW|VOLKSWAGEN|GMC|CHRYSLER|BUICK|CADILLAC)$", line_upper)
+            if marca_match:
+                marca_vehiculo = line.strip().replace("CHEUROLET", "CHEVROLET")
+                field_debug["marca_vehiculo"] = "fallback_marca_search"
+                break
+
     # ========== LIMPIEZA DE TIPO PARA MATCH CON CATÁLOGO ==========
     def clean_tipo_for_catalog(tipo: str, marca: str, anio: str) -> str:
         """

@@ -1244,25 +1244,49 @@ def _parse_orden_fields(
             
             # Si es formato clásico, buscar valores debajo
             if has_tipo and has_modelo:
+                # Detectar si es formato bilingüe (tiene "BRAND", "TYPE" en inglés)
+                is_bilingual = any("BRAND" in normalized_lines[j].upper() for j in range(marca_idx, min(marca_idx + 5, len(normalized_lines))))
+                
                 # Los valores deberían estar en las siguientes líneas
                 # Estructura típica: CHEVROLET, SILVERADO, 2014, (vacío)
                 candidates_start = marca_idx + 4  # Después de los headers
+                
+                # Lista de etiquetas a ignorar (tanto español como inglés)
+                skip_labels = ["MARCA", "BRAND", "TIPO", "TYPE", "MODELO", "MODEL", "AÑO", "YEAR", "KILOMETRAJE", "MILEAGE", "COLOR", "COLOUR", "PLACAS", "PLATES"]
                 
                 for i in range(candidates_start, min(candidates_start + 10, len(normalized_lines))):
                     line = normalized_lines[i].strip()
                     line_upper = line.upper()
                     
+                    # Saltar líneas que son claramente etiquetas
+                    if any(line_upper == label or line_upper.startswith(label + " ") for label in skip_labels):
+                        continue
+                    
                     # Marca: línea que es marca conocida
                     if not marca_vehiculo and re.search(r"^(CHEVROLET|CHEUROLET|NISSAN|TOYOTA|HONDA|VW|VOLKSWAGEN|FORD|CHRYSLER|KIA|HYUNDAI|MAZDA|JEEP|GMC|CADILLAC|BUICK)$", line_upper):
                         marca_vehiculo = line.replace("CHEUROLET", "CHEVROLET")  # Corrección OCR común
                         field_debug["marca_vehiculo"] = "qualitas_classic_marca"
+                        if is_bilingual:
+                            field_debug["marca_vehiculo"] = "qualitas_bilingual_marca"
                         continue
                     
-                    # Tipo: línea después de marca, no es año ni número
-                    if marca_vehiculo and not tipo_vehiculo and not re.match(r"^(20\d{2}|\d+)$", line):
-                        if len(line) > 2 and line_upper not in ["MARCA", "TIPO", "MODELO", "COLOR", "PLACAS"]:
+                    # Si aún no tenemos marca pero encontramos una línea válida después de saltar etiquetas
+                    # y es el formato bilingüe, buscar más abajo
+                    if is_bilingual and not marca_vehiculo and line_upper in ["TOYOTA", "NISSAN", "HONDA", "CHEVROLET", "CHEUROLET", "FORD", "KIA", "HYUNDAI", "MAZDA", "JEEP", "VW", "VOLKSWAGEN"]:
+                        marca_vehiculo = line.replace("CHEUROLET", "CHEVROLET")
+                        field_debug["marca_vehiculo"] = "qualitas_bilingual_marca"
+                        continue
+                    
+                    # Tipo: línea después de marca, no es año ni número ni etiqueta
+                    if marca_vehiculo and not tipo_vehiculo:
+                        # Saltar si parece una etiqueta
+                        if any(label in line_upper for label in skip_labels):
+                            continue
+                        if not re.match(r"^(20\d{2}|\d+)$", line) and len(line) > 2:
                             tipo_vehiculo = line
                             field_debug["tipo_vehiculo"] = "qualitas_classic_tipo"
+                            if is_bilingual:
+                                field_debug["tipo_vehiculo"] = "qualitas_bilingual_tipo"
                             continue
                     
                     # Año: línea que es año 20XX
@@ -1271,6 +1295,8 @@ def _parse_orden_fields(
                         if 1990 <= year <= 2030:
                             modelo_anio = line
                             field_debug["modelo_anio"] = "qualitas_classic_year"
+                            if is_bilingual:
+                                field_debug["modelo_anio"] = "qualitas_bilingual_year"
                             continue
         
         # ========== FORMATO QUALITAS AJUSTE EXPRESS ==========

@@ -870,7 +870,10 @@ def _parse_orden_fields(
         "CALLE", "AVENIDA", "COLONIA", "CIUDAD", "ESTADO", "CP:", "TELEFONO:",
         "ESTIMADO", "FAVOR", "PRESENTARSE", "CON", "DIRECCION", "CON",
         "FAVOR", "DE", "PRESENTARSE", "AJUSTADOR", "AJUSTADOR EXPRESS",
-        "CAMACHO", "LEYVA", "JOB EDUARDO"
+        "CAMACHO", "LEYVA", "JOB EDUARDO",
+        # Textos de encabezados CHUBB
+        "VALIDO POR", "VALIDO", "CLAVE ACCESO", "FECHA ENTREGA", "IDENTIFICADOR",
+        "VOLANTE DE ADMISION", "VOLANTE DE ADMISIÓN", "Y VALUACION", "Y VALUACIÓN"
     ]
     
     def is_valid_name(candidate: str) -> bool:
@@ -964,18 +967,27 @@ def _parse_orden_fields(
                     break
     
     # CHUBB ticket vertical: buscar "Asegurado:" seguido de nombre en línea siguiente
+    # Solo buscar DESPUÉS de "Datos Vehículo" para evitar el encabezado
     if not nb_cliente and aseguradora == "CHUBB" and normalized_lines:
+        datos_vehiculo_idx = -1
         for idx, line in enumerate(normalized_lines):
-            line_upper = line.upper()
-            # Buscar "Asegurado:" o "Asegurado" como etiqueta
-            if "ASEGURADO" in line_upper and ":" in line:
-                # El nombre debería estar en la siguiente línea
-                if idx + 1 < len(normalized_lines):
-                    candidate = normalized_lines[idx + 1].strip()
-                    if is_valid_name(candidate):
-                        nb_cliente = candidate
-                        field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
-                        break
+            if "DATOS VEHICULO" in line.upper() or "DATOS VEHÍCULO" in line.upper():
+                datos_vehiculo_idx = idx
+                break
+        
+        # Buscar "Asegurado:" solo después de "Datos Vehículo"
+        if datos_vehiculo_idx >= 0:
+            for i in range(datos_vehiculo_idx, min(datos_vehiculo_idx + 15, len(normalized_lines))):
+                line = normalized_lines[i]
+                line_upper = line.upper()
+                if "ASEGURADO" in line_upper and ":" in line:
+                    # El nombre debería estar en la siguiente línea
+                    if i + 1 < len(normalized_lines):
+                        candidate = normalized_lines[i + 1].strip()
+                        if is_valid_name(candidate):
+                            nb_cliente = candidate
+                            field_debug["nb_cliente"] = "chubb_ticket_asegurado_line"
+                            break
         
         # Fallback: si no se encontró, buscar línea con nombre completo típico (3+ palabras, mayúsculas)
         if not nb_cliente:

@@ -583,24 +583,26 @@ export default function OrdenAdmision() {
       URL.revokeObjectURL(adjuntoPreviewUrl);
     }
     
-    setAdjuntoOrden(file);
     setExtractInfo("");
     
     if (!file) {
+      setAdjuntoOrden(null);
       setAdjuntoPreviewUrl("");
       setAdjuntoPreviewType("");
       return;
     }
     
-    // Generar URL de vista previa para el archivo cargado
-    const objectUrl = URL.createObjectURL(file);
-    setAdjuntoPreviewUrl(objectUrl);
-    setAdjuntoPreviewType(file.type || "");
     try {
       setExtractingDoc(true);
       
       // Limpiar formulario anterior para evitar datos mezclados
       resetForm();
+      
+      // IMPORTANTE: Establecer archivo y preview DESPUÉS del reset
+      setAdjuntoOrden(file);
+      const objectUrl = URL.createObjectURL(file);
+      setAdjuntoPreviewUrl(objectUrl);
+      setAdjuntoPreviewType(file.type || "");
       
       const formData = new FormData();
       formData.append("file", file);

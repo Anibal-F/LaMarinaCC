@@ -2201,6 +2201,32 @@ def _parse_orden_fields(
                 field_debug["tipo_vehiculo"] = "chubb_class_from_tipo"
             else:
                 tipo_vehiculo = tipo_clean
+        
+        # CHUBB: Limpiar tipo de especificaciones técnicas
+        # Ej: "ATTITUDE SEDAN L4 IMO AUT 4 ABS CA CE T ELA SM SQ CB" -> "ATTITUDE SEDAN"
+        if tipo_vehiculo:
+            # Palabras técnicas a remover (especificaciones de motor, transmisión, equipamiento)
+            tech_specs = [
+                "L3", "L4", "L5", "L6", "V6", "V8", "V12",
+                "IMO", "IMQ", "AUT", "MAN", "MEC", "CVT",
+                "ABS", "CA", "CE", "CC", "TELA", "TEL", "ELA",
+                "SM", "SQ", "CB", "EBD", "ESP", "TCS", "HSA",
+                "4X2", "4X4", "4WD", "2WD", "AWD", "FWD", "RWD",
+                "T", "AT", "MT", "CVT", "DCT", "DSG",
+                "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"
+            ]
+            
+            words = tipo_vehiculo.split()
+            cleaned_words = []
+            for word in words:
+                word_upper = word.upper()
+                # Si la palabra no es una especificación técnica, mantenerla
+                if word_upper not in tech_specs and not word.isdigit():
+                    cleaned_words.append(word)
+            
+            if cleaned_words:
+                tipo_vehiculo = " ".join(cleaned_words)
+                field_debug["tipo_vehiculo"] = "chubb_tipo_cleaned"
 
         # CHUBB: Buscar nombre del asegurado desde sección "Asegurado:" o "Datos Vehículo"
         if not nb_cliente and normalized_lines:

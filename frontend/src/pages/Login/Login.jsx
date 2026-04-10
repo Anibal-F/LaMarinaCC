@@ -60,47 +60,47 @@ export default function Login() {
         <div className="absolute inset-0 bg-[#020817]/20 backdrop-blur-[1px]"></div>
         <div className="relative z-10 flex min-h-screen w-full flex-col items-center justify-center px-6 py-10 pt-6">
           <div className="w-full max-w-[460px]">
-            <div className="rounded-xl p-8 lg:p-10 bg-[rgba(22,39,64,0.82)] backdrop-blur-[12px] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
+            <div className="rounded-[28px] p-8 lg:p-10 bg-gradient-to-br from-[#f9629f]/88 via-[#ea4c89]/84 to-[#a11a55]/88 backdrop-blur-[14px] border border-white/20 shadow-[0_24px_70px_rgba(161,26,85,0.45)]">
               <div className="mb-8">
                 <h1 className="text-white text-[24px] font-extrabold leading-tight tracking-tight text-center">
                   Bienvenido a Marina Suite
                 </h1>
-                <p className="text-[#9ab0bc] mt-2 text-sm text-center">
-                  Ingrese sus credenciales para acceder. Hola Jocelyn
+                <p className="text-[#ffe4f0] mt-2 text-sm text-center">
+                  Ingrese sus credenciales para acceder
                 </p>
               </div>
               <form className="space-y-5" onSubmit={handleSubmit}>
                 <div className="flex flex-col gap-2">
-                  <label className="text-white text-sm font-bold uppercase tracking-wider opacity-80">
+                  <label className="text-white text-sm font-bold uppercase tracking-wider opacity-90">
                     Usuario o Correo
                   </label>
                   <div className="flex w-full items-stretch rounded-lg group transition-all">
                     <input
-                      className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg rounded-r-none border-r-0 text-white focus:outline-0 focus:ring-1 focus:ring-[#00527a] border-[#394c56] bg-[#1b2328] h-14 placeholder:text-[#9ab0bc]/40 px-4 text-base font-normal leading-normal transition-all"
+                      className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-l-xl rounded-r-none border-r-0 text-white focus:outline-0 focus:ring-2 focus:ring-[#ffd0e4] border-white/20 bg-[#3b1024]/70 h-14 placeholder:text-[#ffd7e8]/45 px-4 text-base font-normal leading-normal transition-all"
                       placeholder="usuario o correo@lamarina.com"
                       type="text"
                       autoComplete="username"
                       value={credential}
                       onChange={(event) => setCredential(event.target.value)}
                     />
-                    <div className="text-[#9ab0bc] flex border border-[#394c56] border-l-0 bg-[#1b2328] items-center justify-center px-4 rounded-r-lg">
+                    <div className="text-[#ffd7e8] flex border border-white/20 border-l-0 bg-[#3b1024]/70 items-center justify-center px-4 rounded-r-xl">
                       <span className="material-symbols-outlined text-xl">person</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-white text-sm font-bold uppercase tracking-wider opacity-80">
+                  <label className="text-white text-sm font-bold uppercase tracking-wider opacity-90">
                     Contraseña
                   </label>
                   <div className="flex w-full items-stretch rounded-lg group transition-all">
                     <input
-                      className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg rounded-r-none border-r-0 text-white focus:outline-0 focus:ring-1 focus:ring-[#00527a] border-[#394c56] bg-[#1b2328] h-14 placeholder:text-[#9ab0bc]/40 px-4 text-base font-normal leading-normal transition-all"
+                      className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-l-xl rounded-r-none border-r-0 text-white focus:outline-0 focus:ring-2 focus:ring-[#ffd0e4] border-white/20 bg-[#3b1024]/70 h-14 placeholder:text-[#ffd7e8]/45 px-4 text-base font-normal leading-normal transition-all"
                       placeholder="••••••••"
                       type="password"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                     />
-                    <div className="text-[#9ab0bc] flex border border-[#394c56] border-l-0 bg-[#1b2328] items-center justify-center px-4 rounded-r-lg">
+                    <div className="text-[#ffd7e8] flex border border-white/20 border-l-0 bg-[#3b1024]/70 items-center justify-center px-4 rounded-r-xl">
                       <span className="material-symbols-outlined text-xl">lock</span>
                     </div>
                   </div>
@@ -108,17 +108,17 @@ export default function Login() {
                 <div className="flex items-center justify-between text-sm py-2">
                   <label className="flex items-center gap-2 cursor-pointer group">
                     <input
-                      className="rounded border-[#394c56] bg-[#1b2328] text-[#00527a] focus:ring-[#00527a] transition-all cursor-pointer"
+                      className="rounded border-white/20 bg-[#3b1024]/70 text-[#fff0f7] focus:ring-[#ffd0e4] transition-all cursor-pointer"
                       type="checkbox"
                       checked={rememberMe}
                       onChange={(event) => setRememberMe(event.target.checked)}
                     />
-                    <span className="text-[#9ab0bc] group-hover:text-white transition-colors">
+                    <span className="text-[#ffe4f0] group-hover:text-white transition-colors">
                       Recordarme
                     </span>
                   </label>
                   <a
-                    className="text-[#00527a] hover:text-[#00527a]/80 font-bold transition-colors"
+                    className="text-[#fff0f7] hover:text-white font-bold transition-colors"
                     href="#"
                   >
                     ¿Olvidaste tu contraseña?
@@ -126,7 +126,7 @@ export default function Login() {
                 </div>
                 {error ? <p className="text-sm text-[#f87171]">{error}</p> : null}
                 <button
-                  className="w-full h-14 bg-[#00527a] hover:bg-[#00527a]/90 text-white font-extrabold text-lg rounded-lg shadow-lg shadow-[#00527a]/20 transition-all flex items-center justify-center gap-2"
+                  className="w-full h-14 bg-white hover:bg-[#fff0f7] text-[#a11a55] font-extrabold text-lg rounded-xl shadow-lg shadow-[#6f1139]/30 transition-all flex items-center justify-center gap-2"
                   type="submit"
                 >
                   <span>INICIAR SESIÓN</span>

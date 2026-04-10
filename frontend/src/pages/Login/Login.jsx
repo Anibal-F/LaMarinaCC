@@ -66,7 +66,7 @@ export default function Login() {
                   Bienvenido a Marina Suite
                 </h1>
                 <p className="text-[#9ab0bc] mt-2 text-sm text-center">
-                  Ingrese sus credenciales para acceder
+                  Ingrese sus credenciales para acceder. Hola Jocelyn
                 </p>
               </div>
               <form className="space-y-5" onSubmit={handleSubmit}>

@@ -196,12 +196,18 @@ class PaqueteReporteConflict(BaseModel):
     estatus: str
 
 
+class OrdenAdmisionInfo(BaseModel):
+    marca: Optional[str] = None
+    modelo: Optional[str] = None
+    anio: Optional[str] = None
+
 class PaqueteReporteValidation(BaseModel):
     numero_reporte_siniestro: str
     reporte_normalizado: Optional[str] = None
     orden_admision_encontrada: bool
     orden_admision_id: Optional[int] = None
     bitacora_encontrada: bool = False  # True si existe en bitacora_piezas
+    orden_admision_info: Optional[OrdenAdmisionInfo] = None  # Info del vehículo
     paquete_existente: Optional[PaqueteReporteConflict] = None
 
 
@@ -271,9 +277,17 @@ def ensure_paquetes_piezas_tables(conn):
     conn.execute(
         """
         CREATE SEQUENCE IF NOT EXISTS paquetes_piezas_folio_seq
-            START WITH 1
+            START WITH 6476
             INCREMENT BY 1
             MINVALUE 1
+        """
+    )
+    # Asegurar que la secuencia empiece en al menos 6476 (para folios consecutivos)
+    conn.execute(
+        """
+        SELECT setval('paquetes_piezas_folio_seq', 
+            GREATEST(6476, COALESCE((SELECT last_value FROM paquetes_piezas_folio_seq), 6476)), 
+            false)
         """
     )
     conn.execute(
@@ -292,7 +306,7 @@ def ensure_paquetes_piezas_tables(conn):
         CREATE TABLE IF NOT EXISTS paquetes_piezas (
             id BIGSERIAL PRIMARY KEY,
             folio VARCHAR(30) NOT NULL UNIQUE
-                DEFAULT ('PKG-' || LPAD(nextval('paquetes_piezas_folio_seq')::text, 3, '0')),
+                DEFAULT nextval('paquetes_piezas_folio_seq')::text,
             orden_admision_id BIGINT REFERENCES orden_admision(id) ON DELETE SET NULL,
             folio_ot VARCHAR(50),
             numero_reporte_siniestro VARCHAR(100),
@@ -721,7 +735,7 @@ def _get_orden_admision_snapshot(conn, orden_admision_id: Optional[int]) -> Opti
     conn.row_factory = dict_row
     orden = conn.execute(
         """
-        SELECT id, reporte_siniestro
+        SELECT id, reporte_siniestro, marca_vehiculo, tipo_vehiculo, modelo_anio
         FROM orden_admision
         WHERE id = %s
         LIMIT 1
@@ -1559,10 +1573,19 @@ def validate_paquete_report(
         # Usar el reporte normalizado de orden_admision si existe, sino de bitacora, sino el input
         if orden:
             normalized_report = str(orden.get("reporte_siniestro") or "").strip()
+            # Traer info completa de la orden para datos del vehículo
+            orden_full = _get_orden_admision_snapshot(conn, orden["id"])
+            orden_info = {
+                "marca": orden_full.get("marca_vehiculo") if orden_full else None,
+                "modelo": orden_full.get("tipo_vehiculo") if orden_full else None,
+                "anio": orden_full.get("modelo_anio") if orden_full else None,
+            }
         elif bitacora:
             normalized_report = str(bitacora.get("numero_reporte") or "").strip()
+            orden_info = None
         else:
             normalized_report = reporte
+            orden_info = None
         
         existing = _find_paquete_by_reporte(conn, normalized_report, exclude_paquete_id=exclude_paquete_id)
 
@@ -1572,6 +1595,7 @@ def validate_paquete_report(
             "orden_admision_encontrada": bool(orden),
             "orden_admision_id": orden.get("id") if orden else None,
             "bitacora_encontrada": bool(bitacora),
+            "orden_admision_info": orden_info,
             "paquete_existente": (
                 {
                     "id": existing["id"],

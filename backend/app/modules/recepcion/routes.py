@@ -3671,7 +3671,7 @@ def delete_cita(cita_id: int):
 class OrdenAdmisionCreate(BaseModel):
     reporte_siniestro: str
     fecha_adm: datetime
-    hr_adm: str
+    hr_adm: Optional[str] = None
     nb_cliente: str
     seguro_comp: Optional[str] = None
     tel_cliente: Optional[str] = None

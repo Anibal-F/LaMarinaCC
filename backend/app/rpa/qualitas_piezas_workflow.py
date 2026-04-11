@@ -293,6 +293,58 @@ class QualitasPiezasWorkflow:
                     await page.goto("https://proordersistem.com.mx/dashboard", wait_until="networkidle")
                     await asyncio.sleep(2)
                 
+                # Verificar que el menú Órdenes está disponible
+                self.log("  Verificando menú de navegación...")
+                try:
+                    # Debug: Listar todos los textos de enlaces/spans visibles
+                    self.log("  Buscando enlaces visibles en la página...")
+                    links = await page.locator('a, span').all()
+                    visible_texts = []
+                    for i, link in enumerate(links[:30]):  # Primeros 30 elementos
+                        try:
+                            if await link.is_visible():
+                                text = await link.text_content()
+                                if text and len(text.strip()) > 2 and len(text.strip()) < 50:
+                                    visible_texts.append(text.strip())
+                        except:
+                            pass
+                    self.log(f"  Textos encontrados: {visible_texts[:15]}")
+                    
+                    # Buscar el menú Órdenes
+                    ordenes_menu = await page.locator('span.kt-menu__link-text:has-text("Órdenes"), a.kt-menu__link:has-text("Órdenes")').count()
+                    if ordenes_menu == 0:
+                        self.log("  ⚠ Menú Órdenes no encontrado, intentando alternativas...")
+                        
+                        # Intentar navegar directamente a la URL de órdenes asignadas
+                        self.log("  Navegando directamente a Órdenes Asignadas...")
+                        await page.goto("https://proordersistem.com.mx/ordenes/asignadas", wait_until="networkidle")
+                        await asyncio.sleep(3)
+                        
+                        # Verificar si cargó correctamente
+                        ordenes_menu = await page.locator('span.kt-menu__link-text:has-text("Órdenes"), a.kt-menu__link:has-text("Órdenes")').count()
+                        if ordenes_menu > 0:
+                            self.log("  ✓ Menú Órdenes encontrado después de navegación directa")
+                        else:
+                            # Intentar con la URL del dominio alternativo
+                            self.log("  Intentando con dominio alternativo...")
+                            await page.goto("https://www.sistemaslaplataformalaguna.com/ordenes/asignadas", wait_until="networkidle")
+                            await asyncio.sleep(3)
+                            
+                            ordenes_menu = await page.locator('span.kt-menu__link-text:has-text("Órdenes")').count()
+                            if ordenes_menu > 0:
+                                self.log("  ✓ Menú encontrado en dominio alternativo")
+                            else:
+                                self.log("  ⚠ Menú Órdenes no disponible, tomando screenshot...")
+                                try:
+                                    await page.screenshot(path="/tmp/qualitas_no_menu.png")
+                                    self.log("  Screenshot guardado: /tmp/qualitas_no_menu.png")
+                                except:
+                                    pass
+                    else:
+                        self.log(f"  ✓ Menú Órdenes encontrado ({ordenes_menu} elementos)")
+                except Exception as e:
+                    self.log(f"  ⚠ Error verificando menú: {e}")
+                
                 # Manejar modal de aviso PPD si aparece (usar el handler existente)
                 self.log("  Verificando modal de aviso...")
                 modal_handler = QualitasModalHandler(page)

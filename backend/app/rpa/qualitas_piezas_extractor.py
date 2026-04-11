@@ -357,15 +357,62 @@ class QualitasPiezasExtractor:
         print("[PiezasExtractor] Navegando a menú Órdenes...")
         
         try:
-            # Buscar y hacer clic en "Órdenes" del menú lateral
-            ordenes_menu = self.page.locator('span.kt-menu__link-text:has-text("Órdenes"), a.kt-menu__link:has-text("Órdenes")').first
-            await ordenes_menu.click()
-            await asyncio.sleep(1)
+            # Buscar y hacer clic en "Órdenes" del menú lateral (selectores flexibles)
+            ordenes_selectors = [
+                'span.kt-menu__link-text:has-text("Órdenes")',
+                'a.kt-menu__link:has-text("Órdenes")',
+                'a:has-text("Órdenes")',
+                'span:has-text("Órdenes")',
+                'a[href*="ordenes"]',
+                'text=Órdenes'
+            ]
+            
+            ordenes_menu = None
+            for selector in ordenes_selectors:
+                try:
+                    count = await self.page.locator(selector).count()
+                    if count > 0:
+                        ordenes_menu = self.page.locator(selector).first
+                        print(f"[PiezasExtractor] Menú Órdenes encontrado con selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if ordenes_menu:
+                await ordenes_menu.click()
+                await asyncio.sleep(1)
+            else:
+                print("[PiezasExtractor] ⚠ Menú Órdenes no encontrado con ningún selector")
             
             print("[PiezasExtractor] Navegando a Asignadas Qualitas...")
-            # Buscar y hacer clic en "Asignadas Qualitas" del submenú
-            asignadas_link = self.page.locator('span.kt-menu__link-text:has-text("Asignadas Qualitas"), a.kt-menu__link:has-text("Asignadas Qualitas")').first
-            await asignadas_link.click()
+            # Buscar y hacer clic en "Asignadas Qualitas" del submenú (selectores flexibles)
+            asignadas_selectors = [
+                'span.kt-menu__link-text:has-text("Asignadas Qualitas")',
+                'a.kt-menu__link:has-text("Asignadas Qualitas")',
+                'a:has-text("Asignadas Qualitas")',
+                'span:has-text("Asignadas Qualitas")',
+                'a[href*="asignadas"]',
+                'text=Asignadas Qualitas'
+            ]
+            
+            asignadas_link = None
+            for selector in asignadas_selectors:
+                try:
+                    count = await self.page.locator(selector).count()
+                    if count > 0:
+                        asignadas_link = self.page.locator(selector).first
+                        print(f"[PiezasExtractor] Asignadas Qualitas encontrado con selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if asignadas_link:
+                await asignadas_link.click()
+            else:
+                print("[PiezasExtractor] ⚠ Asignadas Qualitas no encontrado, intentando navegar directamente...")
+                # Intentar navegar directamente a la URL
+                await self.page.goto("https://proordersistem.com.mx/ordenes/asignadas", wait_until="networkidle")
+                await asyncio.sleep(3)
             
             # Esperar a que cargue la página de órdenes asignadas
             print("[PiezasExtractor] Esperando carga de página...")

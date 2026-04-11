@@ -1,0 +1,51 @@
+{
+  "success": true,
+  "timestamp": "2026-04-11T10:25:35.499415",
+  "duration_seconds": 212.058297,
+  "ordenes_procesadas": 3,
+  "total_piezas": 6,
+  "piezas_surtido": 2,
+  "piezas_canceladas": 4,
+  "detalle_ordenes": [
+    {
+      "num_expediente": "9175037",
+      "num_orden": "644",
+      "cantidad_piezas": 2
+    },
+    {
+      "num_expediente": "9207578",
+      "num_orden": "658",
+      "cantidad_piezas": 2
+    },
+    {
+      "num_expediente": "9218088",
+      "num_orden": "672",
+      "cantidad_piezas": 2
+    }
+  ],
+  "logs": "[2026-04-11 10:22:03] \n============================================================\n[2026-04-11 10:22:03] INTENTO 1/3\n[2026-04-11 10:22:03] ============================================================\n[2026-04-11 10:22:03] ============================================================\n[2026-04-11 10:22:03] INICIANDO WORKFLOW: Extracción de Piezas Qualitas\n[2026-04-11 10:22:03] Timeout máximo: 3600 segundos (60 min)\n[2026-04-11 10:22:03] ============================================================\n[2026-04-11 10:22:05] \n[1/3] LOGIN AUTOMÁTICO\n[2026-04-11 10:22:05]   Intentando login (intento 1/3)...\n[2026-04-11 10:22:08]   Credenciales cargadas:\n[2026-04-11 10:22:08]     - URL: https://proordersistem.com.mx/\n[2026-04-11 10:22:08]     - Usuario: ofl***com (22 chars)\n[2026-04-11 10:22:08]     - Password: *************** (15 chars)\n[2026-04-11 10:22:08]     - Taller ID: 96627\n[2026-04-11 10:22:08]   Navegando a https://proordersistem.com.mx/...\n[2026-04-11 10:22:09]   Esperando carga de página...\n[2026-04-11 10:22:15]   Screenshot guardado en: /tmp/qualitas_login_debug.png\n[2026-04-11 10:22:15]   Esperando campo de email...\n[2026-04-11 10:22:15]   Llenando credenciales...\n[2026-04-11 10:22:16]   Esperando reCAPTCHA...\n[2026-04-11 10:22:18]   Sitekey extraída: 6LcxkGwrAAAAALKnklg8...\n[2026-04-11 10:22:18]   Resolviendo reCAPTCHA con 2captcha...\n[2026-04-11 10:24:11]   ✓ reCAPTCHA resuelto\n[2026-04-11 10:24:11]   ✓ Token inyectado correctamente (2361 chars)\n[2026-04-11 10:24:13]   Marcando términos y condiciones...\n[2026-04-11 10:24:13]   ✓ Términos marcados\n[2026-04-11 10:24:14]   Verificando campos del formulario...\n[2026-04-11 10:24:14]     Campo 0: name=_token, type=hidden, visible=False, value=***\n[2026-04-11 10:24:14]     Campo 1: name=email, type=email, visible=True, value=***\n[2026-04-11 10:24:14]     Campo 2: name=password, type=password, visible=True, value=***\n[2026-04-11 10:24:14]     Campo 3: name=taller, type=text, visible=True, value=***\n[2026-04-11 10:24:14]     Campo 4: name=tyc, type=checkbox, visible=True, value=***\n[2026-04-11 10:24:14]   Enviando formulario...\n[2026-04-11 10:24:25]   Screenshot post-login: /tmp/qualitas_after_login_1.png\n[2026-04-11 10:24:25]   URL después de login: https://proordersistem.com.mx/dashboard\n[2026-04-11 10:24:25]   Mensaje en página ([role=\"alert\"]): Seleccione un periodo de fechas de Creacion de la OS y descarge el excel completo con todo el detalle de los productos cargados en cada OS.\n[2026-04-11 10:24:25]   Mensaje en página (.alert): Seleccione un periodo de fechas de Creacion de la OS y descarge el excel completo con todo el detalle de los productos cargados en cada OS.\n[2026-04-11 10:24:25]   Mensaje en página ([class*=\"error\"]): Campo requerido\n[2026-04-11 10:24:25]   Mensaje en página ([class*=\"error\"]): Campo requerido\n[2026-04-11 10:24:26]   Mensaje en página ([class*=\"error\"]): Campo requerido\n[2026-04-11 10:24:26]   Mensaje en página ([class*=\"error\"]): Campo requerido\n[2026-04-11 10:24:26]   Mensaje en página ([class*=\"alert\"]): Seleccione un periodo de fechas de Creacion de la OS y descarge el excel completo con todo el detalle de los productos cargados en cada OS.\n[2026-04-11 10:24:26]   ✓ Indicador de dashboard encontrado: text=Dashboard\n[2026-04-11 10:24:26]   ✓ Login exitoso (URL contiene dashboard)\n[2026-04-11 10:24:26] \n[2/3] VERIFICANDO ACCESO Y MODAL\n[2026-04-11 10:24:26]   URL actual: https://proordersistem.com.mx/dashboard\n[2026-04-11 10:24:26]   Listo para extracción de piezas\n[2026-04-11 10:24:26]   Verificando modal de aviso...\n[2026-04-11 10:24:36]   ✓ Modal manejado correctamente\n[2026-04-11 10:24:36] \n============================================================\n[2026-04-11 10:24:36] [3/3] EXTRAYENDO PIEZAS DE ÓRDENES EN TRÁNSITO\n[2026-04-11 10:24:36] ============================================================",
+  "retries_used": 0,
+  "checkpoint_stats": {
+    "procesadas": 3,
+    "fallidas": 0,
+    "total": 32,
+    "progreso": "3/32",
+    "porcentaje": 9.4,
+    "pagina_actual": 1,
+    "last_update": "2026-04-11T10:25:34.496463",
+    "tabs": {
+      "transito": {
+        "procesadas": 3,
+        "total": 32,
+        "completado": false
+      },
+      "piso": {
+        "procesadas": 0,
+        "total": 0,
+        "completado": false
+      }
+    },
+    "total_tabs": 32,
+    "procesadas_tabs": 3
+  }
+}

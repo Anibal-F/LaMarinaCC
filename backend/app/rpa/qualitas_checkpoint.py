@@ -15,8 +15,13 @@ from typing import List, Dict, Optional, Set
 class QualitasCheckpoint:
     """Gestiona el estado de progreso del extractor de piezas."""
     
-    def __init__(self, checkpoint_dir: str = "/app/app/rpa/data/checkpoints"):
-        self.checkpoint_dir = Path(checkpoint_dir)
+    def __init__(self, checkpoint_dir: str = None):
+        if checkpoint_dir is None:
+            # Usar ruta relativa al archivo (funciona en local y en Docker)
+            base_dir = Path(__file__).parent
+            self.checkpoint_dir = base_dir / "data" / "checkpoints"
+        else:
+            self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_file = self.checkpoint_dir / "piezas_checkpoint.json"
         

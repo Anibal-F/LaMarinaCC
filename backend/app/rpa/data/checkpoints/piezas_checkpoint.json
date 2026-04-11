@@ -1,0 +1,32 @@
+{
+  "ordenes_procesadas": [
+    "9175037",
+    "9207578",
+    "9218088"
+  ],
+  "ordenes_fallidas": [],
+  "total_ordenes": 32,
+  "pagina_actual": 1,
+  "session_id": null,
+  "started_at": "2026-04-11T10:24:54.428420",
+  "last_update": "2026-04-11T10:25:34.496463",
+  "tabs": {
+    "transito": {
+      "ordenes_procesadas": [
+        "9175037",
+        "9207578",
+        "9218088"
+      ],
+      "total_ordenes": 32,
+      "pagina_actual": 1,
+      "completado": false
+    },
+    "piso": {
+      "ordenes_procesadas": [],
+      "total_ordenes": 0,
+      "pagina_actual": 1,
+      "completado": false
+    }
+  },
+  "tab_actual": "transito"
+}

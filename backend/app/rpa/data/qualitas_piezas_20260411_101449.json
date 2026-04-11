@@ -1,0 +1,35 @@
+{
+  "success": true,
+  "timestamp": "2026-04-11T10:14:49.203250",
+  "duration_seconds": 40.719116,
+  "ordenes_procesadas": 0,
+  "total_piezas": 0,
+  "piezas_surtido": 0,
+  "piezas_canceladas": 0,
+  "detalle_ordenes": [],
+  "logs": "[2026-04-11 10:14:08] \n============================================================\n[2026-04-11 10:14:08] INTENTO 1/3\n[2026-04-11 10:14:08] ============================================================\n[2026-04-11 10:14:08] ============================================================\n[2026-04-11 10:14:08] INICIANDO WORKFLOW: Extracción de Piezas Qualitas\n[2026-04-11 10:14:08] Timeout máximo: 3600 segundos (60 min)\n[2026-04-11 10:14:08] ============================================================\n[2026-04-11 10:14:10] ✓ Sesión existente encontrada\n[2026-04-11 10:14:11] ✓ Contexto creado con sesión guardada\n[2026-04-11 10:14:17] ✓ Sesión válida\n[2026-04-11 10:14:17] \n[2/3] VERIFICANDO ACCESO Y MODAL\n[2026-04-11 10:14:17]   URL actual: https://proordersistem.com.mx/\n[2026-04-11 10:14:17]   Navegando al dashboard...\n[2026-04-11 10:14:21]   Listo para extracción de piezas\n[2026-04-11 10:14:21]   Verificando modal de aviso...\n[2026-04-11 10:14:32]   ✓ Modal manejado correctamente\n[2026-04-11 10:14:32] \n============================================================\n[2026-04-11 10:14:32] [3/3] EXTRAYENDO PIEZAS DE ÓRDENES EN TRÁNSITO\n[2026-04-11 10:14:32] ============================================================",
+  "retries_used": 0,
+  "checkpoint_stats": {
+    "procesadas": 0,
+    "fallidas": 0,
+    "total": 0,
+    "progreso": "N/A",
+    "porcentaje": 0,
+    "pagina_actual": 1,
+    "last_update": "2026-04-11T10:14:49.324683",
+    "tabs": {
+      "transito": {
+        "procesadas": 0,
+        "total": 0,
+        "completado": false
+      },
+      "piso": {
+        "procesadas": 0,
+        "total": 0,
+        "completado": false
+      }
+    },
+    "total_tabs": 0,
+    "procesadas_tabs": 0
+  }
+}

@@ -475,15 +475,30 @@ class QualitasPiezasWorkflow:
                         self.log(f"  ✓ Token inyectado correctamente ({len(token_value)} chars)")
                     else:
                         self.log("  ⚠ Token no se inyectó correctamente")
+                    
+                    # NOTA: NO hacer click en el checkbox del reCAPTCHA
+                    # El token ya está inyectado, hacer click activaría el desafío de imágenes
+                    # Solo esperamos un momento para que el token se procese
+                    await asyncio.sleep(2)
+                        
                 except Exception as e:
                     self.log(f"  ⚠ Error con reCAPTCHA: {e}")
                     # Continuar de todos modos, a veces no es necesario en headless
                 
                 # Términos (nuevo diseño: id="tyc" name="tyc")
-                terms = page.locator('input#tyc, input[name="tyc"]').first
-                if await terms.is_visible():
-                    if not await terms.is_checked():
-                        await terms.click()
+                self.log("  Marcando términos y condiciones...")
+                try:
+                    terms = page.locator('input#tyc, input[name="tyc"], #tyc').first
+                    if await terms.is_visible():
+                        if not await terms.is_checked():
+                            await terms.click()
+                            self.log("  ✓ Términos marcados")
+                        else:
+                            self.log("  ✓ Términos ya estaban marcados")
+                    else:
+                        self.log("  ⚠ Checkbox de términos no visible")
+                except Exception as e:
+                    self.log(f"  ⚠ Error marcando términos: {e}")
                 
                 # Pequeña pausa antes de enviar
                 await asyncio.sleep(1)

@@ -187,6 +187,9 @@ export default function OrdenAdmision() {
   const [extractingDoc, setExtractingDoc] = useState(false);
   const [extractInfo, setExtractInfo] = useState("");
   
+  // Estado para credencial de elector
+  const [credencialElector, setCredencialElector] = useState(null);
+  
   // Estados para RPA de adjudicación Qualitas
   const [adjudicacionModal, setAdjudicacionModal] = useState(null);
   const [adjudicando, setAdjudicando] = useState(false);
@@ -412,6 +415,8 @@ export default function OrdenAdmision() {
     }
     setAdjuntoPreviewUrl("");
     setAdjuntoPreviewType("");
+    // Limpiar credencial de elector
+    setCredencialElector(null);
   };
 
   const openModal = () => {
@@ -576,6 +581,11 @@ export default function OrdenAdmision() {
     });
     
     return { applied: appliedCount, skipped: skippedCount };
+  };
+
+  const handleCredencialChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setCredencialElector(file);
   };
 
   const handleAdjuntoChange = async (event) => {
@@ -929,6 +939,15 @@ export default function OrdenAdmision() {
           await uploadExpedienteArchivo(adjuntoOrden, "archivoorden_admision");
         } catch (err) {
           setError(err.message || "No se pudo subir el archivo al expediente");
+        }
+      }
+
+      // Subir credencial de elector al expediente (sin OCR, solo almacenamiento)
+      if (ordenId && credencialElector) {
+        try {
+          await uploadExpedienteArchivo(credencialElector, "credencial_elector");
+        } catch (err) {
+          setError(err.message || "No se pudo subir la credencial al expediente");
         }
       }
 
@@ -2175,6 +2194,44 @@ export default function OrdenAdmision() {
                   ) : null}
                   {extractInfo ? (
                     <p className="mt-2 text-xs text-slate-400">{extractInfo}</p>
+                  ) : null}
+                </div>
+                
+                {/* Credencial de Elector */}
+                <div className="rounded-xl border border-border-dark bg-background-dark/60 p-4">
+                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                    Credencial de Elector (INE)
+                  </h5>
+                  <label
+                    className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-dark px-4 py-6 text-center text-sm text-slate-400 hover:border-primary/60 hover:text-slate-200 transition-colors cursor-pointer"
+                    htmlFor="credencial-elector-adjunto"
+                  >
+                    <span className="material-symbols-outlined text-3xl">badge</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">
+                      Arrastra la credencial o haz clic para cargar
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      PDF, JPG, JPEG o PNG
+                    </span>
+                    <input
+                      id="credencial-elector-adjunto"
+                      className="hidden"
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={handleCredencialChange}
+                    />
+                  </label>
+                  {credencialElector ? (
+                    <div className="mt-3 flex items-center justify-between rounded-lg border border-border-dark bg-background-dark/70 px-3 py-2">
+                      <span className="text-xs text-slate-300">{credencialElector.name}</span>
+                      <button
+                        type="button"
+                        className="text-slate-400 hover:text-white"
+                        onClick={() => setCredencialElector(null)}
+                      >
+                        <span className="material-symbols-outlined text-lg">close</span>
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               </div>

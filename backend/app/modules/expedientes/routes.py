@@ -127,6 +127,7 @@ def copy_paquete_media_to_expediente(conn, reporte_siniestro: str, paquete_id: i
     """
     Copia las fotos de un paquete al expediente del reporte/siniestro.
     Se utiliza cuando un paquete se marca como 'Completado'.
+    Las fotos se guardan en la carpeta "Recepción Piezas" dentro del expediente.
     
     Returns:
         Lista de rutas de archivos copiados
@@ -153,8 +154,8 @@ def copy_paquete_media_to_expediente(conn, reporte_siniestro: str, paquete_id: i
     # Asegurar que existe el expediente
     expediente_id = _ensure_expediente(conn, reporte_siniestro)
     
-    # Directorio destino en expedientes
-    media_root = Path(__file__).resolve().parent.parent.parent / "media" / "expedientes" / reporte_siniestro / "paquete_pieza_foto"
+    # Directorio destino en expedientes - Carpeta "Recepción Piezas"
+    media_root = Path(__file__).resolve().parent.parent.parent / "media" / "expedientes" / reporte_siniestro / "Recepción Piezas"
     media_root.mkdir(parents=True, exist_ok=True)
     
     # Directorio origen de paquetes
@@ -174,7 +175,7 @@ def copy_paquete_media_to_expediente(conn, reporte_siniestro: str, paquete_id: i
         
         # Generar nombre único para el archivo
         extension = Path(media["file_path"]).suffix.lower()
-        filename = f"paquete_pieza_foto_{uuid4().hex}{extension}"
+        filename = f"recepcion_piezas_{uuid4().hex}{extension}"
         dest_path = media_root / filename
         
         # Copiar archivo
@@ -184,7 +185,7 @@ def copy_paquete_media_to_expediente(conn, reporte_siniestro: str, paquete_id: i
             continue
         
         file_size = dest_path.stat().st_size
-        relative_path = f"/media/expedientes/{reporte_siniestro}/paquete_pieza_foto/{filename}"
+        relative_path = f"/media/expedientes/{reporte_siniestro}/Recepción Piezas/{filename}"
         
         # Crear registro en expediente_archivos
         conn.execute(
@@ -203,7 +204,7 @@ def copy_paquete_media_to_expediente(conn, reporte_siniestro: str, paquete_id: i
             """,
             (
                 expediente_id,
-                "paquete_pieza_foto",
+                "recepcion_piezas",
                 "otros",
                 relative_path,
                 media["original_name"] or f"foto_paquete_{media['id']}",

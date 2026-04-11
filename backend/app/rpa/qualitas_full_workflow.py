@@ -185,17 +185,43 @@ async def inject_recaptcha_token(page, token: str):
         }}
         responseElement.value = '{token}';
         
+        // Múltiples métodos para ejecutar el callback
         if (typeof grecaptcha !== 'undefined') {{
             try {{
+                // Método 1: Callback directo
                 var widgets = Object.keys(___grecaptcha_cfg.clients || {{}});
                 for (var i = 0; i < widgets.length; i++) {{
                     var client = ___grecaptcha_cfg.clients[widgets[i]];
                     if (client && client.O && client.O.callback) {{
                         client.O.callback('{token}');
                     }}
+                    if (client && client.l && client.l.callback) {{
+                        client.l.callback('{token}');
+                    }}
+                    if (client && client.M && client.M.callback) {{
+                        client.M.callback('{token}');
+                    }}
                 }}
+                
+                // Método 2: Usar grecaptcha directamente
+                if (grecaptcha.getResponse) {{
+                    grecaptcha.getResponse = function() {{ return '{token}'; }};
+                }}
+                
+                // Método 3: Trigger de eventos
+                var event = new Event('change', {{ bubbles: true }});
+                responseElement.dispatchEvent(event);
+                
             }} catch(e) {{}}
         }}
+        
+        // Método 4: Trigger form submit si es necesario
+        try {{
+            var form = responseElement.closest('form');
+            if (form) {{
+                form.dispatchEvent(new Event('submit', {{ bubbles: true }}));
+            }}
+        }} catch(e) {{}}
     }})();
     """
     await page.evaluate(script)

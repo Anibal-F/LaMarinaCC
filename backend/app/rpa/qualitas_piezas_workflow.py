@@ -387,6 +387,13 @@ class QualitasPiezasWorkflow:
                 password = get_credential("QUALITAS_PASSWORD", use_db)
                 taller_id = get_credential("QUALITAS_TALLER_ID", use_db)
                 
+                # Debug: mostrar credenciales (ocultando contraseña)
+                self.log(f"  Credenciales cargadas:")
+                self.log(f"    - URL: {login_url}")
+                self.log(f"    - Usuario: {user[:3]}***{user[-3:] if len(user) > 6 else ''} ({len(user)} chars)")
+                self.log(f"    - Password: {'*' * len(password) if password else 'VACÍO'} ({len(password) if password else 0} chars)")
+                self.log(f"    - Taller ID: {taller_id}")
+                
                 if not user or not password:
                     self.log("  ✗ Error: No se encontraron credenciales")
                     return False
@@ -454,6 +461,16 @@ class QualitasPiezasWorkflow:
                     token = await solve_recaptcha_2captcha(site_key, login_url)
                     await inject_recaptcha_token(page, token)
                     self.log("  ✓ reCAPTCHA resuelto")
+                    
+                    # Verificar que el token se inyectó correctamente
+                    token_value = await page.evaluate("""() => {
+                        const el = document.getElementById('g-recaptcha-response');
+                        return el ? el.value : null;
+                    }""")
+                    if token_value:
+                        self.log(f"  ✓ Token inyectado correctamente ({len(token_value)} chars)")
+                    else:
+                        self.log("  ⚠ Token no se inyectó correctamente")
                 except Exception as e:
                     self.log(f"  ⚠ Error con reCAPTCHA: {e}")
                     # Continuar de todos modos, a veces no es necesario en headless
@@ -467,6 +484,19 @@ class QualitasPiezasWorkflow:
                 # Pequeña pausa antes de enviar
                 await asyncio.sleep(1)
                 
+                # Verificar todos los campos del formulario antes de enviar
+                self.log("  Verificando campos del formulario...")
+                form_inputs = await page.locator('form input').all()
+                for i, inp in enumerate(form_inputs):
+                    try:
+                        name = await inp.get_attribute('name')
+                        input_type = await inp.get_attribute('type')
+                        value = await inp.input_value()
+                        is_visible = await inp.is_visible()
+                        self.log(f"    Campo {i}: name={name}, type={input_type}, visible={is_visible}, value={'***' if value else 'vacío'}")
+                    except:
+                        pass
+                
                 # Login (nuevo diseño: button[type="submit"].submit-btn)
                 self.log("  Enviando formulario...")
                 await page.click('button[type="submit"].submit-btn')
@@ -475,28 +505,104 @@ class QualitasPiezasWorkflow:
                 # Esperar navegación
                 await asyncio.sleep(3)
                 
+                # Screenshot después del login
+                try:
+                    screenshot_after = Path(f"/tmp/qualitas_after_login_{attempt}.png")
+                    await page.screenshot(path=str(screenshot_after))
+                    self.log(f"  Screenshot post-login: {screenshot_after}")
+                except Exception as e:
+                    self.log(f"  No se pudo guardar screenshot post-login: {e}")
+                
                 # Verificar éxito
                 current_url = page.url.lower()
                 self.log(f"  URL después de login: {page.url}")
                 
+                # Intentar extraer cualquier mensaje de error visible
+                try:
+                    # Buscar mensajes de error en varios selectores comunes
+                    error_selectors = [
+                        '.error-message', '.alert-error', '[role="alert"]',
+                        '.alert', '.toast', '.notification', 
+                        '[class*="error"]', '[class*="alert"]'
+                    ]
+                    for selector in error_selectors:
+                        try:
+                            elements = await page.locator(selector).all()
+                            for el in elements:
+                                text = await el.text_content()
+                                if text and text.strip():
+                                    self.log(f"  Mensaje en página ({selector}): {text.strip()[:200]}")
+                        except:
+                            pass
+                except Exception as e:
+                    self.log(f"  No se pudieron extraer mensajes: {e}")
+                
+                # Verificar si hay elementos que indiquen login exitoso
+                try:
+                    # Buscar elementos que solo aparezcan después del login
+                    dashboard_indicators = [
+                        'text=Dashboard', 'text=Inicio', 'text=Órdenes',
+                        '[class*="dashboard"]', '[class*="sidebar"]',
+                        'nav', 'aside', '.menu', '#menu'
+                    ]
+                    for indicator in dashboard_indicators:
+                        try:
+                            count = await page.locator(indicator).count()
+                            if count > 0:
+                                self.log(f"  ✓ Indicador de dashboard encontrado: {indicator}")
+                                break
+                        except:
+                            pass
+                except:
+                    pass
+                
+                # La URL base puede ser redirección exitosa - verificar contenido
                 if "dashboard" in current_url:
-                    self.log("  ✓ Login exitoso")
+                    self.log("  ✓ Login exitoso (URL contiene dashboard)")
                     return True
-                elif "login" in current_url or current_url.rstrip('/').endswith('proordersistem.com.mx/'):
+                elif "login" in current_url:
                     self.log("  ✗ Login fallido - sigue en página de login")
-                    # Intentar obtener mensaje de error
+                elif current_url.rstrip('/').endswith('proordersistem.com.mx/'):
+                    # La URL es la página base - puede ser éxito o fallo
+                    # Verificar si hay elementos del dashboard
                     try:
-                        error_msg = await page.locator('.error-message, .alert-error, [role="alert"]').text_content()
-                        if error_msg:
-                            self.log(f"  Mensaje de error: {error_msg}")
-                    except:
-                        pass
+                        # Esperar un poco más y verificar si hay elementos del dashboard
+                        await asyncio.sleep(2)
+                        
+                        # Verificar si hay contenido que indique login exitoso
+                        page_content = await page.content()
+                        dashboard_keywords = ['dashboard', 'bienvenido', 'logout', 'cerrar sesión', 'ordenes', 'expediente']
+                        found_keywords = [kw for kw in dashboard_keywords if kw in page_content.lower()]
+                        
+                        if found_keywords:
+                            self.log(f"  ✓ Login exitoso (URL base pero contenido indica sesión): {found_keywords}")
+                            return True
+                        else:
+                            # Verificar si hay mensaje de error específico
+                            if 'incorrecto' in page_content.lower() or 'inválido' in page_content.lower() or 'error' in page_content.lower():
+                                self.log("  ✗ Login fallido - credenciales incorrectas")
+                            else:
+                                self.log("  ? URL es base pero no se detecta dashboard ni error claro")
+                                # Intentar navegar al dashboard manualmente
+                                self.log("  Intentando navegar a /dashboard...")
+                                await page.goto("https://proordersistem.com.mx/dashboard", wait_until="networkidle")
+                                await asyncio.sleep(2)
+                                if "dashboard" in page.url.lower():
+                                    self.log("  ✓ Navegación a dashboard exitosa - login funcionó")
+                                    return True
+                    except Exception as e:
+                        self.log(f"  Error verificando contenido: {e}")
                 else:
-                    self.log(f"  ✗ Login fallido, URL inesperada: {page.url}")
-                    if attempt < max_retries:
-                        await asyncio.sleep(5)
-                        continue
-                    return False
+                    self.log(f"  ? URL inesperada: {page.url}")
+                    # Si no es login ni URL base, podría ser éxito
+                    if "login" not in current_url:
+                        self.log("  ✓ Login posiblemente exitoso (no estamos en login)")
+                        return True
+                
+                if attempt < max_retries:
+                    await asyncio.sleep(5)
+                    continue
+                return False
                     
             except Exception as e:
                 self.log(f"  ✗ Error en intento {attempt}: {e}")

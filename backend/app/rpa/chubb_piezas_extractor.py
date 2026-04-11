@@ -51,7 +51,7 @@ async def get_expedientes_pendientes() -> List[Dict[str, Any]]:
                   AND (estatus_audatrace IS NULL OR estatus_audatrace = '')
                   AND num_expediente LIKE 'PA26%'  -- Solo expedientes del 2026
                 ORDER BY num_expediente, fecha_creacion DESC NULLS LAST
-                LIMIT 50
+                LIMIT 200
             """).fetchall()
             
             return [
@@ -693,22 +693,28 @@ async def search_expediente(page: Page, num_expediente: str, fecha_desde: str = 
             await exp_input.press('Enter')
             print("[Search] ✓ Búsqueda enviada con Enter")
         
-        await asyncio.sleep(4)
+        # ESPERAR A QUE CARGUEN LOS RESULTADOS (aumentado de 4 a 8 segundos)
+        print("[Search] Esperando resultados...")
+        await asyncio.sleep(6)
         
         # Verificar si se encontraron resultados
         # Buscar la tabla de resultados (gridAssesmentAdvanced en AdvancedSearch)
         result_selectors = ['#gridAssesmentAdvanced tbody tr', '#gridMyWorks tbody tr', '.grid tbody tr']
         
+        print("[Search] Verificando resultados...")
         for selector in result_selectors:
             try:
                 rows = await page.locator(selector).count()
+                print(f"[Search]   Selector '{selector}': {rows} filas")
                 if rows > 0:
                     # Verificar que no sea la fila de "No hay datos"
                     first_row_text = await page.locator(f"{selector}:first-child").text_content()
+                    print(f"[Search]   Texto primera fila: {first_row_text[:100] if first_row_text else 'N/A'}")
                     if first_row_text and 'Ningún dato' not in first_row_text and 'No se encontraron' not in first_row_text:
                         print(f"[Search] ✓ Expediente encontrado ({rows} filas)")
                         return True
-            except:
+            except Exception as e:
+                print(f"[Search]   Error con selector {selector}: {e}")
                 continue
         
         # Si no hay filas, verificar si hay mensaje de "No se encontraron resultados" o "Ningún dato"
@@ -723,11 +729,23 @@ async def search_expediente(page: Page, num_expediente: str, fecha_desde: str = 
                 no_results = await page.locator(no_result_selector).count()
                 if no_results > 0:
                     print(f"[Search] ✗ Expediente no encontrado ({no_result_selector})")
+                    # Screenshot para debug
+                    try:
+                        await page.screenshot(path=f"/tmp/chubb_no_results_{num_expediente}.png")
+                        print(f"[Search] Screenshot: /tmp/chubb_no_results_{num_expediente}.png")
+                    except:
+                        pass
                     return False
             except:
                 continue
         
         print("[Search] ⚠ No se detectaron resultados, pero tampoco mensaje de vacío")
+        # Screenshot para debug
+        try:
+            await page.screenshot(path=f"/tmp/chubb_undetermined_{num_expediente}.png")
+            print(f"[Search] Screenshot: /tmp/chubb_undetermined_{num_expediente}.png")
+        except:
+            pass
         return False
             
     except Exception as e:

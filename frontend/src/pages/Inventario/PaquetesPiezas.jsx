@@ -66,6 +66,7 @@ const EMPTY_FORM = {
   piezas: [createPieceRow()],
   comentarios: "",
   estado: "Generado",
+  folio: "",
 };
 
 const STATUS_STYLES = {
@@ -177,6 +178,7 @@ function PackageModal({
   isOpen,
   mode,
   form,
+  folio,
   reportValidation,
   isValidatingReport,
   autofillInfo,
@@ -213,9 +215,16 @@ function PackageModal({
             <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">
               Inventario
             </p>
-            <h2 className="text-2xl font-bold text-white">
-              {mode === "create" ? "Nuevo Paquete de Piezas" : "Editar Paquete de Piezas"}
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-white">
+                {mode === "create" ? "Nuevo Paquete de Piezas" : "Editar Paquete de Piezas"}
+              </h2>
+              {folio && (
+                <span className="inline-flex items-center rounded-lg bg-primary/20 px-3 py-1 text-sm font-bold text-primary border border-primary/30">
+                  Folio: {folio}
+                </span>
+              )}
+            </div>
             <p className="mt-1 text-sm text-slate-400">
               Vincula el paquete con la orden de admisión por reporte/siniestro y registra contenido, evidencia y observaciones.
             </p>
@@ -1031,6 +1040,7 @@ export default function PaquetesPiezas() {
       piezas: piezasNormalizadas,
       comentarios: detail?.comentarios || "",
       estado: normalizeStatus(detail?.estatus),
+      folio: detail?.folio || "",
     });
     setDraftPhotos(photosWithAssignments);
     setAutofillInfo({
@@ -2043,6 +2053,7 @@ export default function PaquetesPiezas() {
         isOpen={modalOpen}
         mode={modalMode}
         form={form}
+        folio={form.folio}
         reportValidation={reportValidation}
         isValidatingReport={validatingReport}
         autofillInfo={autofillInfo}

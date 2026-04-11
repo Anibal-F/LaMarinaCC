@@ -943,8 +943,8 @@ async def navigate_to_inpart(page: Page) -> bool:
     try:
         print("[Inpart] Navegando a pestaña Inpart...")
         
-        # Esperar un momento para que carguen las tabs
-        await asyncio.sleep(2)
+        # Esperar un momento para que carguen las tabs (aumentado para servidor lento)
+        await asyncio.sleep(4)
         
         # Buscar la tab con varios selectores
         tab_selectors = [
@@ -993,9 +993,18 @@ async def open_estatus_piezas(page: Page) -> bool:
         btn_estatus = page.locator('#btnViewStatus')
         if await btn_estatus.count() > 0:
             await btn_estatus.click()
-            await asyncio.sleep(3)
-            print("[Estatus] ✓ Modal de Estatus de Piezas abierto")
-            return True
+            print("[Estatus] Esperando carga del modal...")
+            await asyncio.sleep(5)  # Aumentado de 3 a 5 segundos
+            
+            # Verificar que el modal cargó buscando la tabla
+            tabla_visible = await page.locator('#gridStatusOfParts').count()
+            if tabla_visible > 0:
+                print("[Estatus] ✓ Modal de Estatus de Piezas abierto y tabla visible")
+                return True
+            else:
+                print("[Estatus] ⚠ Modal abierto pero tabla no visible, esperando más...")
+                await asyncio.sleep(5)
+                return True
         else:
             print("[Estatus] ✗ Botón Estatus de Piezas no encontrado")
             return False
@@ -1012,8 +1021,12 @@ async def extract_piezas_data(page: Page, num_expediente: str) -> List[Dict[str,
     try:
         print("[Extract] Extrayendo datos de piezas...")
         
-        # Esperar a que la tabla esté visible
-        await page.wait_for_selector('#gridStatusOfParts tbody tr', timeout=10000)
+        # Esperar a que la tabla cargue (aumentado para servidor lento)
+        print("[Extract] Esperando carga de tabla de piezas...")
+        await asyncio.sleep(5)  # Espera inicial para que cargue el modal
+        
+        # Esperar a que la tabla esté visible con timeout aumentado
+        await page.wait_for_selector('#gridStatusOfParts tbody tr', timeout=30000)
         
         # Extraer datos de la tabla
         rows_result = await page.evaluate("""() => {
@@ -1054,6 +1067,33 @@ async def extract_piezas_data(page: Page, num_expediente: str) -> List[Dict[str,
         
     except Exception as e:
         print(f"[Extract] Error: {e}")
+        # Screenshot para debug
+        try:
+            await page.screenshot(path=f"/tmp/chubb_extract_error_{num_expediente}.png")
+            print(f"[Extract] Screenshot error: /tmp/chubb_extract_error_{num_expediente}.png")
+        except:
+            pass
+        # Intentar extraer con JavaScript como fallback
+        try:
+            print("[Extract] Intentando extracción fallback con JS...")
+            piezas = await page.evaluate("""() => {
+                const rows = document.querySelectorAll('#gridStatusOfParts tbody tr');
+                const data = [];
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 6) {
+                        data.push({
+                            proveedor: cells[0]?.textContent?.trim() || '',
+                            descripcion: cells[3]?.textContent?.trim() || '',
+                            estatus: cells[5]?.textContent?.trim() || ''
+                        });
+                    }
+                });
+                return data;
+            }""")
+            print(f"[Extract] ✓ {len(piezas)} piezas extraídas (fallback)")
+        except Exception as e2:
+            print(f"[Extract] Fallback también falló: {e2}")
     
     return piezas
 

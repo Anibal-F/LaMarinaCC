@@ -674,7 +674,7 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
     # Primero intentar búsqueda exacta con el reporte normalizado
     orden = conn.execute(
         """
-        SELECT id, reporte_siniestro
+        SELECT id, reporte_siniestro, marca_vehiculo, tipo_vehiculo, modelo_anio
         FROM orden_admision
         WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) = LOWER(TRIM(%s))
         ORDER BY id DESC
@@ -690,7 +690,7 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
     # Si no encuentra con normalización, probar con ILIKE (más flexible con espacios)
     orden = conn.execute(
         """
-        SELECT id, reporte_siniestro
+        SELECT id, reporte_siniestro, marca_vehiculo, tipo_vehiculo, modelo_anio
         FROM orden_admision
         WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) ILIKE LOWER(TRIM(%s))
         ORDER BY id DESC
@@ -712,7 +712,7 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
         
         orden = conn.execute(
             """
-            SELECT id, reporte_siniestro
+            SELECT id, reporte_siniestro, marca_vehiculo, tipo_vehiculo, modelo_anio
             FROM orden_admision
             WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) ILIKE LOWER(TRIM(%s))
             ORDER BY id DESC
@@ -1556,50 +1556,34 @@ def validate_paquete_report(
     numero_reporte_siniestro: str = Query(..., description="Reporte/siniestro a validar"),
     exclude_paquete_id: Optional[int] = Query(None, description="Excluir paquete actual al editar"),
 ):
-    import logging
-    logger = logging.getLogger(__name__)
-    
     with get_connection() as conn:
         conn.row_factory = dict_row
         ensure_paquetes_piezas_tables(conn)
 
         reporte = str(numero_reporte_siniestro or "").strip()
-        logger.info(f"[VALIDATE_REPORT] Buscando reporte: '{reporte}'")
         
-        # Buscar primero en orden_admision
+        # Buscar primero en orden_admision (ahora trae también datos del vehículo)
         orden = _find_orden_admision_by_reporte(conn, reporte)
-        logger.info(f"[VALIDATE_REPORT] Orden encontrada: {orden}")
         
         # Si no encuentra en orden_admision, buscar en bitacora_piezas
         bitacora = None
         if not orden:
             bitacora = _find_reporte_en_bitacora(conn, reporte)
-            logger.info(f"[VALIDATE_REPORT] Bitácora encontrada: {bitacora}")
         
         # Usar el reporte normalizado de orden_admision si existe, sino de bitacora, sino el input
         orden_info = None
         if orden:
             normalized_report = str(orden.get("reporte_siniestro") or "").strip()
-            logger.info(f"[VALIDATE_REPORT] Usando orden, normalized_report: '{normalized_report}'")
-            # Traer info completa de la orden para datos del vehículo
-            try:
-                orden_full = _get_orden_admision_snapshot(conn, orden["id"])
-                logger.info(f"[VALIDATE_REPORT] Orden full: {orden_full}")
-                orden_info = {
-                    "marca": orden_full.get("marca_vehiculo") if orden_full else None,
-                    "modelo": orden_full.get("tipo_vehiculo") if orden_full else None,
-                    "anio": orden_full.get("modelo_anio") if orden_full else None,
-                }
-                logger.info(f"[VALIDATE_REPORT] Orden info construida: {orden_info}")
-            except Exception as e:
-                logger.error(f"[VALIDATE_REPORT] Error al obtener orden snapshot: {e}")
-                orden_info = None
+            # Los datos del vehículo ya vienen en la orden
+            orden_info = {
+                "marca": orden.get("marca_vehiculo") or None,
+                "modelo": orden.get("tipo_vehiculo") or None,
+                "anio": orden.get("modelo_anio") or None,
+            }
         elif bitacora:
             normalized_report = str(bitacora.get("numero_reporte") or "").strip()
-            logger.info(f"[VALIDATE_REPORT] Usando bitácora, normalized_report: '{normalized_report}'")
         else:
             normalized_report = reporte
-            logger.info(f"[VALIDATE_REPORT] No se encontró nada, usando input: '{normalized_report}'")
         
         existing = _find_paquete_by_reporte(conn, normalized_report, exclude_paquete_id=exclude_paquete_id)
 

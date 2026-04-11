@@ -353,71 +353,21 @@ class QualitasPiezasExtractor:
             tab_selector: Selector CSS para encontrar el tab
             table_id: ID de la tabla a esperar
         """
-        # 1. Navegar al menú "Órdenes" → "Asignadas Qualitas" (solo si no estamos ya ahí)
-        print("[PiezasExtractor] Navegando a menú Órdenes...")
-        
+        # 1. Verificar si ya estamos en la página de Bandeja Qualitas
         try:
-            # Buscar y hacer clic en "Órdenes" del menú lateral (selectores flexibles)
-            ordenes_selectors = [
-                'span.kt-menu__link-text:has-text("Órdenes")',
-                'a.kt-menu__link:has-text("Órdenes")',
-                'a:has-text("Órdenes")',
-                'span:has-text("Órdenes")',
-                'a[href*="ordenes"]',
-                'text=Órdenes'
-            ]
-            
-            ordenes_menu = None
-            for selector in ordenes_selectors:
-                try:
-                    count = await self.page.locator(selector).count()
-                    if count > 0:
-                        ordenes_menu = self.page.locator(selector).first
-                        print(f"[PiezasExtractor] Menú Órdenes encontrado con selector: {selector}")
-                        break
-                except:
-                    continue
-            
-            if ordenes_menu:
-                await ordenes_menu.click()
-                await asyncio.sleep(1)
+            current_url = self.page.url.lower()
+            if "bandejaqualitas" in current_url:
+                print("[PiezasExtractor] Ya estamos en Bandeja Qualitas, saltando navegación de menús")
             else:
-                print("[PiezasExtractor] ⚠ Menú Órdenes no encontrado con ningún selector")
-            
-            print("[PiezasExtractor] Navegando a Asignadas Qualitas...")
-            # Buscar y hacer clic en "Asignadas Qualitas" del submenú (selectores flexibles)
-            asignadas_selectors = [
-                'span.kt-menu__link-text:has-text("Asignadas Qualitas")',
-                'a.kt-menu__link:has-text("Asignadas Qualitas")',
-                'a:has-text("Asignadas Qualitas")',
-                'span:has-text("Asignadas Qualitas")',
-                'a[href*="asignadas"]',
-                'text=Asignadas Qualitas'
-            ]
-            
-            asignadas_link = None
-            for selector in asignadas_selectors:
-                try:
-                    count = await self.page.locator(selector).count()
-                    if count > 0:
-                        asignadas_link = self.page.locator(selector).first
-                        print(f"[PiezasExtractor] Asignadas Qualitas encontrado con selector: {selector}")
-                        break
-                except:
-                    continue
-            
-            if asignadas_link:
-                await asignadas_link.click()
-            else:
-                print("[PiezasExtractor] ⚠ Asignadas Qualitas no encontrado, intentando navegar directamente...")
-                # Intentar navegar directamente a la URL
-                await self.page.goto("https://proordersistem.com.mx/ordenes/asignadas", wait_until="networkidle")
+                # Navegar directamente a Bandeja Qualitas
+                print("[PiezasExtractor] Navegando a Bandeja Qualitas...")
+                await self.page.goto("https://proordersistem.com.mx/BandejaQualitas", wait_until="networkidle")
                 await asyncio.sleep(3)
-            
-            # Esperar a que cargue la página de órdenes asignadas
-            print("[PiezasExtractor] Esperando carga de página...")
-            await self.page.wait_for_load_state('networkidle')
-            await asyncio.sleep(3)  # Espera adicional para carga de tabs
+                
+                # Esperar a que cargue la página de órdenes asignadas
+                print("[PiezasExtractor] Esperando carga de página...")
+                await self.page.wait_for_load_state('networkidle')
+                await asyncio.sleep(3)  # Espera adicional para carga de tabs
         except Exception as e:
             # Si ya estamos en la página, puede fallar pero no es problema
             print(f"[PiezasExtractor] Nota: {e}")

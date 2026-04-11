@@ -192,7 +192,7 @@ class PaquetePiezaMedia(BaseModel):
 class PaqueteReporteConflict(BaseModel):
     id: int
     folio: str
-    proveedor_nombre: str
+    proveedor_nombre: Optional[str] = None
     estatus: str
 
 
@@ -557,16 +557,31 @@ def _calcular_estatus_paquete(conn, paquete_id: int) -> str:
         return "Parcial"
 
 
+def _normalize_reporte_for_search(reporte: str) -> str:
+    """Normaliza un número de reporte quitando espacios extras y convirtiendo a minúsculas."""
+    import re
+    # Quitar espacios al inicio/fin, convertir múltiples espacios a uno solo
+    normalized = re.sub(r'\s+', ' ', reporte.strip().lower())
+    return normalized
+
 def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]) -> Optional[dict[str, Any]]:
     import re
+    import logging
     
-    reporte = str(numero_reporte_siniestro or "").strip()
-    if not reporte:
+    logger = logging.getLogger(__name__)
+    
+    reporte_input = str(numero_reporte_siniestro or "").strip()
+    if not reporte_input:
         return None
+    
+    # Normalizar el reporte de entrada (quitar espacios múltiples, etc.)
+    reporte_normalized = _normalize_reporte_for_search(reporte_input)
+    
+    logger.debug(f"[DEBUG] Buscando orden de admisión - Input: '{reporte_input}' - Normalized: '{reporte_normalized}'")
 
     conn.row_factory = dict_row
     
-    # Primero intentar búsqueda exacta
+    # Primero intentar búsqueda exacta con el reporte normalizado
     orden = conn.execute(
         """
         SELECT id, reporte_siniestro
@@ -575,16 +590,34 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
         ORDER BY id DESC
         LIMIT 1
         """,
-        (reporte,),
+        (reporte_normalized,),
     ).fetchone()
     
     if orden:
+        logger.debug(f"[DEBUG] Orden encontrada (exacta): {orden}")
+        return orden
+    
+    # Si no encuentra con normalización, probar con ILIKE (más flexible con espacios)
+    orden = conn.execute(
+        """
+        SELECT id, reporte_siniestro
+        FROM orden_admision
+        WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) ILIKE LOWER(TRIM(%s))
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (f"%{reporte_normalized}%",),
+    ).fetchone()
+    
+    if orden:
+        logger.debug(f"[DEBUG] Orden encontrada (ILIKE): {orden}")
         return orden
     
     # Si no encuentra, extraer los últimos 6 dígitos y buscar con ILIKE
-    # Ejemplo: "5562" -> buscar "%5562%" en los reportes
-    digits_only = re.sub(r'\D', '', reporte)  # Quitar todo excepto dígitos
-    if len(digits_only) >= 4:  # Mínimo 4 dígitos para evitar matches muy amplios
+    digits_only = re.sub(r'\D', '', reporte_input)
+    logger.debug(f"[DEBUG] Dígitos extraídos: '{digits_only}' (len={len(digits_only)})")
+    
+    if len(digits_only) >= 4:
         search_pattern = f"%{digits_only[-6:]}%" if len(digits_only) >= 6 else f"%{digits_only}%"
         
         orden = conn.execute(
@@ -599,8 +632,10 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
         ).fetchone()
         
         if orden:
+            logger.debug(f"[DEBUG] Orden encontrada (por dígitos): {orden}")
             return orden
     
+    logger.debug(f"[DEBUG] No se encontró orden de admisión para: '{reporte_input}'")
     return None
 
 

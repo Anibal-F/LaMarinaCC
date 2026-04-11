@@ -383,86 +383,155 @@ async def navigate_to_advanced_search(page: Page) -> bool:
         print("[Navigate] Intentando navegación directa...")
         try:
             response = await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
-                           timeout=30000, wait_until='domcontentloaded')
-            await asyncio.sleep(3)
+                           timeout=60000, wait_until='networkidle')
+            await asyncio.sleep(5)  # Aumentado de 3 a 5 segundos
             
             # Verificar si cargó correctamente
             exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
             if exp_input > 0:
                 print("[Navigate] ✓ Búsqueda Avanzada cargada (navegación directa)")
                 return True
+            else:
+                print("[Navigate] ⚠ Navegación directa no cargó el formulario, reintentando...")
+                # Esperar más tiempo y reintentar
+                await asyncio.sleep(5)
+                exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+                if exp_input > 0:
+                    print("[Navigate] ✓ Búsqueda Avanzada cargada (segundo intento)")
+                    return True
         except Exception as e:
             print(f"[Navigate] Navegación directa falló: {e}")
         
         # OPCIÓN 2: Navegar por el menú
         print("[Navigate] Intentando navegación por menú...")
         
-        # Primero ir a la página principal
+        # Primero ir a la página principal y esperar que cargue completamente
+        print("[Navigate] Cargando página principal...")
         await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/Home', 
-                       timeout=30000, wait_until='domcontentloaded')
-        await asyncio.sleep(3)
+                       timeout=60000, wait_until='networkidle')
+        await asyncio.sleep(5)  # Aumentado de 3 a 5 segundos
+        
+        # Screenshot para debug
+        try:
+            await page.screenshot(path="/tmp/chubb_home_page.png")
+            print("[Navigate] Screenshot home guardado: /tmp/chubb_home_page.png")
+        except:
+            pass
         
         # Buscar y hacer clic en el menú "BUSCAR" (mayúsculas)
+        print("[Navigate] Buscando menú BUSCAR...")
         menu_buscar_selectors = [
             'a:has-text("BUSCAR")',
             '.dropdown-toggle:has-text("BUSCAR")',
-            'a[href="#"]:has-text("BUSCAR")'
+            'a[href="#"]:has-text("BUSCAR")',
+            'text=BUSCAR',
+            'li:has-text("BUSCAR") a',
+            'ul.nav a:has-text("BUSCAR")',
+            '.navbar a:has-text("BUSCAR")',
+            '#menu a:has-text("BUSCAR")'
         ]
+        
+        # Esperar a que el menú esté disponible
+        print("[Navigate] Esperando menú...")
+        await asyncio.sleep(3)
         
         menu_clicked = False
         for selector in menu_buscar_selectors:
             try:
                 menu = page.locator(selector).first
-                if await menu.count() > 0 and await menu.is_visible():
-                    await menu.click()
-                    print(f"[Navigate] ✓ Menú BUSCAR clickeado ({selector})")
-                    await asyncio.sleep(2)
-                    menu_clicked = True
-                    break
+                count = await menu.count()
+                print(f"[Navigate]   Selector '{selector}': {count} elementos")
+                if count > 0:
+                    is_visible = await menu.is_visible()
+                    if is_visible:
+                        await menu.click()
+                        print(f"[Navigate] ✓ Menú BUSCAR clickeado ({selector})")
+                        await asyncio.sleep(3)  # Aumentado de 2 a 3
+                        menu_clicked = True
+                        break
             except Exception as e:
-                print(f"[Navigate] Selector {selector} falló: {e}")
+                print(f"[Navigate]   Selector {selector} falló: {e}")
                 continue
         
         if not menu_clicked:
             print("[Navigate] ⚠ No se pudo clickear el menú BUSCAR con selectores estándar")
-            # Intentar con JavaScript más específico
+            # Intentar con JavaScript más específico - buscar en TODO el documento
             js_result = await page.evaluate("""() => {
-                // Buscar en el navbar/header
-                const nav = document.querySelector('.navbar') || document.querySelector('header') || document.body;
-                const links = Array.from(nav.querySelectorAll('a'));
+                // Buscar en TODO el documento, no solo en nav
+                const allLinks = Array.from(document.querySelectorAll('a'));
+                
+                console.log('Total links encontrados:', allLinks.length);
                 
                 // Primero: buscar exacto
-                let buscarLink = links.find(a => a.textContent.trim() === 'BUSCAR');
+                let buscarLink = allLinks.find(a => a.textContent.trim() === 'BUSCAR');
                 
                 // Segundo: buscar que incluya BUSCAR
                 if (!buscarLink) {
-                    buscarLink = links.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
+                    buscarLink = allLinks.find(a => a.textContent.toUpperCase().includes('BUSCAR'));
                 }
                 
-                // Tercero: buscar por href que contenga Search o Buscar
+                // Tercero: buscar que incluya "Buscar" (con B mayúscula)
                 if (!buscarLink) {
-                    buscarLink = links.find(a => {
+                    buscarLink = allLinks.find(a => a.textContent.includes('Buscar'));
+                }
+                
+                // Cuarto: buscar por href que contenga Search
+                if (!buscarLink) {
+                    buscarLink = allLinks.find(a => {
                         const href = (a.getAttribute('href') || '').toLowerCase();
-                        return href.includes('search') || href.includes('buscar');
+                        return href.includes('search') || href.includes('advanced');
                     });
                 }
+                
+                // Log de los primeros 10 links para debug
+                const linkSamples = allLinks.slice(0, 10).map(a => ({
+                    text: a.textContent.trim().substring(0, 30),
+                    href: a.getAttribute('href')
+                }));
                 
                 if (buscarLink) {
                     // Hacer hover primero (para menús dropdown)
                     buscarLink.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                     setTimeout(() => buscarLink.click(), 100);
-                    return {success: true, text: buscarLink.textContent, href: buscarLink.getAttribute('href')};
+                    return {
+                        success: true, 
+                        text: buscarLink.textContent, 
+                        href: buscarLink.getAttribute('href'),
+                        samples: linkSamples
+                    };
                 }
                 
-                return {success: false, available: links.slice(0,15).map(a => ({
-                    text: a.textContent.trim(),
-                    href: a.getAttribute('href')
-                }))};
+                return {
+                    success: false, 
+                    available: linkSamples
+                };
             }""")
             print(f"[Navigate] Resultado JS para menú: {js_result}")
             if js_result.get('success'):
                 await asyncio.sleep(3)
                 menu_clicked = True
+        
+        # OPCIÓN 3: Si encontramos el href en el resultado JS, navegar directamente
+        if not menu_clicked and js_result.get('href'):
+            href = js_result.get('href')
+            print(f"[Navigate] Opción 3: Navegando a href encontrado: {href}")
+            try:
+                if href.startswith('/'):
+                    full_url = f'https://acg-prod-mx.audatex.com.mx{href}'
+                elif href.startswith('http'):
+                    full_url = href
+                else:
+                    full_url = f'https://acg-prod-mx.audatex.com.mx/Audanet/{href}'
+                
+                await page.goto(full_url, timeout=60000, wait_until='networkidle')
+                await asyncio.sleep(5)
+                
+                exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+                if exp_input > 0:
+                    print("[Navigate] ✓ Búsqueda Avanzada cargada (vía href JS)")
+                    return True
+            except Exception as e:
+                print(f"[Navigate] Opción 3 falló: {e}")
         
         if menu_clicked:
             # Esperar a que aparezca el dropdown
@@ -521,6 +590,26 @@ async def navigate_to_advanced_search(page: Page) -> bool:
                     if exp_input > 0:
                         print("[Navigate] ✓ Búsqueda Avanzada cargada (vía JS)")
                         return True
+        
+        # OPCIÓN 4: Último intento - navegación directa con más tiempo
+        print("[Navigate] Opción 4: Último intento con navegación directa extendida...")
+        try:
+            await page.goto('https://acg-prod-mx.audatex.com.mx/Audanet/AdvancedSearch', 
+                           timeout=90000, wait_until='networkidle')
+            print("[Navigate] Esperando 10 segundos para carga completa...")
+            await asyncio.sleep(10)
+            
+            # Verificar múltiples veces
+            for attempt in range(3):
+                exp_input = await page.locator('#ListFilters_0__ParameterValue').count()
+                if exp_input > 0:
+                    print(f"[Navigate] ✓ Búsqueda Avanzada cargada (Opción 4, intento {attempt + 1})")
+                    return True
+                print(f"[Navigate]   Reintentando verificación ({attempt + 1}/3)...")
+                await asyncio.sleep(5)
+                
+        except Exception as e:
+            print(f"[Navigate] Opción 4 falló: {e}")
         
         # Si todo falla, verificar estado actual
         current_url = page.url

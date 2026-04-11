@@ -2877,37 +2877,23 @@ def _sync_cliente(conn, nb_cliente: Optional[str], tel_cliente: Optional[str], e
     tel = str(tel_cliente or "").strip() or None
     email = str(email_cliente or "").strip() or None
 
-    if tel:
-        conn.execute(
-            """
-            INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (tel_cliente) DO UPDATE
-            SET
-                -- Preserve existing owner name for this phone; only backfill if empty.
-                nb_cliente = COALESCE(NULLIF(clientes.nb_cliente, ''), EXCLUDED.nb_cliente),
-                -- Backfill email when DB value is empty/null.
-                email_cliente = COALESCE(NULLIF(clientes.email_cliente, ''), EXCLUDED.email_cliente)
-            """,
-            (nombre, tel, email),
-        )
+    # Solo sincronizar si hay teléfono (la columna tel_cliente tiene NOT NULL constraint)
+    if not tel:
         return
 
-    cliente_exists = conn.execute(
+    conn.execute(
         """
-        SELECT 1 FROM clientes
-        WHERE LOWER(nb_cliente) = LOWER(%s)
-          AND tel_cliente IS NULL
-          AND email_cliente IS NOT DISTINCT FROM %s
-        LIMIT 1
+        INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (tel_cliente) DO UPDATE
+        SET
+            -- Preserve existing owner name for this phone; only backfill if empty.
+            nb_cliente = COALESCE(NULLIF(clientes.nb_cliente, ''), EXCLUDED.nb_cliente),
+            -- Backfill email when DB value is empty/null.
+            email_cliente = COALESCE(NULLIF(clientes.email_cliente, ''), EXCLUDED.email_cliente)
         """,
-        (nombre, email),
-    ).fetchone()
-    if not cliente_exists:
-        conn.execute(
-            "INSERT INTO clientes (nb_cliente, tel_cliente, email_cliente) VALUES (%s, %s, %s)",
-            (nombre, None, email),
-        )
+        (nombre, tel, email),
+    )
 
 
 def _send_whatsapp_template_message(

@@ -201,6 +201,7 @@ class PaqueteReporteValidation(BaseModel):
     reporte_normalizado: Optional[str] = None
     orden_admision_encontrada: bool
     orden_admision_id: Optional[int] = None
+    bitacora_encontrada: bool = False  # True si existe en bitacora_piezas
     paquete_existente: Optional[PaqueteReporteConflict] = None
 
 
@@ -563,6 +564,66 @@ def _normalize_reporte_for_search(reporte: str) -> str:
     # Quitar espacios al inicio/fin, convertir múltiples espacios a uno solo
     normalized = re.sub(r'\s+', ' ', reporte.strip().lower())
     return normalized
+
+def _find_reporte_en_bitacora(conn, numero_reporte_siniestro: Optional[str]) -> Optional[dict[str, Any]]:
+    """
+    Busca un reporte/siniestro en la tabla bitacora_piezas.
+    Retorna el reporte normalizado si encuentra coincidencias.
+    """
+    import re
+    
+    reporte_input = str(numero_reporte_siniestro or "").strip()
+    if not reporte_input:
+        return None
+    
+    reporte_normalized = _normalize_reporte_for_search(reporte_input)
+    conn.row_factory = dict_row
+    
+    # Primero buscar coincidencia exacta en bitacora
+    row = conn.execute(
+        """
+        SELECT numero_reporte
+        FROM bitacora_piezas
+        WHERE LOWER(TRIM(COALESCE(numero_reporte, ''))) = LOWER(TRIM(%s))
+        LIMIT 1
+        """,
+        (reporte_normalized,),
+    ).fetchone()
+    
+    if row:
+        return {"numero_reporte": row["numero_reporte"]}
+    
+    # Si no encuentra, buscar con ILIKE (parcial)
+    row = conn.execute(
+        """
+        SELECT numero_reporte
+        FROM bitacora_piezas
+        WHERE LOWER(TRIM(COALESCE(numero_reporte, ''))) ILIKE LOWER(TRIM(%s))
+        LIMIT 1
+        """,
+        (f"%{reporte_normalized}%",),
+    ).fetchone()
+    
+    if row:
+        return {"numero_reporte": row["numero_reporte"]}
+    
+    # Último intento: buscar por dígitos
+    digits_only = re.sub(r'\D', '', reporte_input)
+    if len(digits_only) >= 4:
+        search_pattern = f"%{digits_only[-6:]}%" if len(digits_only) >= 6 else f"%{digits_only}%"
+        row = conn.execute(
+            """
+            SELECT numero_reporte
+            FROM bitacora_piezas
+            WHERE LOWER(TRIM(COALESCE(numero_reporte, ''))) ILIKE LOWER(TRIM(%s))
+            LIMIT 1
+            """,
+            (search_pattern,),
+        ).fetchone()
+        if row:
+            return {"numero_reporte": row["numero_reporte"]}
+    
+    return None
 
 def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]) -> Optional[dict[str, Any]]:
     import re
@@ -1486,8 +1547,23 @@ def validate_paquete_report(
         ensure_paquetes_piezas_tables(conn)
 
         reporte = str(numero_reporte_siniestro or "").strip()
+        
+        # Buscar primero en orden_admision
         orden = _find_orden_admision_by_reporte(conn, reporte)
-        normalized_report = str(orden.get("reporte_siniestro") or "").strip() if orden else reporte
+        
+        # Si no encuentra en orden_admision, buscar en bitacora_piezas
+        bitacora = None
+        if not orden:
+            bitacora = _find_reporte_en_bitacora(conn, reporte)
+        
+        # Usar el reporte normalizado de orden_admision si existe, sino de bitacora, sino el input
+        if orden:
+            normalized_report = str(orden.get("reporte_siniestro") or "").strip()
+        elif bitacora:
+            normalized_report = str(bitacora.get("numero_reporte") or "").strip()
+        else:
+            normalized_report = reporte
+        
         existing = _find_paquete_by_reporte(conn, normalized_report, exclude_paquete_id=exclude_paquete_id)
 
         return {
@@ -1495,6 +1571,7 @@ def validate_paquete_report(
             "reporte_normalizado": normalized_report or None,
             "orden_admision_encontrada": bool(orden),
             "orden_admision_id": orden.get("id") if orden else None,
+            "bitacora_encontrada": bool(bitacora),
             "paquete_existente": (
                 {
                     "id": existing["id"],
@@ -1544,8 +1621,31 @@ def create_paquete(payload: PaquetePiezasCreate):
         ensure_paquetes_piezas_tables(conn)
         _sync_paquetes_piezas_folio_sequence(conn)
 
-        orden = _get_orden_admision_by_reporte(conn, payload.numero_reporte_siniestro)
-        numero_reporte = str(orden.get("reporte_siniestro") or "").strip()
+        reporte_input = str(payload.numero_reporte_siniestro or "").strip()
+        
+        # Buscar primero en orden_admision
+        orden = _find_orden_admision_by_reporte(conn, reporte_input)
+        
+        # Si no encuentra en orden_admision, buscar en bitacora_piezas
+        bitacora = None
+        if not orden:
+            bitacora = _find_reporte_en_bitacora(conn, reporte_input)
+        
+        # Si no encuentra en ninguno, error
+        if not orden and not bitacora:
+            raise HTTPException(
+                status_code=404,
+                detail="No se encontró una orden de admisión ni piezas en bitácora para ese reporte/siniestro",
+            )
+        
+        # Usar el reporte normalizado de donde se encontró
+        if orden:
+            orden_admision_id = orden["id"]
+            numero_reporte = str(orden.get("reporte_siniestro") or "").strip()
+        else:
+            orden_admision_id = None
+            numero_reporte = str(bitacora.get("numero_reporte") or "").strip()
+        
         _ensure_unique_paquete_report(conn, numero_reporte)
 
         paquete = conn.execute(
@@ -1563,7 +1663,7 @@ def create_paquete(payload: PaquetePiezasCreate):
             RETURNING id
             """,
             (
-                orden["id"],
+                orden_admision_id,
                 None,
                 numero_reporte,
                 (payload.proveedor_nombre or "").strip() or None,
@@ -1600,9 +1700,30 @@ def update_paquete(paquete_id: int, payload: PaquetePiezasUpdate):
         relaciones = updates.pop("relaciones", None) if "relaciones" in updates else None
 
         if "numero_reporte_siniestro" in updates:
-            orden = _get_orden_admision_by_reporte(conn, updates["numero_reporte_siniestro"])
-            updates["orden_admision_id"] = orden["id"]
-            updates["numero_reporte_siniestro"] = str(orden.get("reporte_siniestro") or "").strip() or None
+            reporte_input = str(updates["numero_reporte_siniestro"] or "").strip()
+            
+            # Buscar primero en orden_admision
+            orden = _find_orden_admision_by_reporte(conn, reporte_input)
+            
+            # Si no encuentra en orden_admision, buscar en bitacora_piezas
+            bitacora = None
+            if not orden:
+                bitacora = _find_reporte_en_bitacora(conn, reporte_input)
+            
+            # Si no encuentra en ninguno, error
+            if not orden and not bitacora:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No se encontró una orden de admisión ni piezas en bitácora para ese reporte/siniestro",
+                )
+            
+            # Usar los datos de donde se encontró
+            if orden:
+                updates["orden_admision_id"] = orden["id"]
+                updates["numero_reporte_siniestro"] = str(orden.get("reporte_siniestro") or "").strip() or None
+            else:
+                updates["orden_admision_id"] = None
+                updates["numero_reporte_siniestro"] = str(bitacora.get("numero_reporte") or "").strip() or None
             updates["folio_ot"] = None
         elif "orden_admision_id" in updates and updates["orden_admision_id"] is not None:
             orden = _get_orden_admision_snapshot(conn, updates["orden_admision_id"])

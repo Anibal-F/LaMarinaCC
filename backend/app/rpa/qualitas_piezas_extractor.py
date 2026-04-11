@@ -353,7 +353,8 @@ class QualitasPiezasExtractor:
             tab_selector: Selector CSS para encontrar el tab
             table_id: ID de la tabla a esperar
         """
-        # 1. Verificar si ya estamos en la página de Bandeja Qualitas
+        # 1. Navegar a Bandeja Qualitas
+        print(f"[PiezasExtractor] Iniciando navegación. URL actual: {self.page.url}")
         try:
             current_url = self.page.url.lower()
             if "bandejaqualitas" in current_url:
@@ -365,8 +366,7 @@ class QualitasPiezasExtractor:
                 await asyncio.sleep(3)
                 
                 # Esperar a que cargue la página
-                print("[PiezasExtractor] Esperando carga de página...")
-                await self.page.wait_for_load_state('networkidle')
+                print(f"[PiezasExtractor] Página cargada. URL: {self.page.url}")
                 await asyncio.sleep(3)
             
             # Screenshot para debug
@@ -379,29 +379,62 @@ class QualitasPiezasExtractor:
             
             # Debug: Buscar tabs disponibles
             print("[PiezasExtractor] Buscando tabs disponibles...")
-            tab_selectors = [
-                'a[href="#transito"]', 'a[href="#piso"]', 
+            tab_selectors_debug = [
                 '#transito-tab', '#piso-tab',
+                'a[href="#transito"]', 'a[href="#piso"]', 
                 'a:has-text("Tránsito")', 'a:has-text("Piso")',
-                '[data-toggle="tab"]', '.nav-link', '.tab-link'
+                '.nav-link', '.nav-tabs a', 'ul.nav-tabs li a'
             ]
-            for sel in tab_selectors:
+            found_any = False
+            for sel in tab_selectors_debug:
                 try:
                     count = await self.page.locator(sel).count()
+                    print(f"[PiezasExtractor]   Selector '{sel}': {count} elementos")
                     if count > 0:
-                        texts = []
+                        found_any = True
                         elements = await self.page.locator(sel).all()
-                        for el in elements[:5]:
-                            text = await el.text_content()
-                            href = await el.get_attribute('href')
-                            if text:
-                                texts.append(f"{text.strip()}({href})")
-                        print(f"[PiezasExtractor]   Selector '{sel}': {count} elementos - {texts[:3]}")
+                        for idx, el in enumerate(elements[:3]):
+                            try:
+                                text = await el.text_content()
+                                el_id = await el.get_attribute('id')
+                                href = await el.get_attribute('href')
+                                visible = await el.is_visible()
+                                print(f"[PiezasExtractor]     [{idx}] id={el_id}, text={text.strip() if text else 'N/A'}, visible={visible}")
+                            except Exception as e2:
+                                print(f"[PiezasExtractor]     [{idx}] Error: {e2}")
                 except Exception as e:
-                    pass
+                    print(f"[PiezasExtractor]   Selector '{sel}' error: {e}")
+            
+            if not found_any:
+                print("[PiezasExtractor] ⚠ No se encontraron tabs con ningún selector")
+                # Verificar si hay iframes
+                iframes = await self.page.locator('iframe').all()
+                print(f"[PiezasExtractor] Iframes encontrados: {len(iframes)}")
+                
+                # Intentar buscar cualquier elemento con texto "Tránsito" o "Piso"
+                print("[PiezasExtractor] Buscando cualquier elemento con texto Tránsito/Piso...")
+                all_elements = await self.page.locator('*').all()
+                found_texts = []
+                for el in all_elements[:100]:
+                    try:
+                        text = await el.text_content()
+                        if text and ('Tránsito' in text or 'Piso' in text):
+                            tag = await el.evaluate('el => el.tagName')
+                            el_id = await el.get_attribute('id')
+                            class_name = await el.get_attribute('class')
+                            found_texts.append(f"<{tag}> id={el_id} class={class_name} text={text.strip()[:50]}")
+                            if len(found_texts) >= 5:
+                                break
+                    except:
+                        pass
+                
+                for ft in found_texts:
+                    print(f"[PiezasExtractor]   {ft}")
                     
         except Exception as e:
-            print(f"[PiezasExtractor] Nota: {e}")
+            print(f"[PiezasExtractor] Error en navegación: {e}")
+            import traceback
+            traceback.print_exc()
         
         # 2. Click en el tab especificado (con múltiples intentos)
         print(f"[PiezasExtractor] Buscando tab...")

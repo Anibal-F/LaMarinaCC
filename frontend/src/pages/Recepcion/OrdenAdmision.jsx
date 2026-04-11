@@ -869,7 +869,7 @@ export default function OrdenAdmision() {
     const errors = {};
     if (!form.reporte_siniestro.trim()) errors.reporte_siniestro = "Requerido";
     if (!form.fecha_adm) errors.fecha_adm = "Requerido";
-    if (!form.hr_adm) errors.hr_adm = "Requerido";
+    // La hora ya no es obligatoria
     if (!form.nb_cliente.trim()) errors.nb_cliente = "Requerido";
     if (!form.marca_vehiculo) errors.marca = "Selecciona una marca";
     if (Object.keys(errors).length > 0) {

@@ -263,13 +263,42 @@ function PackageModal({
                       </p>
                     ) : null}
                     {!isValidatingReport && reportValidation?.reportProvided && reportValidation?.orderFound ? (
+                      <div className="space-y-1">
+                        <p className="text-xs text-alert-green">
+                          Orden de admisión encontrada para este reporte/siniestro.
+                        </p>
+                        {(reportValidation?.ordenAdmisionInfo || reportValidation?.orden_admision_info) && (
+                          <div className="mt-2 rounded-lg bg-background-dark border border-border-dark p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Vehículo</p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">
+                              {(reportValidation.ordenAdmisionInfo?.marca || reportValidation.orden_admision_info?.marca) ? (
+                                <span><span className="text-slate-500">Marca:</span> {reportValidation.ordenAdmisionInfo?.marca || reportValidation.orden_admision_info?.marca}</span>
+                              ) : (
+                                <span className="text-slate-600 italic">Marca no disponible</span>
+                              )}
+                              {(reportValidation.ordenAdmisionInfo?.modelo || reportValidation.orden_admision_info?.modelo) ? (
+                                <span><span className="text-slate-500">Modelo:</span> {reportValidation.ordenAdmisionInfo?.modelo || reportValidation.orden_admision_info?.modelo}</span>
+                              ) : (
+                                <span className="text-slate-600 italic">Modelo no disponible</span>
+                              )}
+                              {(reportValidation.ordenAdmisionInfo?.anio || reportValidation.orden_admision_info?.anio) ? (
+                                <span><span className="text-slate-500">Año:</span> {reportValidation.ordenAdmisionInfo?.anio || reportValidation.orden_admision_info?.anio}</span>
+                              ) : (
+                                <span className="text-slate-600 italic">Año no disponible</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    {!isValidatingReport && reportValidation?.reportProvided && !reportValidation?.orderFound && reportValidation?.bitacoraFound ? (
                       <p className="text-xs text-alert-green">
-                        Orden de admisión encontrada para este reporte/siniestro.
+                        Piezas encontradas en bitácora para este reporte/siniestro.
                       </p>
                     ) : null}
-                    {!isValidatingReport && reportValidation?.reportProvided && !reportValidation?.orderFound ? (
+                    {!isValidatingReport && reportValidation?.reportProvided && !reportValidation?.orderFound && !reportValidation?.bitacoraFound ? (
                       <p className="text-xs text-alert-red">
-                        No existe una orden de admisión con ese reporte/siniestro.
+                        No existe una orden de admisión ni piezas en bitácora con ese reporte/siniestro.
                       </p>
                     ) : null}
                     {!isValidatingReport && reportValidation?.duplicatePackage ? (
@@ -857,7 +886,9 @@ export default function PaquetesPiezas() {
     reportMissing: true,
     reportProvided: false,
     orderFound: false,
+    bitacoraFound: false,
     duplicatePackage: null,
+    ordenAdmisionInfo: null,
   });
   const [validatingReport, setValidatingReport] = useState(false);
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
@@ -960,7 +991,9 @@ export default function PaquetesPiezas() {
       reportMissing: true,
       reportProvided: false,
       orderFound: false,
+      bitacoraFound: false,
       duplicatePackage: null,
+      ordenAdmisionInfo: null,
     });
     setValidatingReport(false);
   };
@@ -1032,7 +1065,9 @@ export default function PaquetesPiezas() {
         reportMissing: true,
         reportProvided: false,
         orderFound: false,
+        bitacoraFound: false,
         duplicatePackage: null,
+        ordenAdmisionInfo: null,
       });
       return;
     }
@@ -1049,18 +1084,24 @@ export default function PaquetesPiezas() {
         }
 
         const payload = await response.json();
+        console.log("[DEBUG] Payload recibido:", payload);
+        console.log("[DEBUG] orden_admision_info:", payload?.orden_admision_info);
         setReportValidation({
           reportMissing: false,
           reportProvided: true,
           orderFound: Boolean(payload?.orden_admision_encontrada),
+          bitacoraFound: Boolean(payload?.bitacora_encontrada),
           duplicatePackage: payload?.paquete_existente || null,
+          ordenAdmisionInfo: payload?.orden_admision_info || payload?.ordenAdmisionInfo || null,
         });
       } catch (err) {
         setReportValidation({
           reportMissing: false,
           reportProvided: true,
           orderFound: false,
+          bitacoraFound: false,
           duplicatePackage: null,
+          ordenAdmisionInfo: null,
         });
         setError((prev) => prev || err.message || "No se pudo validar el reporte/siniestro.");
       } finally {
@@ -1544,8 +1585,8 @@ export default function PaquetesPiezas() {
       window.alert("Espera a que termine la validación del reporte/siniestro.");
       return;
     }
-    if (!reportValidation.orderFound) {
-      window.alert("El reporte/siniestro no existe en Orden de Admisión.");
+    if (!reportValidation.orderFound && !reportValidation.bitacoraFound) {
+      window.alert("El reporte/siniestro no existe en Orden de Admisión ni en Bitácora de Piezas.");
       return;
     }
     if (reportValidation.duplicatePackage) {

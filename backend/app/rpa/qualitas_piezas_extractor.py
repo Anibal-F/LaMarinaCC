@@ -357,32 +357,129 @@ class QualitasPiezasExtractor:
         try:
             current_url = self.page.url.lower()
             if "bandejaqualitas" in current_url:
-                print("[PiezasExtractor] Ya estamos en Bandeja Qualitas, saltando navegación de menús")
+                print("[PiezasExtractor] Ya estamos en Bandeja Qualitas, saltando navegación")
             else:
                 # Navegar directamente a Bandeja Qualitas
                 print("[PiezasExtractor] Navegando a Bandeja Qualitas...")
                 await self.page.goto("https://proordersistem.com.mx/BandejaQualitas", wait_until="networkidle")
                 await asyncio.sleep(3)
                 
-                # Esperar a que cargue la página de órdenes asignadas
+                # Esperar a que cargue la página
                 print("[PiezasExtractor] Esperando carga de página...")
                 await self.page.wait_for_load_state('networkidle')
-                await asyncio.sleep(3)  # Espera adicional para carga de tabs
+                await asyncio.sleep(3)
+            
+            # Screenshot para debug
+            try:
+                screenshot_path = f"/tmp/qualitas_bandeja_{table_id}.png"
+                await self.page.screenshot(path=screenshot_path)
+                print(f"[PiezasExtractor] Screenshot guardado: {screenshot_path}")
+            except Exception as e:
+                print(f"[PiezasExtractor] No se pudo guardar screenshot: {e}")
+            
+            # Debug: Buscar tabs disponibles
+            print("[PiezasExtractor] Buscando tabs disponibles...")
+            tab_selectors = [
+                'a[href="#transito"]', 'a[href="#piso"]', 
+                '#transito-tab', '#piso-tab',
+                'a:has-text("Tránsito")', 'a:has-text("Piso")',
+                '[data-toggle="tab"]', '.nav-link', '.tab-link'
+            ]
+            for sel in tab_selectors:
+                try:
+                    count = await self.page.locator(sel).count()
+                    if count > 0:
+                        texts = []
+                        elements = await self.page.locator(sel).all()
+                        for el in elements[:5]:
+                            text = await el.text_content()
+                            href = await el.get_attribute('href')
+                            if text:
+                                texts.append(f"{text.strip()}({href})")
+                        print(f"[PiezasExtractor]   Selector '{sel}': {count} elementos - {texts[:3]}")
+                except Exception as e:
+                    pass
+                    
         except Exception as e:
-            # Si ya estamos en la página, puede fallar pero no es problema
             print(f"[PiezasExtractor] Nota: {e}")
         
-        # 2. Click en el tab especificado
+        # 2. Click en el tab especificado (con múltiples intentos)
         print(f"[PiezasExtractor] Buscando tab...")
-        tab = self.page.locator(tab_selector).first
         
-        # Esperar a que el tab sea visible
-        await tab.wait_for(state='visible', timeout=10000)
+        # Intentar diferentes selectores según el tab
+        if 'transito' in table_id.lower():
+            tab_selectors = [
+                '#transito-tab',
+                'a[href="#transito"]',
+                'a.nav-link:has-text("Tránsito")',
+                'li.nav-item:has-text("Tránsito") a',
+                'a:has-text("Tránsito(98)")',
+                'a[data-toggle="tab"]:has-text("Tránsito")',
+                '//a[@id="transito-tab"]',
+                '//a[contains(text(), "Tránsito")]'
+            ]
+        else:
+            tab_selectors = [
+                '#piso-tab',
+                'a[href="#piso"]',
+                'a.nav-link:has-text("Piso")',
+                'li.nav-item:has-text("Piso") a',
+                'a:has-text("Piso(30)")',
+                'a[data-toggle="tab"]:has-text("Piso")',
+                '//a[@id="piso-tab"]',
+                '//a[contains(text(), "Piso")]'
+            ]
+        
+        tab = None
+        for sel in tab_selectors:
+            try:
+                if sel.startswith('//'):
+                    # XPath selector
+                    count = await self.page.locator(f'xpath={sel}').count()
+                    if count > 0:
+                        tab = self.page.locator(f'xpath={sel}').first
+                        print(f"[PiezasExtractor] Tab encontrado con XPath: {sel}")
+                        break
+                else:
+                    count = await self.page.locator(sel).count()
+                    if count > 0:
+                        tab = self.page.locator(sel).first
+                        print(f"[PiezasExtractor] Tab encontrado con selector: {sel}")
+                        break
+            except Exception as e:
+                print(f"[PiezasExtractor]   Selector '{sel}' no funcionó: {e}")
+                continue
+        
+        if not tab:
+            raise RuntimeError(f"No se encontró el tab con ningún selector")
+        
+        # Esperar a que el tab sea visible y hacer click
+        await tab.wait_for(state='visible', timeout=15000)
+        print(f"[PiezasExtractor] Haciendo click en tab...")
         await tab.click()
         
-        # Esperar a que la tabla se cargue
-        await self.page.wait_for_selector(f'#{table_id} tbody tr', timeout=15000)
-        await asyncio.sleep(1)  # Pausa adicional para carga completa
+        # Esperar a que la tabla se cargue (puede cargarse dinámicamente)
+        print(f"[PiezasExtractor] Esperando tabla #{table_id}...")
+        await asyncio.sleep(3)  # Esperar a que cargue la tabla dinámica
+        
+        # Intentar encontrar la tabla
+        try:
+            await self.page.wait_for_selector(f'#{table_id}', timeout=20000)
+            print(f"[PiezasExtractor] ✓ Tabla #{table_id} encontrada")
+        except:
+            # La tabla podría tener otro ID o estructura
+            print(f"[PiezasExtractor] ⚠ Tabla #{table_id} no encontrada, buscando alternativas...")
+            # Listar posibles tablas
+            tables = await self.page.locator('table').all()
+            print(f"[PiezasExtractor]   Tablas encontradas: {len(tables)}")
+            for i, tbl in enumerate(tables):
+                try:
+                    tbl_id = await tbl.get_attribute('id')
+                    print(f"[PiezasExtractor]     Tabla {i}: id={tbl_id}")
+                except:
+                    pass
+        
+        await asyncio.sleep(2)  # Pausa adicional para carga completa
         print(f"[PiezasExtractor] ✓ Tab cargado")
     
     # Método legacy para compatibilidad
@@ -405,9 +502,38 @@ class QualitasPiezasExtractor:
         ordenes = []
         ordenes_filtradas = 0
         
-        # Obtener todas las filas de la tabla
-        rows = await self.page.locator(f'#{table_id} tbody tr').all()
-        print(f"[PiezasExtractor] {len(rows)} filas encontradas en tabla")
+        # Intentar obtener filas de la tabla específica
+        table_selector = f'#{table_id}'
+        try:
+            await self.page.wait_for_selector(f'{table_selector} tbody tr', timeout=10000)
+            rows = await self.page.locator(f'{table_selector} tbody tr').all()
+            print(f"[PiezasExtractor] {len(rows)} filas encontradas en tabla #{table_id}")
+        except Exception as e:
+            print(f"[PiezasExtractor] ⚠ Tabla #{table_id} no encontrada: {e}")
+            # Buscar cualquier tabla visible en la página
+            print(f"[PiezasExtractor] Buscando tablas alternativas...")
+            all_tables = await self.page.locator('table').all()
+            print(f"[PiezasExtractor] {len(all_tables)} tablas encontradas en total")
+            
+            rows = []
+            for i, tbl in enumerate(all_tables):
+                try:
+                    tbl_id = await tbl.get_attribute('id')
+                    is_visible = await tbl.is_visible()
+                    row_count = await tbl.locator('tbody tr').count()
+                    print(f"[PiezasExtractor]   Tabla {i}: id={tbl_id}, visible={is_visible}, filas={row_count}")
+                    
+                    if is_visible and row_count > 0:
+                        tbl_rows = await tbl.locator('tbody tr').all()
+                        if len(tbl_rows) > len(rows):
+                            rows = tbl_rows
+                            print(f"[PiezasExtractor]   ✓ Usando tabla {i} con {len(rows)} filas")
+                except Exception as e2:
+                    pass
+            
+            if not rows:
+                print(f"[PiezasExtractor] ✗ No se encontraron filas en ninguna tabla")
+                return ordenes
         
         for i, row in enumerate(rows):
             try:

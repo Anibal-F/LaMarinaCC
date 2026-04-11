@@ -577,9 +577,24 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
     # Normalizar el reporte de entrada (quitar espacios múltiples, etc.)
     reporte_normalized = _normalize_reporte_for_search(reporte_input)
     
-    logger.debug(f"[DEBUG] Buscando orden de admisión - Input: '{reporte_input}' - Normalized: '{reporte_normalized}'")
+    logger.info(f"[FIND_ORDEN] Input: '{reporte_input}' | Normalized: '{reporte_normalized}'")
 
     conn.row_factory = dict_row
+    
+    # DEBUG: Ver cuántas órdenes hay en total y mostrar algunas de ejemplo
+    count_row = conn.execute("SELECT COUNT(*) as total FROM orden_admision WHERE reporte_siniestro IS NOT NULL AND TRIM(reporte_siniestro) <> ''").fetchone()
+    logger.info(f"[FIND_ORDEN] Total órdenes con reporte: {count_row['total'] if count_row else 0}")
+    
+    # DEBUG: Buscar si hay alguna orden que contenga '5562'
+    sample_rows = conn.execute(
+        "SELECT id, reporte_siniestro FROM orden_admision WHERE reporte_siniestro ILIKE %s LIMIT 3",
+        ("%5562%",)
+    ).fetchall()
+    if sample_rows:
+        for row in sample_rows:
+            logger.info(f"[FIND_ORDEN] Ejemplo encontrado: id={row['id']}, reporte='{row['reporte_siniestro']}'")
+    else:
+        logger.info(f"[FIND_ORDEN] No se encontraron órdenes con '5562'")
     
     # Primero intentar búsqueda exacta con el reporte normalizado
     orden = conn.execute(
@@ -594,7 +609,7 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
     ).fetchone()
     
     if orden:
-        logger.debug(f"[DEBUG] Orden encontrada (exacta): {orden}")
+        logger.info(f"[FIND_ORDEN] Encontrada (exacta): {orden}")
         return orden
     
     # Si no encuentra con normalización, probar con ILIKE (más flexible con espacios)
@@ -610,12 +625,12 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
     ).fetchone()
     
     if orden:
-        logger.debug(f"[DEBUG] Orden encontrada (ILIKE): {orden}")
+        logger.info(f"[FIND_ORDEN] Encontrada (ILIKE): {orden}")
         return orden
     
     # Si no encuentra, extraer los últimos 6 dígitos y buscar con ILIKE
     digits_only = re.sub(r'\D', '', reporte_input)
-    logger.debug(f"[DEBUG] Dígitos extraídos: '{digits_only}' (len={len(digits_only)})")
+    logger.info(f"[FIND_ORDEN] Dígitos extraídos: '{digits_only}' (len={len(digits_only)})")
     
     if len(digits_only) >= 4:
         search_pattern = f"%{digits_only[-6:]}%" if len(digits_only) >= 6 else f"%{digits_only}%"
@@ -632,10 +647,10 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
         ).fetchone()
         
         if orden:
-            logger.debug(f"[DEBUG] Orden encontrada (por dígitos): {orden}")
+            logger.info(f"[FIND_ORDEN] Encontrada (por dígitos): {orden}")
             return orden
     
-    logger.debug(f"[DEBUG] No se encontró orden de admisión para: '{reporte_input}'")
+    logger.info(f"[FIND_ORDEN] No se encontró orden para: '{reporte_input}'")
     return None
 
 

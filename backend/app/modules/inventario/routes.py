@@ -558,12 +558,16 @@ def _calcular_estatus_paquete(conn, paquete_id: int) -> str:
 
 
 def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str]) -> Optional[dict[str, Any]]:
+    import re
+    
     reporte = str(numero_reporte_siniestro or "").strip()
     if not reporte:
         return None
 
     conn.row_factory = dict_row
-    return conn.execute(
+    
+    # Primero intentar búsqueda exacta
+    orden = conn.execute(
         """
         SELECT id, reporte_siniestro
         FROM orden_admision
@@ -573,6 +577,31 @@ def _find_orden_admision_by_reporte(conn, numero_reporte_siniestro: Optional[str
         """,
         (reporte,),
     ).fetchone()
+    
+    if orden:
+        return orden
+    
+    # Si no encuentra, extraer los últimos 6 dígitos y buscar con ILIKE
+    # Ejemplo: "5562" -> buscar "%5562%" en los reportes
+    digits_only = re.sub(r'\D', '', reporte)  # Quitar todo excepto dígitos
+    if len(digits_only) >= 4:  # Mínimo 4 dígitos para evitar matches muy amplios
+        search_pattern = f"%{digits_only[-6:]}%" if len(digits_only) >= 6 else f"%{digits_only}%"
+        
+        orden = conn.execute(
+            """
+            SELECT id, reporte_siniestro
+            FROM orden_admision
+            WHERE LOWER(TRIM(COALESCE(reporte_siniestro, ''))) ILIKE LOWER(TRIM(%s))
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (search_pattern,),
+        ).fetchone()
+        
+        if orden:
+            return orden
+    
+    return None
 
 
 def _get_orden_admision_snapshot(conn, orden_admision_id: Optional[int]) -> Optional[dict[str, Any]]:
@@ -612,11 +641,15 @@ def _find_paquete_by_reporte(
     numero_reporte_siniestro: Optional[str],
     exclude_paquete_id: Optional[int] = None,
 ) -> Optional[dict[str, Any]]:
+    import re
+    
     reporte = str(numero_reporte_siniestro or "").strip()
     if not reporte:
         return None
 
     conn.row_factory = dict_row
+    
+    # Primero intentar búsqueda exacta
     query = """
         SELECT id, folio, proveedor_nombre, estatus
         FROM paquetes_piezas
@@ -627,7 +660,30 @@ def _find_paquete_by_reporte(
         query += " AND id <> %s"
         params.append(exclude_paquete_id)
     query += " ORDER BY id DESC LIMIT 1"
-    return conn.execute(query, params).fetchone()
+    
+    paquete = conn.execute(query, params).fetchone()
+    if paquete:
+        return paquete
+    
+    # Si no encuentra, extraer los últimos 6 dígitos y buscar con ILIKE
+    digits_only = re.sub(r'\D', '', reporte)
+    if len(digits_only) >= 4:
+        search_pattern = f"%{digits_only[-6:]}%" if len(digits_only) >= 6 else f"%{digits_only}%"
+        
+        query = """
+            SELECT id, folio, proveedor_nombre, estatus
+            FROM paquetes_piezas
+            WHERE LOWER(TRIM(COALESCE(numero_reporte_siniestro, ''))) ILIKE LOWER(TRIM(%s))
+        """
+        params: list[Any] = [search_pattern]
+        if exclude_paquete_id is not None:
+            query += " AND id <> %s"
+            params.append(exclude_paquete_id)
+        query += " ORDER BY id DESC LIMIT 1"
+        
+        return conn.execute(query, params).fetchone()
+    
+    return None
 
 
 def _ensure_unique_paquete_report(

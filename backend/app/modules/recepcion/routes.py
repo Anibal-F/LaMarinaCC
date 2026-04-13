@@ -3215,9 +3215,9 @@ async def transcribe_audio(file: UploadFile = File(...)):
             start_job_payload["LanguageCode"] = settings.aws_transcribe_language_code
 
         # Iniciar trabajo de transcripción con settings optimizados
+        # Nota: No incluir MaxSpeakerLabels si ShowSpeakerLabels es False
         start_job_payload["Settings"] = {
             "ShowSpeakerLabels": False,
-            "MaxSpeakerLabels": 2,
             "ChannelIdentification": False,
             "ShowAlternatives": False,
         }

@@ -398,10 +398,15 @@ async def do_login(page, use_db: bool = True) -> bool:
     def handle_session_dialog(dialog):
         nonlocal session_alert_handled
         print(f"[SessionDialog] {dialog.type}: {dialog.message[:80]}...")
-        if any(keyword in dialog.message.lower() for keyword in ['sesión', 'terminal', 'otro equipo', 'sesion']):
+        msg_lower = dialog.message.lower()
+        if any(keyword in msg_lower for keyword in ['sesión', 'terminal', 'otro equipo', 'sesion']):
             print("[SessionDialog] ✓ Alert de sesión previa - Aceptando")
             asyncio.create_task(dialog.accept())
             session_alert_handled = True
+        elif any(keyword in msg_lower for keyword in ['contraseña', 'password', 'expir', 'cambio']):
+            print("[SessionDialog] ⚠ Alert de contraseña - Aceptando y continuando")
+            asyncio.create_task(dialog.accept())
+            # No marcar como handled para sesión, pero sí aceptamos
         else:
             asyncio.create_task(dialog.accept())
     
@@ -624,6 +629,21 @@ async def do_login(page, use_db: bool = True) -> bool:
             print("[Login] ✓ Alert de sesión manejado")
     except Exception as e:
         print(f"[Login] Error manejando alert de sesión: {e}")
+    
+    # PASO 3.6: Verificar si hay redirección por sesión múltiple (MsgAuth en URL)
+    print("[Login] Verificando redirección post-sesión...")
+    current_url = page.url
+    if 'MsgAuth' in current_url and 'otra%20terminal' in current_url:
+        print("[Login] Detectada redirección por sesión múltiple, esperando estabilización...")
+        # Esperar más tiempo para que el sitio procese la invalidación de la otra sesión
+        await asyncio.sleep(5)
+        
+        # Verificar si necesitamos reintentar el login
+        login_b2c_visible = await page.locator('#loginB2C:visible').count() > 0
+        if login_b2c_visible:
+            print("[Login] Formulario B2C visible después de sesión múltiple, reintentando login...")
+            # Reintentar el login desde el inicio (con sesión invalidada ahora debería funcionar)
+            return await do_login(page, use_db=use_db)
     
     # ============================================
     # PASO 4: Esperar navegación post-login

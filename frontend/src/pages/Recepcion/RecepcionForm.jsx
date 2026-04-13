@@ -122,7 +122,9 @@ export default function RecepcionForm() {
   const recordingStartedAtRef = useRef(0);
   const entregaEstimRef = useRef(null);
   const [recordingTarget, setRecordingTarget] = useState("");
-  const [transcribingTarget, setTranscribingTarget] = useState("");
+  const [transcribingTargets, setTranscribingTargets] = useState(new Set());  // Múltiples transcripciones simultáneas
+  const transcriptionQueueRef = useRef([]);  // Cola de audios pendientes
+  const isProcessingQueueRef = useRef(false);  // Flag para evitar procesamiento concurrente
   const [damageDrawEnabled, setDamageDrawEnabled] = useState(false);
   const [damageEraseEnabled, setDamageEraseEnabled] = useState(false);
   const [damagePanEnabled, setDamagePanEnabled] = useState(false);
@@ -274,39 +276,73 @@ export default function RecepcionForm() {
     throw new Error(lastError?.message || "No se pudo conectar al servicio de transcripción.");
   };
 
-  const transcribeObservationAudio = async (target, audioBlob) => {
+  // Procesar la cola de transcripción secuencialmente
+  const processTranscriptionQueue = async () => {
+    if (isProcessingQueueRef.current) return;  // Ya está procesando
+    isProcessingQueueRef.current = true;
+
+    while (transcriptionQueueRef.current.length > 0) {
+      const { target, audioBlob } = transcriptionQueueRef.current[0];  // Peek
+      
+      // Marcar como transcribiendo
+      setTranscribingTargets((prev) => new Set([...prev, target]));
+      
+      try {
+        await transcribeObservationAudioInternal(target, audioBlob);
+      } catch (err) {
+        console.error(`[Transcription] Error procesando ${target}:`, err);
+      } finally {
+        // Quitar de la cola
+        transcriptionQueueRef.current.shift();
+        // Quitar de transcribiendo
+        setTranscribingTargets((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(target);
+          return newSet;
+        });
+      }
+    }
+
+    isProcessingQueueRef.current = false;
+  };
+
+  // Función interna de transcripción (sin manejo de estado)
+  const transcribeObservationAudioInternal = async (target, audioBlob) => {
     const mimeType = audioBlob.type || "audio/webm";
     const extension = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "webm";
-    setTranscribingTarget(target);
-    try {
-      const formData = new FormData();
-      formData.append("file", audioBlob, `observaciones-${Date.now()}.${extension}`);
+    
+    const formData = new FormData();
+    formData.append("file", audioBlob, `observaciones-${Date.now()}.${extension}`);
 
-      const response = await postTranscriptionWithRetry(formData, 2);
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.detail || "No se pudo transcribir el audio.");
-      }
+    const response = await postTranscriptionWithRetry(formData, 2);
+    if (!response.ok) {
       const data = await response.json().catch(() => null);
-      const transcript = (data?.text || "").trim();
-      if (!transcript) {
-        throw new Error("La transcripción llegó vacía.");
-      }
-
-      if (target === "observaciones_generales") {
-        setForm((prev) => ({ ...prev, observaciones: appendObservationText(prev.observaciones, transcript) }));
-      } else if (target === "estado_mecanico") {
-        setForm((prev) => ({ ...prev, estado_mecanico: appendObservationText(prev.estado_mecanico, transcript) }));
-      } else if (target === "observaciones_siniestro") {
-        setDamageObsSiniestro((prev) => appendObservationText(prev, transcript));
-      } else if (target === "observaciones_preexistentes") {
-        setDamageObsPreexist((prev) => appendObservationText(prev, transcript));
-      }
-    } catch (err) {
-      setError(err.message || "No se pudo transcribir el audio.");
-    } finally {
-      setTranscribingTarget("");
+      throw new Error(data?.detail || "No se pudo transcribir el audio.");
     }
+    const data = await response.json().catch(() => null);
+    const transcript = (data?.text || "").trim();
+    if (!transcript) {
+      throw new Error("La transcripción llegó vacía.");
+    }
+
+    // Actualizar el formulario según el target
+    if (target === "observaciones_generales") {
+      setForm((prev) => ({ ...prev, observaciones: appendObservationText(prev.observaciones, transcript) }));
+    } else if (target === "estado_mecanico") {
+      setForm((prev) => ({ ...prev, estado_mecanico: appendObservationText(prev.estado_mecanico, transcript) }));
+    } else if (target === "observaciones_siniestro") {
+      setDamageObsSiniestro((prev) => appendObservationText(prev, transcript));
+    } else if (target === "observaciones_preexistentes") {
+      setDamageObsPreexist((prev) => appendObservationText(prev, transcript));
+    }
+  };
+
+  // Agregar audio a la cola de transcripción y procesar
+  const transcribeObservationAudio = async (target, audioBlob) => {
+    // Agregar a la cola
+    transcriptionQueueRef.current.push({ target, audioBlob });
+    // Iniciar procesamiento de la cola
+    processTranscriptionQueue();
   };
 
   const stopObservationRecording = () => {
@@ -317,16 +353,18 @@ export default function RecepcionForm() {
   };
 
   const startObservationRecording = async (target) => {
-    if (transcribingTarget) {
-      setError("Espera a que termine la transcripción actual.");
-      return;
-    }
+    // Permitir grabar mientras se transcribe otro campo
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError("Tu navegador no soporta grabación de audio.");
       return;
     }
     if (recordingTarget && recordingTarget !== target) {
       setError("Ya hay otra grabación en curso.");
+      return;
+    }
+    // Verificar si este campo específico ya está en la cola o transcribiéndose
+    if (transcribingTargets.has(target)) {
+      setError("Este campo ya está siendo transcrito.");
       return;
     }
 
@@ -2352,7 +2390,7 @@ export default function RecepcionForm() {
                             type="button"
                             className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-border-dark bg-background-dark/90 text-slate-300 hover:text-white disabled:opacity-50"
                             onClick={() => startObservationRecording("estado_mecanico")}
-                            disabled={saving || Boolean(transcribingTarget)}
+                            disabled={saving || transcribingTargets.has("estado_mecanico")}
                             title="Grabar audio"
                           >
                             <span className="material-symbols-outlined text-[18px]">mic</span>
@@ -2364,7 +2402,7 @@ export default function RecepcionForm() {
                           Grabando... vuelve a presionar para detener.
                         </p>
                       ) : null}
-                      {transcribingTarget === "estado_mecanico" ? (
+                      {transcribingTargets.has("estado_mecanico") ? (
                         <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
                       ) : null}
                     </div>
@@ -2377,7 +2415,7 @@ export default function RecepcionForm() {
                           Grabando... vuelve a presionar para detener.
                         </p>
                       ) : null}
-                      {transcribingTarget === "observaciones_generales" ? (
+                      {transcribingTargets.has("observaciones_generales") ? (
                         <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
                       ) : null}
                       <div className="relative">
@@ -2402,7 +2440,7 @@ export default function RecepcionForm() {
                             type="button"
                             className="absolute right-2 top-2 inline-flex items-center justify-center size-8 rounded-md border border-border-dark bg-background-dark/90 text-slate-300 hover:text-white disabled:opacity-50"
                             onClick={() => startObservationRecording("observaciones_generales")}
-                            disabled={saving || Boolean(transcribingTarget)}
+                            disabled={saving || transcribingTargets.has("observaciones_generales")}
                             title="Grabar audio"
                           >
                             <span className="material-symbols-outlined text-[18px]">mic</span>
@@ -2780,10 +2818,11 @@ export default function RecepcionForm() {
                       Grabando... vuelve a presionar para detener.
                     </p>
                   ) : null}
-                  {transcribingTarget ===
-                  (damageMode === "siniestro"
-                    ? "observaciones_siniestro"
-                    : "observaciones_preexistentes") ? (
+                  {transcribingTargets.has(
+                    damageMode === "siniestro"
+                      ? "observaciones_siniestro"
+                      : "observaciones_preexistentes"
+                  ) ? (
                     <p className="text-[10px] text-primary font-bold uppercase">Transcribiendo audio...</p>
                   ) : null}
                   <div className="relative">
@@ -2821,7 +2860,9 @@ export default function RecepcionForm() {
                               : "observaciones_preexistentes"
                           )
                         }
-                        disabled={Boolean(transcribingTarget)}
+                        disabled={transcribingTargets.has(
+                          damageMode === "siniestro" ? "observaciones_siniestro" : "observaciones_preexistentes"
+                        )}
                         title="Grabar audio"
                       >
                         <span className="material-symbols-outlined text-[18px]">mic</span>

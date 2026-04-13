@@ -39,6 +39,9 @@ export default function Sidebar() {
   const [inventarioExpanded, setInventarioExpanded] = useState(
     location.pathname.startsWith("/inventario")
   );
+  const [particularesExpanded, setParticularesExpanded] = useState(
+    location.pathname.startsWith("/particulares")
+  );
 
   const isAdminRoute = useMemo(
     () => location.pathname.startsWith("/admin"),
@@ -66,6 +69,10 @@ export default function Sidebar() {
   );
   const isInventarioRoute = useMemo(
     () => location.pathname.startsWith("/inventario"),
+    [location.pathname]
+  );
+  const isParticularesRoute = useMemo(
+    () => location.pathname.startsWith("/particulares"),
     [location.pathname]
   );
   const showLabels = !collapsed || isMobile;
@@ -387,6 +394,42 @@ export default function Sidebar() {
               <span className="material-symbols-outlined text-[18px] ml-auto">package_2</span>
             </NavLink>
           </>
+        ) : null}
+        <button
+          className={`${navItemBase} ${isParticularesRoute ? navItemActive : navItemInactive} justify-between`}
+          type="button"
+          title={!showLabels ? "Particulares" : undefined}
+          onClick={() => {
+            if (!showLabels) setCollapsed(false);
+            setParticularesExpanded((value) => !value);
+          }}
+        >
+          <span className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-[22px]">person</span>
+            {showLabels ? <span className="text-sm font-medium">Particulares</span> : null}
+          </span>
+          {showLabels ? (
+            <span className="material-symbols-outlined text-lg">
+              {particularesExpanded ? "expand_more" : "chevron_right"}
+            </span>
+          ) : null}
+        </button>
+        {particularesExpanded ? (
+          <NavLink
+            to="/particulares"
+            end
+            className={({ isActive }) =>
+              `${navItemBase} ml-6 ${
+                isActive ? "text-white" : "text-slate-400 hover:text-white"
+              }`
+            }
+            onClick={() => {
+              if (isMobile) setMobileOpen(false);
+            }}
+          >
+            {showLabels ? <span className="text-sm font-medium">Listado</span> : null}
+            <span className="material-symbols-outlined text-[18px] ml-auto">list</span>
+          </NavLink>
         ) : null}
         {showLabels ? (
           <div className="pt-6 text-[10px] font-bold text-slate-500 uppercase px-3 py-2 tracking-widest">

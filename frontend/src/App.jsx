@@ -39,6 +39,7 @@ import TallerGestion from "./pages/Taller/TallerGestion.jsx";
 import TallerEtapa from "./pages/Taller/TallerEtapa.jsx";
 import BitacoraPiezas from "./pages/Inventario/BitacoraPiezas.jsx";
 import PaquetesPiezas from "./pages/Inventario/PaquetesPiezas.jsx";
+import Particulares from "./pages/Particulares/Particulares.jsx";
 import WhatsAppChatWidget from "./components/WhatsAppChatWidget.jsx";
 
 function AppContent() {
@@ -211,6 +212,10 @@ function AppContent() {
         <Route
           path="/inventario/paquetes-piezas"
           element={authenticated ? <PaquetesPiezas /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/particulares"
+          element={authenticated ? <Particulares /> : <Navigate to="/login" replace />}
         />
         <Route path="*" element={<Navigate to={authenticated ? "/home" : "/login"} replace />} />
       </Routes>

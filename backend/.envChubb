@@ -8,7 +8,7 @@ CORS_ORIGINS=http://localhost:3010
 # ============================================
 CHUBB_LOGIN_URL=https://acg-prod-mx.audatex.com.mx/Audanet/
 CHUBB_USER=mx41095c01
-CHUBB_PASSWORD=Temporal.02
+CHUBB_PASSWORD=Auto2026*
 
 # ============================================
 # SELECTORES (basados en el sitio de Audatex/Solera)

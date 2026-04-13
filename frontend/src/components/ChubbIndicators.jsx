@@ -402,8 +402,33 @@ export default function ChubbIndicators({ onRefresh }) {
       
       {/* Indicadores */}
       {indicadores && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Card 1: Por Autorizar */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {/* Card 1: Trabajo en Progreso */}
+          <div 
+            onClick={() => setFiltroEstado(filtroEstado === 'Trabajo en Progreso' ? '' : 'Trabajo en Progreso')}
+            className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
+              filtroEstado === 'Trabajo en Progreso' 
+                ? 'border-blue-500 ring-2 ring-blue-500/30' 
+                : 'border-border-dark hover:border-blue-500/50'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                En Progreso
+              </span>
+              <span className="material-symbols-outlined text-blue-500 text-xl group-hover:scale-110 transition-transform">
+                engineering
+              </span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extrabold text-white tracking-tight">
+                {formatNumber(indicadores.trabajo_en_progreso)}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">Trabajos en progreso</p>
+          </div>
+
+          {/* Card 2: Por Autorizar */}
           <div 
             onClick={() => setFiltroEstado(filtroEstado === 'Por aprobar' ? '' : 'Por aprobar')}
             className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
@@ -428,7 +453,7 @@ export default function ChubbIndicators({ onRefresh }) {
             <p className="text-[10px] text-slate-500 mt-1">Expedientes pendientes de autorización</p>
           </div>
 
-          {/* Card 2: Autorizadas */}
+          {/* Card 3: Autorizadas */}
           <div 
             onClick={() => setFiltroEstado(filtroEstado === 'Autorizado' ? '' : 'Autorizado')}
             className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
@@ -453,7 +478,7 @@ export default function ChubbIndicators({ onRefresh }) {
             <p className="text-[10px] text-slate-500 mt-1">Expedientes autorizados</p>
           </div>
 
-          {/* Card 3: Rechazadas */}
+          {/* Card 4: Rechazadas */}
           <div 
             onClick={() => setFiltroEstado(filtroEstado === 'Rechazado' ? '' : 'Rechazado')}
             className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
@@ -478,7 +503,7 @@ export default function ChubbIndicators({ onRefresh }) {
             <p className="text-[10px] text-slate-500 mt-1">Expedientes rechazados</p>
           </div>
 
-          {/* Card 4: Complementos */}
+          {/* Card 5: Complementos */}
           <div 
             onClick={() => setFiltroEstado(filtroEstado === 'Complemento' ? '' : 'Complemento')}
             className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${
@@ -503,7 +528,7 @@ export default function ChubbIndicators({ onRefresh }) {
             <p className="text-[10px] text-slate-500 mt-1">Complementos solicitados</p>
           </div>
 
-          {/* Card 5: Pérdida Total */}
+          {/* Card 6: Pérdida Total */}
           <div 
             onClick={() => setFiltroEstado(filtroEstado === 'Pérdida Total' ? '' : 'Pérdida Total')}
             className={`bg-surface-dark border p-5 rounded-xl transition-all group cursor-pointer ${

@@ -2252,30 +2252,50 @@ def asignar_foto_a_pieza(
                     detail="La pieza no pertenece a este paquete"
                 )
             
-            # Verificar que no haya otra foto asignada a esta pieza
-            existing = conn.execute(
+            # NOTA: Ahora permitimos múltiples fotos por pieza
+            # y la misma foto puede estar asignada a múltiples piezas
+        
+        # Si se está asignando a una pieza, crear un nuevo registro duplicado
+        if pieza_id is not None:
+            # Obtener datos completos del media original
+            media_original = conn.execute(
                 """
-                SELECT id FROM paquetes_piezas_media 
-                WHERE pieza_asignada_id = %s AND id != %s
+                SELECT paquete_id, file_path, original_name, mime_type, file_size 
+                FROM paquetes_piezas_media WHERE id = %s
                 """,
-                (pieza_id, media_id)
+                (media_id,)
             ).fetchone()
             
-            if existing:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Esta pieza ya tiene una foto asignada"
+            # Crear un nuevo registro para esta asignación específica
+            new_media = conn.execute(
+                """
+                INSERT INTO paquetes_piezas_media (
+                    paquete_id, media_type, file_path, original_name, 
+                    mime_type, file_size, pieza_asignada_id, es_global
                 )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, paquete_id, media_type, file_path, original_name, mime_type, file_size,
+                          pieza_asignada_id, es_global, created_at
+                """,
+                (
+                    media_original["paquete_id"],
+                    "photo",
+                    media_original["file_path"],
+                    media_original["original_name"],
+                    media_original["mime_type"],
+                    media_original["file_size"],
+                    pieza_id,
+                    es_global if es_global is not None else False
+                )
+            ).fetchone()
+            
+            return dict(new_media)
         
-        # Actualizar la asignación
+        # Si es desasignación (pieza_id es null), actualizar el registro existente
         updates = []
         params = []
         
-        if pieza_id is not None:
-            updates.append("pieza_asignada_id = %s")
-            params.append(pieza_id)
-        elif pieza_id is None and 'pieza_id' in str(locals()):
-            # Desasignar explícitamente
+        if pieza_id is None:
             updates.append("pieza_asignada_id = NULL")
         
         if es_global is not None:

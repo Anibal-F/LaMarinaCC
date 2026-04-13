@@ -688,9 +688,8 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
   const photosArray = Array.isArray(photos) ? photos : [];
   
   const suggestedPhotos = getSuggestedPhotos && piece ? getSuggestedPhotos(piece, photosArray) : [];
-  const availablePhotos = photosArray.filter(p => 
-    p?.mediaType === 'photo' && (!p?.piezaAsignadaId || p?.piezaAsignadaId === piece?.bitacoraPiezaId)
-  );
+  // Ahora mostramos todas las fotos, incluso las ya asignadas a otras piezas
+  const availablePhotos = photosArray.filter(p => p?.mediaType === 'photo');
   const otherPhotos = availablePhotos.filter(p => !suggestedPhotos.find(s => s?.id === p?.id));
   
   return (
@@ -760,9 +759,9 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
                     key={photo?.id || Math.random()}
                     photo={photo}
                     isAssigned={photo?.piezaAsignadaId === piece?.bitacoraPiezaId}
-                    isOtherAssigned={photo?.piezaAsignadaId && photo?.piezaAsignadaId !== piece?.bitacoraPiezaId}
+                    isOtherAssigned={false}
                     onClick={() => onAssign(photo?.id, piece?.rowId)}
-                    disabled={assigning || photo?.piezaAsignadaId}
+                    disabled={assigning}
                   />
                 ))}
               </div>
@@ -781,9 +780,9 @@ function PhotoGalleryModal({ isOpen, piece, photos, onClose, onAssign, onUnassig
                     key={photo?.id || Math.random()}
                     photo={photo}
                     isAssigned={photo?.piezaAsignadaId === piece?.bitacoraPiezaId}
-                    isOtherAssigned={photo?.piezaAsignadaId && photo?.piezaAsignadaId !== piece?.bitacoraPiezaId}
+                    isOtherAssigned={false}
                     onClick={() => onAssign(photo?.id, piece?.rowId)}
-                    disabled={assigning || photo?.piezaAsignadaId}
+                    disabled={assigning}
                   />
                 ))}
               </div>
@@ -1423,28 +1422,37 @@ export default function PaquetesPiezas() {
         throw new Error(errData.detail || `Error ${response.status}: No se pudo asignar la foto`);
       }
       
-      // Actualizar el estado local de las fotos
-      const updatedPhoto = await response.json();
-      console.log("[assignPhotoToPiece] Foto actualizada:", updatedPhoto);
+      // El backend crea un nuevo registro duplicado para permitir múltiples asignaciones
+      const newPhotoRecord = await response.json();
+      console.log("[assignPhotoToPiece] Nuevo registro creado:", newPhotoRecord);
       
-      const photoUrl = buildMediaUrl(updatedPhoto.file_path);
+      const photoUrl = buildMediaUrl(newPhotoRecord.file_path);
       console.log("[assignPhotoToPiece] URL construida:", photoUrl);
       
+      // Agregar el nuevo registro a la lista de fotos (manteniendo el original)
       setDraftPhotos(prev => {
-        const newPhotos = prev.map(p => 
-          p.id === photoId 
-            ? { ...p, piezaAsignadaId: bitacoraPiezaId, piezaRowId: piezaRowId }
-            : p
-        );
+        const newPhoto = {
+          id: newPhotoRecord.id,
+          mediaType: newPhotoRecord.media_type,
+          filePath: newPhotoRecord.file_path,
+          originalName: newPhotoRecord.original_name,
+          mimeType: newPhotoRecord.mime_type,
+          fileSize: newPhotoRecord.file_size,
+          piezaAsignadaId: bitacoraPiezaId,
+          piezaRowId: piezaRowId,
+          url: photoUrl,
+          persisted: true,
+        };
+        const newPhotos = [...prev, newPhoto];
         console.log("[assignPhotoToPiece] Fotos actualizadas:", newPhotos);
         return newPhotos;
       });
       
-      // Actualizar la pieza con la foto asignada
+      // Actualizar la pieza con el NUEVO id de foto (el registro duplicado)
       setForm(prev => {
         const newPiezas = prev.piezas.map(p => 
           p.rowId === piezaRowId 
-            ? { ...p, fotoAsignadaId: photoId, fotoUrl: photoUrl }
+            ? { ...p, fotoAsignadaId: newPhotoRecord.id, fotoUrl: photoUrl }
             : p
         );
         console.log("[assignPhotoToPiece] Piezas actualizadas:", newPiezas);
@@ -1510,7 +1518,7 @@ export default function PaquetesPiezas() {
     const keywords = desc.split(/\s+/).filter(w => w.length > 2);
     
     return allPhotos
-      .filter(photo => photo && (!photo.piezaAsignadaId || photo.piezaRowId === pieza.rowId))
+      .filter(photo => photo)
       .map(photo => {
         const photoName = (photo?.originalName || photo?.name || "").toLowerCase();
         let score = 0;

@@ -8,6 +8,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [credential, setCredential] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
 
@@ -96,13 +97,20 @@ export default function Login() {
                     <input
                       className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg rounded-r-none border-r-0 text-white focus:outline-0 focus:ring-1 focus:ring-[#00527a] border-[#394c56] bg-[#1b2328] h-14 placeholder:text-[#9ab0bc]/40 px-4 text-base font-normal leading-normal transition-all"
                       placeholder="••••••••"
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                     />
-                    <div className="text-[#9ab0bc] flex border border-[#394c56] border-l-0 bg-[#1b2328] items-center justify-center px-4 rounded-r-lg">
-                      <span className="material-symbols-outlined text-xl">lock</span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="text-[#9ab0bc] hover:text-white flex border border-[#394c56] border-l-0 bg-[#1b2328] items-center justify-center px-3 rounded-r-lg transition-colors cursor-pointer"
+                      title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    >
+                      <span className="material-symbols-outlined text-xl">
+                        {showPassword ? "visibility_off" : "visibility"}
+                      </span>
+                    </button>
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-sm py-2">

@@ -1,4 +1,5 @@
 const SESSION_KEY = "lmcc_user";
+const REMEMBER_USER_KEY = "lmcc_remember_user";
 const AUTH_EVENT = "lmcc-auth-changed";
 const HOURS_8_MS = 8 * 60 * 60 * 1000;
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
@@ -51,6 +52,26 @@ export function getSession() {
 
 export function isAuthenticated() {
   return Boolean(getSession());
+}
+
+// Funciones para recordar el nombre de usuario
+export function saveRememberedUser(userName) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(REMEMBER_USER_KEY, userName);
+  }
+}
+
+export function getRememberedUser() {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem(REMEMBER_USER_KEY) || "";
+  }
+  return "";
+}
+
+export function clearRememberedUser() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(REMEMBER_USER_KEY);
+  }
 }
 
 export { AUTH_EVENT };

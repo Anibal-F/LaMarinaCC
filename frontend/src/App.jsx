@@ -6,6 +6,7 @@ import NotificationsSidebar from "./components/NotificationsSidebar.jsx";
 
 import Home from "./pages/Home/Home.jsx";
 import Login from "./pages/Login/Login.jsx";
+import ResetPassword from "./pages/Login/ResetPassword.jsx";
 import AdminUsers from "./pages/Admin/Users.jsx";
 import AdminProfiles from "./pages/Admin/Profiles.jsx";
 import AdminCredenciales from "./pages/Admin/Credenciales.jsx";
@@ -71,6 +72,7 @@ function AppContent() {
     <>
       <Routes>
         <Route path="/login" element={authenticated ? <Navigate to="/home" replace /> : <Login />} />
+<Route path="/reset-password" element={authenticated ? <Navigate to="/home" replace /> : <ResetPassword />} />
         <Route
           path="/"
           element={<Navigate to={authenticated ? "/home" : "/login"} replace />}

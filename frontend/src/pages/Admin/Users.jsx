@@ -20,6 +20,7 @@ export default function AdminUsers() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [profiles, setProfiles] = useState([]);
   const [toast, setToast] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     name: "",
     user_name: "",
@@ -266,13 +267,25 @@ export default function AdminUsers() {
                 {fieldErrors.email ? (
                   <p className="text-xs text-alert-red md:col-span-5">{fieldErrors.email}</p>
                 ) : null}
-                <input
-                  className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white"
-                  placeholder={editingId ? "Nueva contraseña (opcional)" : "Contraseña"}
-                  type="password"
-                  value={form.password}
-                  onChange={(event) => setForm({ ...form, password: event.target.value })}
-                />
+                <div className="relative">
+                  <input
+                    className="w-full rounded-lg border-border-dark bg-background-dark px-4 py-2 text-sm text-white pr-10"
+                    placeholder={editingId ? "Nueva contraseña (opcional)" : "Contraseña"}
+                    type={showPassword ? "text" : "password"}
+                    value={form.password}
+                    onChange={(event) => setForm({ ...form, password: event.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
+                    onClick={() => setShowPassword(!showPassword)}
+                    title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  >
+                    <span className="material-symbols-outlined text-lg">
+                      {showPassword ? "visibility_off" : "visibility"}
+                    </span>
+                  </button>
+                </div>
                 {fieldErrors.password ? (
                   <p className="text-xs text-alert-red md:col-span-5">{fieldErrors.password}</p>
                 ) : null}

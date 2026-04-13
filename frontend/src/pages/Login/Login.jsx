@@ -2,7 +2,7 @@ const heroImageUrl = "/assets/BG_LoginLaMarina.png";
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createSession, isAuthenticated } from "../../utils/auth.js";
+import { createSession, isAuthenticated, saveRememberedUser, getRememberedUser, clearRememberedUser } from "../../utils/auth.js";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -11,10 +11,25 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  
+  // Estados para recuperación de contraseña
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [forgotError, setForgotError] = useState("");
 
   useEffect(() => {
     if (isAuthenticated()) {
       navigate("/", { replace: true });
+      return;
+    }
+    
+    // Cargar usuario recordado si existe
+    const rememberedUser = getRememberedUser();
+    if (rememberedUser) {
+      setCredential(rememberedUser);
+      setRememberMe(true);
     }
   }, [navigate]);
 
@@ -44,10 +59,60 @@ export default function Login() {
 
       const payload = await response.json();
       createSession(payload, rememberMe);
+      
+      // Guardar o limpiar el usuario recordado según el checkbox
+      if (rememberMe) {
+        saveRememberedUser(normalizedCredential);
+      } else {
+        clearRememberedUser();
+      }
+      
       navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "No se pudo iniciar sesión");
     }
+  };
+  
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setForgotError("");
+    setForgotMessage("");
+    
+    const email = forgotEmail.trim();
+    if (!email) {
+      setForgotError("Ingresa tu correo electrónico");
+      return;
+    }
+    
+    try {
+      setForgotLoading(true);
+      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.detail || "No se pudo procesar la solicitud");
+      }
+      
+      setForgotMessage(data.message);
+      setForgotEmail("");
+    } catch (err) {
+      setForgotError(err.message || "Error al enviar solicitud");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+  
+  const closeForgotModal = () => {
+    setShowForgotModal(false);
+    setForgotEmail("");
+    setForgotMessage("");
+    setForgotError("");
   };
 
   return (
@@ -125,12 +190,13 @@ export default function Login() {
                       Recordarme
                     </span>
                   </label>
-                  <a
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(true)}
                     className="text-[#00527a] hover:text-[#00527a]/80 font-bold transition-colors"
-                    href="#"
                   >
                     ¿Olvidaste tu contraseña?
-                  </a>
+                  </button>
                 </div>
                 {error ? <p className="text-sm text-[#f87171]">{error}</p> : null}
                 <button
@@ -172,6 +238,95 @@ export default function Login() {
           </div>
         </div>
       </div>
+      
+      {/* Modal de Recuperación de Contraseña */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border-dark bg-surface-dark shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between gap-4 border-b border-border-dark px-6 py-4">
+              <div>
+                <h3 className="text-xl font-bold text-white">Recuperar contraseña</h3>
+                <p className="text-sm text-slate-400 mt-1">
+                  Ingresa tu correo para recibir instrucciones
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeForgotModal}
+                className="rounded-lg p-2 text-slate-400 hover:bg-background-dark hover:text-white transition-colors"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {forgotMessage ? (
+                <div className="text-center py-4">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-3xl text-green-500">check_circle</span>
+                  </div>
+                  <p className="text-green-400 font-medium">{forgotMessage}</p>
+                  <button
+                    onClick={closeForgotModal}
+                    className="mt-6 w-full h-12 bg-[#00527a] hover:bg-[#00527a]/90 text-white font-bold rounded-lg transition-all"
+                  >
+                    Entendido
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-white text-sm font-bold uppercase tracking-wider opacity-80 mb-2">
+                      Correo electrónico
+                    </label>
+                    <div className="flex w-full items-stretch rounded-lg">
+                      <input
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="tu@correo.com"
+                        className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-white focus:outline-0 focus:ring-1 focus:ring-[#00527a] border-[#394c56] bg-[#1b2328] h-12 placeholder:text-[#9ab0bc]/40 px-4 text-base"
+                        required
+                      />
+                    </div>
+                  </div>
+                  
+                  {forgotError ? (
+                    <p className="text-sm text-[#f87171]">{forgotError}</p>
+                  ) : null}
+                  
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={closeForgotModal}
+                      className="flex-1 h-12 border border-[#394c56] text-white font-bold rounded-lg hover:bg-[#1b2328] transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="flex-1 h-12 bg-[#00527a] hover:bg-[#00527a]/90 text-white font-bold rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {forgotLoading ? (
+                        <>
+                          <span className="material-symbols-outlined animate-spin">refresh</span>
+                          <span>Enviando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined">send</span>
+                          <span>Enviar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

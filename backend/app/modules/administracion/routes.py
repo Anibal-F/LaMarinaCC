@@ -58,6 +58,7 @@ def list_users():
                 u.name,
                 u.user_name,
                 u.email,
+                u.password,
                 COALESCE(p.profile_name, u.profile) AS profile_name,
                 u.profile_id,
                 u.status,

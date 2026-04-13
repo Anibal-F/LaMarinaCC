@@ -21,6 +21,7 @@ export default function AdminUsers() {
   const [profiles, setProfiles] = useState([]);
   const [toast, setToast] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [visiblePasswords, setVisiblePasswords] = useState(new Set());
   const [form, setForm] = useState({
     name: "",
     user_name: "",
@@ -366,6 +367,9 @@ export default function AdminUsers() {
                       Email
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
+                      Contraseña
+                    </th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
                       Perfil
                     </th>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-border-dark">
@@ -387,6 +391,33 @@ export default function AdminUsers() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{user.user_name}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{user.email || "-"}</td>
+                      <td className="px-4 py-3 text-sm text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">
+                            {visiblePasswords.has(user.id) ? user.password : "••••••"}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-white transition-colors p-1"
+                            onClick={() => {
+                              setVisiblePasswords((prev) => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(user.id)) {
+                                  newSet.delete(user.id);
+                                } else {
+                                  newSet.add(user.id);
+                                }
+                                return newSet;
+                              });
+                            }}
+                            title={visiblePasswords.has(user.id) ? "Ocultar contraseña" : "Mostrar contraseña"}
+                          >
+                            <span className="material-symbols-outlined text-base">
+                              {visiblePasswords.has(user.id) ? "visibility_off" : "visibility"}
+                            </span>
+                          </button>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-300">
                         {user.profile_name || user.profile || "-"}
                       </td>
@@ -439,7 +470,7 @@ export default function AdminUsers() {
                   ))}
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>
+                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={8}>
                         No hay usuarios para mostrar.
                       </td>
                     </tr>

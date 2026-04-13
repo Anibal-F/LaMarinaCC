@@ -39,6 +39,7 @@ class IndicadoresResponse(BaseModel):
     taller_id: str
     taller_nombre: str
     fecha_extraccion: str
+    trabajo_en_progreso: int
     por_autorizar: int
     autorizadas: int
     rechazadas: int
@@ -82,6 +83,7 @@ def ensure_tables_exists():
                 taller_id VARCHAR(50) NOT NULL,
                 taller_nombre VARCHAR(255),
                 fecha_extraccion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                trabajo_en_progreso INTEGER DEFAULT 0,
                 por_autorizar INTEGER DEFAULT 0,
                 autorizadas INTEGER DEFAULT 0,
                 rechazadas INTEGER DEFAULT 0,
@@ -124,6 +126,16 @@ def ensure_tables_exists():
             # Columna ya existe o error de migración
             pass
         
+        # Agregar columna trabajo_en_progreso si no existe (migración)
+        try:
+            conn.execute("""
+                ALTER TABLE chubb_indicadores 
+                ADD COLUMN IF NOT EXISTS trabajo_en_progreso INTEGER DEFAULT 0
+            """)
+        except Exception as e:
+            # Columna ya existe o error de migración
+            pass
+        
         # Crear índices
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_chubb_expedientes_estado 
@@ -157,6 +169,7 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     if indicadores_rpa:
         # Usar los indicadores que reportó el RPA del portal
         logger.info(f"[save_indicadores] Usando indicadores del RPA: {indicadores_rpa}")
+        trabajo_en_progreso = indicadores_rpa.get('trabajo_en_progreso', 0)
         por_autorizar = indicadores_rpa.get('por_autorizar', 0)
         autorizadas = indicadores_rpa.get('autorizadas', 0)
         rechazadas = indicadores_rpa.get('rechazadas', 0)
@@ -166,6 +179,7 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     elif estados:
         # Fallback: usar estados del RPA si no hay indicadores
         logger.info(f"[save_indicadores] Usando estados del RPA: {estados}")
+        trabajo_en_progreso = estados.get('trabajo_en_progreso', 0)
         por_autorizar = estados.get('por_autorizar', 0)
         autorizadas = estados.get('autorizadas', 0)
         rechazadas = estados.get('rechazadas', 0)
@@ -175,6 +189,7 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     elif expedientes:
         # Último fallback: calcular desde expedientes
         logger.info(f"[save_indicadores] Calculando indicadores desde {len(expedientes)} expedientes")
+        trabajo_en_progreso = sum(1 for e in expedientes if e.get('estado', '').lower() in ['trabajo en progreso', 'trabajo_en_progreso'])
         por_autorizar = sum(1 for e in expedientes if e.get('estado', '').lower() in ['por aprobar', 'por_autorizar'])
         autorizadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['autorizado', 'aprobado', 'autorizadas'])
         rechazadas = sum(1 for e in expedientes if e.get('estado', '').lower() in ['rechazado', 'rechazadas'])
@@ -183,10 +198,11 @@ def save_indicadores(data: Dict[str, Any]) -> int:
         total_expedientes = len(expedientes)
     else:
         logger.warning("[save_indicadores] No hay datos para calcular indicadores")
-        por_autorizar = autorizadas = rechazadas = complementos = perdida_total = total_expedientes = 0
+        trabajo_en_progreso = por_autorizar = autorizadas = rechazadas = complementos = perdida_total = total_expedientes = 0
     
     # Actualizar el diccionario de estados
     estados = {
+        'trabajo_en_progreso': trabajo_en_progreso,
         'por_autorizar': por_autorizar,
         'autorizadas': autorizadas,
         'rechazadas': rechazadas,
@@ -196,22 +212,22 @@ def save_indicadores(data: Dict[str, Any]) -> int:
     }
     data['estados'] = estados
     
-    logger.info(f"[save_indicadores] Indicadores calculados: por_autorizar={por_autorizar}, autorizadas={autorizadas}, rechazadas={rechazadas}, complementos={complementos}, perdida_total={perdida_total}, total={total_expedientes}")
+    logger.info(f"[save_indicadores] Indicadores calculados: trabajo_en_progreso={trabajo_en_progreso}, por_autorizar={por_autorizar}, autorizadas={autorizadas}, rechazadas={rechazadas}, complementos={complementos}, perdida_total={perdida_total}, total={total_expedientes}")
     
     try:
         with get_connection() as conn:
             row = conn.execute("""
                 INSERT INTO chubb_indicadores (
                     taller_id, taller_nombre, fecha_extraccion,
-                    por_autorizar, autorizadas, rechazadas, complementos,
+                    trabajo_en_progreso, por_autorizar, autorizadas, rechazadas, complementos,
                     perdida_total, total_expedientes, raw_data
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 data.get('taller_id', ''),
                 data.get('taller_nombre', ''),
                 data.get('fecha_extraccion', datetime.now(MAZATLAN_TZ).isoformat()),
-                por_autorizar, autorizadas, rechazadas, complementos, perdida_total,
+                trabajo_en_progreso, por_autorizar, autorizadas, rechazadas, complementos, perdida_total,
                 total_expedientes, json.dumps(data)
             )).fetchone()
             conn.commit()
@@ -381,7 +397,7 @@ def get_indicadores_history(limit: int = 30) -> List[Dict[str, Any]]:
         rows = conn.execute("""
             SELECT 
                 id, taller_id, taller_nombre, fecha_extraccion,
-                por_autorizar, autorizadas, rechazadas, complementos,
+                trabajo_en_progreso, por_autorizar, autorizadas, rechazadas, complementos,
                 perdida_total, total_expedientes
             FROM chubb_indicadores
             ORDER BY fecha_extraccion DESC
@@ -700,7 +716,7 @@ async def get_expedientes(estado: Optional[str] = None, limit: int = 500):
     Obtiene los expedientes más recientes de CHUBB.
     
     Args:
-        estado: Filtrar por estado (Por Aprobar, Autorizado, Rechazado, Complemento)
+        estado: Filtrar por estado (Trabajo en Progreso, Por Aprobar, Autorizado, Rechazado, Complemento, Pérdida Total)
         limit: Límite de resultados
     """
     expedientes = get_latest_expedientes(limit=limit, estado=estado)

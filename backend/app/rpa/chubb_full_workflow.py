@@ -808,6 +808,7 @@ async def do_login(page, use_db: bool = True) -> bool:
 # ============================================================================
 
 ESTADOS_FILTRO = {
+    "trabajo_en_progreso": "Trabajo en Progreso",
     "por_autorizar": "Por Aprobar",
     "autorizadas": "Autorizado", 
     "rechazadas": "Rechazado",
@@ -1239,6 +1240,7 @@ async def extract_expedientes_data(page) -> Dict[str, Any]:
     
     all_expedientes = []
     indicadores = {
+        "trabajo_en_progreso": 0,
         "por_autorizar": 0,
         "autorizadas": 0,
         "rechazadas": 0,
@@ -1276,6 +1278,7 @@ async def extract_expedientes_data(page) -> Dict[str, Any]:
     print(f"\n{'='*60}")
     print(f"EXTRACCIÓN COMPLETADA")
     print(f"Total expedientes: {len(all_expedientes)}")
+    print(f"  - Trabajo en Progreso: {indicadores['trabajo_en_progreso']}")
     print(f"  - Por Autorizar: {indicadores['por_autorizar']}")
     print(f"  - Autorizadas: {indicadores['autorizadas']}")
     print(f"  - Rechazadas: {indicadores['rechazadas']}")

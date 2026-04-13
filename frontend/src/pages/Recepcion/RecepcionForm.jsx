@@ -11,8 +11,8 @@ import {
 } from "../../components/recepcion/inventoryConfig.js";
 import { getSession } from "../../utils/auth.js";
 
-const MAX_OBSERVATION_RECORDING_MS = 12000;
-const MIN_OBSERVATION_RECORDING_MS = 800;
+const MAX_OBSERVATION_RECORDING_MS = 8000;
+const MIN_OBSERVATION_RECORDING_MS = 600;
 const DEFAULT_DAMAGE_CANVAS_ZOOM = 1;
 const MOBILE_DEFAULT_DAMAGE_CANVAS_ZOOM = 3.5;
 const MAX_DAMAGE_CANVAS_ZOOM = 3.5;
@@ -244,7 +244,7 @@ export default function RecepcionForm() {
     for (const endpoint of endpoints) {
       for (let tryIndex = 1; tryIndex <= attempts; tryIndex += 1) {
         const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 180000);
+        const timeoutId = window.setTimeout(() => controller.abort(), 60000);  // 60s timeout (era 180s)
         try {
           const response = await fetch(endpoint, {
             method: "POST",
@@ -334,9 +334,23 @@ export default function RecepcionForm() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
-      const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+      // Preferir opus con bitrate bajo para transcripción rápida
+      const mimeCandidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4;codecs=opus",
+        "audio/mp4"
+      ];
       const selectedMimeType = mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
-      const recorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
+      
+      // Configurar MediaRecorder con bitrate optimizado para voz (transcripción)
+      const recorderOptions = selectedMimeType 
+        ? { 
+            mimeType: selectedMimeType,
+            audioBitsPerSecond: 16000  // 16kbps es suficiente para voz clara
+          } 
+        : {};
+      const recorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
 
@@ -358,7 +372,8 @@ export default function RecepcionForm() {
           setError("La grabación fue muy corta. Intenta hablar al menos 1 segundo.");
           return;
         }
-        const blob = new Blob(chunks, { type: recorder.mimeType || selectedMimeType || "audio/webm" });
+        // Usar webm como formato final (más ligero que mp4 para transcripción)
+        const blob = new Blob(chunks, { type: "audio/webm" });
         await transcribeObservationAudio(target, blob);
       };
 

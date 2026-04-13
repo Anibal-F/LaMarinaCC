@@ -3214,15 +3214,28 @@ async def transcribe_audio(file: UploadFile = File(...)):
         else:
             start_job_payload["LanguageCode"] = settings.aws_transcribe_language_code
 
+        # Iniciar trabajo de transcripción con settings optimizados
+        start_job_payload["Settings"] = {
+            "ShowSpeakerLabels": False,
+            "MaxSpeakerLabels": 2,
+            "ChannelIdentification": False,
+            "ShowAlternatives": False,
+        }
+        
         transcribe_client.start_transcription_job(**start_job_payload)
 
-        deadline = time.time() + max(10, settings.aws_transcribe_timeout_seconds)
+        # Polling más agresivo para respuesta rápida
+        # Audio corto (<10s) debería procesarse en 2-5 segundos
+        deadline = time.time() + min(45, max(15, settings.aws_transcribe_timeout_seconds))
         transcript_file_uri = ""
+        poll_count = 0
+        
         while time.time() < deadline:
             job = transcribe_client.get_transcription_job(TranscriptionJobName=job_name).get(
                 "TranscriptionJob", {}
             )
             status_name = job.get("TranscriptionJobStatus")
+            
             if status_name == "COMPLETED":
                 transcript_file_uri = (
                     job.get("Transcript", {}).get("TranscriptFileUri", "") if job else ""
@@ -3234,7 +3247,15 @@ async def transcribe_audio(file: UploadFile = File(...)):
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Transcribe falló: {reason}",
                 )
-            await asyncio.sleep(max(1, settings.aws_transcribe_poll_seconds))
+            
+            # Polling adaptativo: más frecuente al inicio, luego más espaciado
+            poll_count += 1
+            if poll_count <= 5:
+                await asyncio.sleep(0.5)  # Primeros 5 polls: cada 500ms
+            elif poll_count <= 15:
+                await asyncio.sleep(0.8)  # Siguientes 10 polls: cada 800ms
+            else:
+                await asyncio.sleep(max(1, settings.aws_transcribe_poll_seconds))
 
         if not transcript_file_uri:
             raise HTTPException(
